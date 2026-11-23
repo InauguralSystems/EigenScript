@@ -1,75 +1,75 @@
 builtin	pop	pos	wrong	expr	classification
-abs	whole	-	number	abs of 0	KIND: | `abs` | `abs of x` | Absolute value, preserving int or float kind. `abs` of INT64_MIN raises `value` because its positive magnitude does not fit in int64 (#1758 N4b). |
-acos	whole	-	number	acos of 0	ANY: | `acos` | `acos of x` | Inverse cosine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
-add	pos	0	number	add of [0, [3, 4]]	KIND: | `add` | `add of [a, b]` | Element-wise addition; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-add	pos	1	number	add of [[1, 2], 0]	KIND: | `add` | `add of [a, b]` | Element-wise addition; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-append	pos	0	list	append of [[], 3]	ANY: | `append` | `append of [list, item]` | Append item to list (mutates list) |
-append	pos	1	dict	append of [xs, {"a": 1}]	ANY: | `append` | `append of [list, item]` | Append item to list (mutates list) |
-append	pos	1	list	append of [xs, []]	ANY: | `append` | `append of [list, item]` | Append item to list (mutates list) |
-append	pos	1	string	append of [xs, "zz_census_2509"]	ANY: | `append` | `append of [list, item]` | Append item to list (mutates list) |
+abs	whole	-	number	abs of 0	KIND: `abs of x`
+acos	whole	-	number	acos of 0	ANY: `acos of x`
+add	pos	0	number	add of [0, [3, 4]]	KIND: `add of [a, b]`
+add	pos	1	number	add of [[1, 2], 0]	KIND: `add of [a, b]`
+append	pos	0	list	append of [[], 3]	ANY: `append of [list, item]`
+append	pos	1	dict	append of [xs, {"a": 1}]	ANY: `append of [list, item]`
+append	pos	1	list	append of [xs, []]	ANY: `append of [list, item]`
+append	pos	1	string	append of [xs, "zz_census_2509"]	ANY: `append of [list, item]`
 args	whole	-	dict	args of {"a": 1}	IGNORED: args of null
 args	whole	-	list	args of []	IGNORED: args of null
 args	whole	-	number	args of 0	IGNORED: args of null
 args	whole	-	string	args of "zz_census_2509"	IGNORED: args of null
-asin	whole	-	number	asin of 0	ANY: | `asin` | `asin of x` | Inverse sine; input outside [-1, 1] gives NaN by default and raises `value` under `EIGS_STRICT=1`. Numeric inputs convert to float; numeric results are floats. |
+asin	whole	-	number	asin of 0	ANY: `asin of x`
 assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
 assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
-assert	pos	1	dict	assert of [1, {"a": 1}]	ANY: the message may be any value and is shown as text (N6)
-assert	pos	1	list	assert of [1, []]	ANY: the message may be any value and is shown as text (N6)
-assert	pos	1	number	assert of [1, 0]	ANY: the message may be any value and is shown as text (N6)
+assert	pos	1	dict	assert of [1, {"a": 1}]	ANY: the message may be any value and is shown as text (N6);
+assert	pos	1	list	assert of [1, []]	ANY: the message may be any value and is shown as text (N6);
+assert	pos	1	number	assert of [1, 0]	ANY: the message may be any value and is shown as text (N6);
 assert	whole	-	dict	assert of {"a": 1}	ANY: Read the condition by truthiness, as `if` does.
 assert	whole	-	string	assert of "zz_census_2509"	ANY: Read the condition by truthiness, as `if` does.
-atan	whole	-	number	atan of 0	KIND: | `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
+atan	whole	-	number	atan of 0	KIND: `atan of x`
 audio_volume	pos	0	number	audio_volume of [0, 0.5]	KIND: `audio_volume of [channel, vol]`
-bit_not	whole	-	number	bit_not of 0	KIND: | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
-buf_from_list	whole	-	list	buf_from_list of []	KIND: | `buf_from_list` | `buf_from_list of list` | Integer cells convert to float storage (Q2). Convert numeric list to buffer |
-buffer	whole	-	number	buffer of 0	ANY: | `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). |
-ceil	whole	-	number	ceil of 0	ANY: | `ceil` | `ceil of x` | Round up; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-channel	whole	-	number	channel of 0	KIND: | `channel` | `channel of capacity` | Create a bounded FIFO channel. A non-negative integer selects the exact capacity, with `0` making a synchronous rendezvous channel; `null` selects the default capacity 64. Returns a channel handle dict. Numeric capacity follows N5 and the C int range; fractional or out-of-range values raise `value`. |
+bit_not	whole	-	number	bit_not of 0	KIND: `bit_not of x`
+buf_from_list	whole	-	list	buf_from_list of []	KIND: `buf_from_list of list`
+buffer	whole	-	number	buffer of 0	ANY: `buffer of count`
+ceil	whole	-	number	ceil of 0	ANY: `ceil of x`
+channel	whole	-	number	channel of 0	KIND: `channel of capacity`
 clock_unix	whole	-	dict	clock_unix of {"a": 1}	IGNORED: clock_unix of null
 clock_unix	whole	-	list	clock_unix of []	IGNORED: clock_unix of null
 clock_unix	whole	-	number	clock_unix of 0	IGNORED: clock_unix of null
 clock_unix	whole	-	string	clock_unix of "zz_census_2509"	IGNORED: clock_unix of null
-coalesce	pos	0	dict	coalesce of [{"a": 1}, 4]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	0	list	coalesce of [[], 4]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	0	number	coalesce of [0, 4]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	0	string	coalesce of ["zz_census_2509", 4]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	1	dict	coalesce of [null, {"a": 1}]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	1	list	coalesce of [null, []]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	pos	1	string	coalesce of [null, "zz_census_2509"]	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	whole	-	dict	coalesce of {"a": 1}	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	whole	-	list	coalesce of []	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	whole	-	number	coalesce of 0	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-coalesce	whole	-	string	coalesce of "zz_census_2509"	ANY: | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
-copy_into	pos	0	list	copy_into of [[], 1, [3]]	ANY: | `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-cos	whole	-	number	cos of 0	KIND: | `cos` | `cos of x` | Cosine (radians). Numeric inputs convert to float; numeric results are floats. |
-dict_remove	pos	0	dict	dict_remove of [{"a": 1}, "k"]	KIND: | `dict_remove` | `dict_remove of [dict, "key"]` | Remove key from dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. An absent string key returns the dictionary unchanged. |
-dict_set	pos	0	dict	dict_set of [{"a": 1}, "k", 3]	ANY: | `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. |
-dict_set	pos	2	dict	dict_set of [d, "k", {"a": 1}]	ANY: | `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. |
-dict_set	pos	2	list	dict_set of [d, "k", []]	ANY: | `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. |
-dict_set	pos	2	string	dict_set of [d, "k", "zz_census_2509"]	ANY: | `dict_set` | `dict_set of [dict, "key", value]` | Set key in dict (mutates), return dict. A non-string key raises `type_mismatch`, just like indexed dictionary assignment. |
-divide	pos	0	number	divide of [0, [3, 4]]	KIND: | `divide` | `divide of [a, b]` | Element-wise IEEE division; a zero denominator gives signed infinity for a nonzero numerator and NaN for zero. `EIGS_STRICT=1` raises `divide: division by zero`; overflow gives infinity by default (#971, R2.2). |
-divide	pos	1	number	divide of [[1, 2], 0]	KIND: | `divide` | `divide of [a, b]` | Element-wise IEEE division; a zero denominator gives signed infinity for a nonzero numerator and NaN for zero. `EIGS_STRICT=1` raises `divide: division by zero`; overflow gives infinity by default (#971, R2.2). |
-env_get	whole	-	string	env_get of "zz_census_2509"	KIND: | `env_get` | `env_get of "VAR_NAME"` | Get environment variable (empty string if unset). |
+coalesce	pos	0	dict	coalesce of [{"a": 1}, 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	list	coalesce of [[], 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	number	coalesce of [0, 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	string	coalesce of ["zz_census_2509", 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	dict	coalesce of [null, {"a": 1}]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	list	coalesce of [null, []]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	string	coalesce of [null, "zz_census_2509"]	ANY: `coalesce of [value, default]`
+coalesce	whole	-	dict	coalesce of {"a": 1}	ANY: `coalesce of [value, default]`
+coalesce	whole	-	list	coalesce of []	ANY: `coalesce of [value, default]`
+coalesce	whole	-	number	coalesce of 0	ANY: `coalesce of [value, default]`
+coalesce	whole	-	string	coalesce of "zz_census_2509"	ANY: `coalesce of [value, default]`
+copy_into	pos	0	list	copy_into of [[], 1, [3]]	ANY: `copy_into of [dest, offset, src]`
+cos	whole	-	number	cos of 0	KIND: `cos of x`
+dict_remove	pos	0	dict	dict_remove of [{"a": 1}, "k"]	KIND: `dict_remove of [dict, "key"]`
+dict_set	pos	0	dict	dict_set of [{"a": 1}, "k", 3]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	dict	dict_set of [d, "k", {"a": 1}]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	list	dict_set of [d, "k", []]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	string	dict_set of [d, "k", "zz_census_2509"]	ANY: `dict_set of [dict, "key", value]`
+divide	pos	0	number	divide of [0, [3, 4]]	KIND: `divide of [a, b]`
+divide	pos	1	number	divide of [[1, 2], 0]	KIND: `divide of [a, b]`
+env_get	whole	-	string	env_get of "zz_census_2509"	KIND: `env_get of "VAR_NAME"`
 exe_path	whole	-	dict	exe_path of {"a": 1}	IGNORED: exe_path of null
 exe_path	whole	-	list	exe_path of []	IGNORED: exe_path of null
 exe_path	whole	-	number	exe_path of 0	IGNORED: exe_path of null
 exe_path	whole	-	string	exe_path of "zz_census_2509"	IGNORED: exe_path of null
-exp	whole	-	list	exp of []	KIND: | `exp` | `exp of t` | Element-wise e^x; overflow gives infinity by default and raises `value` under `EIGS_STRICT=1`. |
-exp	whole	-	number	exp of 0	KIND: | `exp` | `exp of t` | Element-wise e^x; overflow gives infinity by default and raises `value` under `EIGS_STRICT=1`. |
-f64_bits	whole	-	number	f64_bits of 0	KIND: | `f64_bits` | `f64_bits of number` | Return IEEE-754 binary64 bits as signed int64 two's complement; `-0.0` gives `-9223372036854775808`. An int input first converts to float (Q2). Accepts infinity and canonical NaN without changing `math_flags`. Non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
-f64_from_bits	whole	-	number	f64_from_bits of 0	ANY: | `f64_from_bits` | `f64_from_bits of bits` | Reconstruct a float from exact int64 bits (N5 accepts integral floats in int64 range). All NaN payloads canonicalize to `0x7FF8000000000000`; other representations retain their bits. No arithmetic trap or `math_flags` change. Fractions, non-finite inputs and out-of-range floats raise `value`; non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
-f64_to_bytes	whole	-	number	f64_to_bytes of 0	KIND: | `f64_to_bytes` | `f64_to_bytes of x` | An integer input first converts to nearest f64 (Q2). List of 8 ints: the big-endian IEEE-754 encoding of double `x` (network byte order, portable across host endianness). |
-file_exists	whole	-	string	file_exists of "zz_census_2509"	ANY: | `file_exists` | `file_exists of "path"` | `true` if the path exists (any kind: file, directory, device, fifo), `false` otherwise. A `stat` probe — never blocks (#1070: the old `fopen` probe hung on a reader-less fifo). Trace-recorded, so replay is deterministic (#585). |
-fill	pos	1	dict	fill of [2, {"a": 1}]	ANY: | `fill` | `fill of [count, value]` | Construct a list of repeated values. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-fill	pos	1	list	fill of [2, []]	ANY: | `fill` | `fill of [count, value]` | Construct a list of repeated values. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-fill	pos	1	number	fill of [2, 0]	ANY: | `fill` | `fill of [count, value]` | Construct a list of repeated values. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-floor	whole	-	number	floor of 0	ANY: | `floor` | `floor of x` | Round down; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
+exp	whole	-	list	exp of []	KIND: `exp of t`
+exp	whole	-	number	exp of 0	KIND: `exp of t`
+f64_bits	whole	-	number	f64_bits of 0	KIND: `f64_bits of number`
+f64_from_bits	whole	-	number	f64_from_bits of 0	ANY: `f64_from_bits of bits`
+f64_to_bytes	whole	-	number	f64_to_bytes of 0	KIND: `f64_to_bytes of x`
+file_exists	whole	-	string	file_exists of "zz_census_2509"	ANY: `file_exists of "path"`
+fill	pos	1	dict	fill of [2, {"a": 1}]	ANY: `fill of [count, value]`
+fill	pos	1	list	fill of [2, []]	ANY: `fill of [count, value]`
+fill	pos	1	number	fill of [2, 0]	ANY: `fill of [count, value]`
+floor	whole	-	number	floor of 0	ANY: `floor of x`
 flush	whole	-	dict	flush of {"a": 1}	IGNORED: flush of null
 flush	whole	-	list	flush of []	IGNORED: flush of null
 flush	whole	-	number	flush of 0	IGNORED: flush of null
 flush	whole	-	string	flush of "zz_census_2509"	IGNORED: flush of null
-fround	whole	-	number	fround of 0	KIND: | `fround` | `fround of x` | N9: int converts to f64 first; f64 to f32 to f64, returning a float (see [Scalar Math](#scalar-math) for non-finite arguments and result traps). |
+fround	whole	-	number	fround of 0	KIND: `fround of x`
 get_observer_thresholds	whole	-	dict	get_observer_thresholds of {"a": 1}	IGNORED: get_observer_thresholds of null
 get_observer_thresholds	whole	-	list	get_observer_thresholds of []	IGNORED: get_observer_thresholds of null
 get_observer_thresholds	whole	-	number	get_observer_thresholds of 0	IGNORED: get_observer_thresholds of null
@@ -78,56 +78,56 @@ getcwd	whole	-	dict	getcwd of {"a": 1}	IGNORED: getcwd of null
 getcwd	whole	-	list	getcwd of []	IGNORED: getcwd of null
 getcwd	whole	-	number	getcwd of 0	IGNORED: getcwd of null
 getcwd	whole	-	string	getcwd of "zz_census_2509"	IGNORED: getcwd of null
-hex	whole	-	number	hex of 0	ANY: | `hex` | `hex of n` or `hex of [n, nibbles]` | Exact uppercase hex digits for any non-negative int64. Value and optional nibble count follow N5; fractions raise, integral floats convert. Width clamps to 0..16, never truncating digits. |
-http_route	pos	3	dict	http_route of ["GET", "/shape", "static", {"a": 1}]	ANY: `body` is a literal response body
-http_route	pos	3	list	http_route of ["GET", "/shape", "static", []]	ANY: `body` is a literal response body
-http_route	pos	3	number	http_route of ["GET", "/shape", "static", 0]	ANY: `body` is a literal response body
+hex	whole	-	number	hex of 0	ANY: `hex of n` or `hex of [n, nibbles]`
+http_route	pos	3	dict	http_route of ["GET", "/shape", "static", {"a": 1}]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
+http_route	pos	3	list	http_route of ["GET", "/shape", "static", []]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
+http_route	pos	3	number	http_route of ["GET", "/shape", "static", 0]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
 http_route_authed	pos	3	dict	http_route_authed of ["GET", "/shape", "static", {"a": 1}]	ANY: `http_route_authed of [method, path, body]`
 http_route_authed	pos	3	list	http_route_authed of ["GET", "/shape", "static", []]	ANY: `http_route_authed of [method, path, body]`
 http_route_authed	pos	3	number	http_route_authed of ["GET", "/shape", "static", 0]	ANY: `http_route_authed of [method, path, body]`
-is_dir	whole	-	string	is_dir of "zz_census_2509"	KIND: | `is_dir` | `is_dir of "path"` | `true` if the path names a directory, `false` for a plain file / missing path (#576 — replaces the `file_exists of "path/."` probe). Trace-recorded, so replay is deterministic. |
-is_file	whole	-	string	is_file of "zz_census_2509"	KIND: | `is_file` | `is_file of "path"` | `true` iff the path names a REGULAR file (`S_ISREG`); `false` for a directory, a device/fifo/socket or a missing path. `read_file_util` admits only regular files, so this is the probe a driver uses to match that contract (#1058). Trace-recorded, so replay is deterministic. |
-json_build	whole	-	list	json_build of []	ANY: | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`. |
-json_encode	whole	-	dict	json_encode of {"a": 1}	ANY: | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-json_encode	whole	-	list	json_encode of []	ANY: | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-json_encode	whole	-	number	json_encode of 0	ANY: | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-json_encode	whole	-	string	json_encode of "zz_census_2509"	ANY: | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
-keys	whole	-	dict	keys of {"a": 1}	KIND: | `keys` | `keys of dict` | List of keys |
+is_dir	whole	-	string	is_dir of "zz_census_2509"	KIND: `is_dir of "path"`
+is_file	whole	-	string	is_file of "zz_census_2509"	KIND: `is_file of "path"`
+json_build	whole	-	list	json_build of []	ANY: `json_build of [k1, v1, k2, v2, ...]`
+json_encode	whole	-	dict	json_encode of {"a": 1}	ANY: `json_encode of value`
+json_encode	whole	-	list	json_encode of []	ANY: `json_encode of value`
+json_encode	whole	-	number	json_encode of 0	ANY: `json_encode of value`
+json_encode	whole	-	string	json_encode of "zz_census_2509"	ANY: `json_encode of value`
+keys	whole	-	dict	keys of {"a": 1}	KIND: `keys of dict`
 leaky_relu	whole	-	list	leaky_relu of []	KIND: `leaky_relu of t`
 leaky_relu	whole	-	number	leaky_relu of 0	KIND: `leaky_relu of t`
-len	whole	-	dict	len of {"a": 1}	ANY: | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
-len	whole	-	list	len of []	ANY: | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
-len	whole	-	string	len of "zz_census_2509"	ANY: | `len` | `len of value` | Exact int length of string, list, dict, buffer or text builder |
-list_contains	pos	1	dict	list_contains of [[1, 2], {"a": 1}]	ANY: | `list_contains` | `list_contains of [list, value]` | `true` if any element structurally equals `value`, else `false` — the list counterpart of the string-only `contains`. |
-list_contains	pos	1	list	list_contains of [[1, 2], []]	ANY: | `list_contains` | `list_contains of [list, value]` | `true` if any element structurally equals `value`, else `false` — the list counterpart of the string-only `contains`. |
-list_contains	pos	1	string	list_contains of [[1, 2], "zz_census_2509"]	ANY: | `list_contains` | `list_contains of [list, value]` | `true` if any element structurally equals `value`, else `false` — the list counterpart of the string-only `contains`. |
-list_index_of	pos	1	dict	list_index_of of [[1, 2], {"a": 1}]	KIND: | `list_index_of` | `list_index_of of [list, value]` | First structural match index as an int, or int -1 when absent; exact numeric equality (N2). |
-list_index_of	pos	1	list	list_index_of of [[1, 2], []]	KIND: | `list_index_of` | `list_index_of of [list, value]` | First structural match index as an int, or int -1 when absent; exact numeric equality (N2). |
-list_index_of	pos	1	string	list_index_of of [[1, 2], "zz_census_2509"]	KIND: | `list_index_of` | `list_index_of of [list, value]` | First structural match index as an int, or int -1 when absent; exact numeric equality (N2). |
-list_insert_at	pos	0	list	list_insert_at of [[], 1, 3]	ANY: | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-list_insert_at	pos	2	dict	list_insert_at of [xs, 1, {"a": 1}]	ANY: | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-list_insert_at	pos	2	list	list_insert_at of [xs, 1, []]	ANY: | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-list_insert_at	pos	2	string	list_insert_at of [xs, 1, "zz_census_2509"]	ANY: | `list_insert_at` | `list_insert_at of [list, index, value]` | Insert value at index, shift tail up (mutates) — dual of `list_remove_at`. `index == len` appends; any other out-of-bounds index is a no-op. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-list_remove_at	pos	0	list	list_remove_at of [[], 0]	ANY: | `list_remove_at` | `list_remove_at of [list, index]` | Remove element at index, shift tail down (mutates). No-op if out of bounds. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-list_truncate	pos	0	list	list_truncate of [[], 1]	ANY: | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-log	whole	-	list	log of []	KIND: | `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); zero gives `-inf` and sets `overflow`; negative input gives NaN and sets `invalid`. `EIGS_STRICT=1` traps non-finite results (#865, #1041, R2.2). |
-log	whole	-	number	log of 0	KIND: | `log` | `log of t` | Element-wise natural log. Positive input, however small, is exact (`log of 1e-15` = -34.538…); zero gives `-inf` and sets `overflow`; negative input gives NaN and sets `invalid`. `EIGS_STRICT=1` traps non-finite results (#865, #1041, R2.2). |
+len	whole	-	dict	len of {"a": 1}	ANY: `len of value`
+len	whole	-	list	len of []	ANY: `len of value`
+len	whole	-	string	len of "zz_census_2509"	ANY: `len of value`
+list_contains	pos	1	dict	list_contains of [[1, 2], {"a": 1}]	ANY: `list_contains of [list, value]`
+list_contains	pos	1	list	list_contains of [[1, 2], []]	ANY: `list_contains of [list, value]`
+list_contains	pos	1	string	list_contains of [[1, 2], "zz_census_2509"]	ANY: `list_contains of [list, value]`
+list_index_of	pos	1	dict	list_index_of of [[1, 2], {"a": 1}]	KIND: `list_index_of of [list, value]`
+list_index_of	pos	1	list	list_index_of of [[1, 2], []]	KIND: `list_index_of of [list, value]`
+list_index_of	pos	1	string	list_index_of of [[1, 2], "zz_census_2509"]	KIND: `list_index_of of [list, value]`
+list_insert_at	pos	0	list	list_insert_at of [[], 1, 3]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	dict	list_insert_at of [xs, 1, {"a": 1}]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	list	list_insert_at of [xs, 1, []]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	string	list_insert_at of [xs, 1, "zz_census_2509"]	ANY: `list_insert_at of [list, index, value]`
+list_remove_at	pos	0	list	list_remove_at of [[], 0]	ANY: `list_remove_at of [list, index]`
+list_truncate	pos	0	list	list_truncate of [[], 1]	ANY: `list_truncate of [list, new_len]`
+log	whole	-	list	log of []	KIND: `log of t`
+log	whole	-	number	log of 0	KIND: `log of t`
 log_softmax	whole	-	list	log_softmax of []	KIND: `log_softmax of t`
 log_softmax	whole	-	number	log_softmax of 0	KIND: `log_softmax of t`
 math_flags	whole	-	dict	math_flags of {"a": 1}	IGNORED: math_flags of null
 math_flags	whole	-	list	math_flags of []	IGNORED: math_flags of null
 math_flags	whole	-	number	math_flags of 0	IGNORED: math_flags of null
 math_flags	whole	-	string	math_flags of "zz_census_2509"	IGNORED: math_flags of null
-max	whole	-	number	max of 0	KIND: | `max` | `max of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). |
-md5	whole	-	string	md5 of "zz_census_2509"	KIND: | `md5` | `md5 of string` | Return the lowercase hexadecimal MD5 digest of a string. |
-mean	whole	-	list	mean of []	KIND: | `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`mean: argument 2 is a bool, which mean does not take there`) (#1649/#2112). |
-mean	whole	-	number	mean of 0	KIND: | `mean` | `mean of t` | Non-finite buffer cells raise `value` in every `EIGS_STRICT` state (N13). Average of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`mean: argument 2 is a bool, which mean does not take there`) (#1649/#2112). |
-min	whole	-	number	min of 0	ANY: | `min` | `min of [n1, n2, ...]` | Winning numeric argument, retaining its int/float kind; compare int64 exactly, including mixed-kind comparisons. NaN propagates in any position. For zero ties, `-0.0` precedes the equivalent class `{0, 0.0}`; the first ordering-equivalent argument wins (R22-1). A non-number element raises an error naming its index and type. Empty input raises `value`, naming the builtin, in both call forms and every `EIGS_STRICT` state (R1.6b-D2). |
-mkdir	whole	-	string	mkdir of "zz_census_2509"	KIND: | `mkdir` | `mkdir of "path"` | Create directory (and parents). `true` on success; I/O failure raises `io` with the path and OS reason. Trace-recorded: replay serves the recorded result and does not re-create the directory (#585). |
-mktemp	whole	-	dict	mktemp of {"a": 1}	KIND: | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
-mktemp	whole	-	list	mktemp of []	KIND: | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
-mktemp	whole	-	number	mktemp of 0	KIND: | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
-mktemp	whole	-	string	mktemp of "zz_census_2509"	KIND: | `mktemp` | `mktemp of null` | Create a temporary file and return its path. Under `EIGS_REPLAY`, raises a catchable filesystem-boundary error before creating a file |
+max	whole	-	number	max of 0	KIND: `max of [n1, n2, ...]`
+md5	whole	-	string	md5 of "zz_census_2509"	KIND: `md5 of string`
+mean	whole	-	list	mean of []	KIND: `mean of t`
+mean	whole	-	number	mean of 0	KIND: `mean of t`
+min	whole	-	number	min of 0	ANY: `min of [n1, n2, ...]`
+mkdir	whole	-	string	mkdir of "zz_census_2509"	KIND: `mkdir of "path"`
+mktemp	whole	-	dict	mktemp of {"a": 1}	KIND: `mktemp of null`
+mktemp	whole	-	list	mktemp of []	KIND: `mktemp of null`
+mktemp	whole	-	number	mktemp of 0	KIND: `mktemp of null`
+mktemp	whole	-	string	mktemp of "zz_census_2509"	KIND: `mktemp of null`
 monotonic_ms	whole	-	dict	monotonic_ms of {"a": 1}	IGNORED: monotonic_ms of null
 monotonic_ms	whole	-	list	monotonic_ms of []	IGNORED: monotonic_ms of null
 monotonic_ms	whole	-	number	monotonic_ms of 0	IGNORED: monotonic_ms of null
@@ -136,149 +136,153 @@ monotonic_ns	whole	-	dict	monotonic_ns of {"a": 1}	IGNORED: monotonic_ns of null
 monotonic_ns	whole	-	list	monotonic_ns of []	IGNORED: monotonic_ns of null
 monotonic_ns	whole	-	number	monotonic_ns of 0	IGNORED: monotonic_ns of null
 monotonic_ns	whole	-	string	monotonic_ns of "zz_census_2509"	IGNORED: monotonic_ns of null
-multiply	pos	0	number	multiply of [0, [3, 4]]	ANY: | `multiply` | `multiply of [a, b]` | Element-wise multiplication; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-multiply	pos	1	number	multiply of [[1, 2], 0]	ANY: | `multiply` | `multiply of [a, b]` | Element-wise multiplication; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-negative	whole	-	list	negative of []	KIND: | `negative` | `negative of t` | Element-wise negation; scalar and list ints remain exact ints, raising `value` at INT64_MIN. Float and buffer elements remain floats. |
-negative	whole	-	number	negative of 0	KIND: | `negative` | `negative of t` | Element-wise negation; scalar and list ints remain exact ints, raising `value` at INT64_MIN. Float and buffer elements remain floats. |
-norm	whole	-	list	norm of []	ANY: | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
-norm	whole	-	number	norm of 0	ANY: | `norm` | `norm of t` | Euclidean norm of all elements (list, nested list or buffer; an empty buffer or list is `0.0`). A non-number element raises an error naming its flattened index and type. |
-num	whole	-	number	num of 0	KIND: | `num` | `num of number_or_text` | Numbers retain their kind; strings parse as complete numeric-literal text (N10): decimal integer text fitting int64 and wrapped hex integers give ints; a point/exponent or decimal overflow gives a float. Optional sign and surrounding ASCII whitespace are accepted. Partial/empty text, separators, 0b/0o, hex floats, inf and nan raise `value` in every `EIGS_STRICT` state. Every other kind raises `type_mismatch`. |
-num_copy	whole	-	number	num_copy of 0	KIND: | `num_copy` | `num_copy of number` | Create an independent numeric copy, preserving int/float kind and every int64 bit; a non-number raises `type_mismatch`. |
-num_type	whole	-	dict	num_type of {"a": 1}	ANY: | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
-num_type	whole	-	list	num_type of []	ANY: | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
-num_type	whole	-	number	num_type of 0	ANY: | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
-num_type	whole	-	string	num_type of "zz_census_2509"	ANY: | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
-numerical_grad	pos	1	list	numerical_grad of [loss, [], 0.001]	KIND: | `numerical_grad` | `numerical_grad of [loss_fn, params, eps]` | Central finite-difference gradient. `params` is a 1-D/2-D list **or a shaped buffer** (#973: each element is perturbed in place and restored; the gradient comes back with the parameter's shape). O(params) forward passes — the gradient-check oracle for `lib/autograd.eigs`, not a training path. |
-observe	whole	-	dict	observe of {"a": 1}	ANY: | `observe` | `observe of value` | Return `[band, where, why, previous why]`: numeric value/displacements, non-numeric entropy/dH |
-observe	whole	-	list	observe of []	ANY: | `observe` | `observe of value` | Return `[band, where, why, previous why]`: numeric value/displacements, non-numeric entropy/dH |
-observe	whole	-	number	observe of 0	ANY: | `observe` | `observe of value` | Return `[band, where, why, previous why]`: numeric value/displacements, non-numeric entropy/dH |
-observe	whole	-	string	observe of "zz_census_2509"	ANY: | `observe` | `observe of value` | Return `[band, where, why, previous why]`: numeric value/displacements, non-numeric entropy/dH |
-ord	whole	-	string	ord of "zz_census_2509"	KIND: | `ord` | `ord of s` | First byte of `s` as an int (0–255); an empty string answers int `-1`. |
-path_base	whole	-	string	path_base of "zz_census_2509"	KIND: | `path_base` | `path_base of path` | Filename portion ("a/b/c.txt" → "c.txt"). |
-path_dir	whole	-	string	path_dir of "zz_census_2509"	KIND: | `path_dir` | `path_dir of path` | Directory portion ("a/b/c" → "a/b"). |
-path_ext	whole	-	string	path_ext of "zz_census_2509"	KIND: | `path_ext` | `path_ext of path` | Extension including dot (".eigs"), or "". |
+multiply	pos	0	number	multiply of [0, [3, 4]]	ANY: `multiply of [a, b]`
+multiply	pos	1	number	multiply of [[1, 2], 0]	ANY: `multiply of [a, b]`
+negative	whole	-	list	negative of []	KIND: `negative of t`
+negative	whole	-	number	negative of 0	KIND: `negative of t`
+norm	whole	-	list	norm of []	ANY: `norm of t`
+norm	whole	-	number	norm of 0	ANY: `norm of t`
+num	whole	-	number	num of 0	KIND: `num of number_or_text`
+num_copy	whole	-	number	num_copy of 0	KIND: `num_copy of number`
+num_type	whole	-	dict	num_type of {"a": 1}	ANY: `num_type of value`
+num_type	whole	-	list	num_type of []	ANY: `num_type of value`
+num_type	whole	-	number	num_type of 0	ANY: `num_type of value`
+num_type	whole	-	string	num_type of "zz_census_2509"	ANY: `num_type of value`
+numerical_grad	pos	1	list	numerical_grad of [loss, [], 0.001]	KIND: `numerical_grad of [loss_fn, params, eps]`
+observe	whole	-	dict	observe of {"a": 1}	ANY: `observe of value`
+observe	whole	-	list	observe of []	ANY: `observe of value`
+observe	whole	-	number	observe of 0	ANY: `observe of value`
+observe	whole	-	string	observe of "zz_census_2509"	ANY: `observe of value`
+ord	whole	-	string	ord of "zz_census_2509"	KIND: `ord of s`
+path_base	whole	-	string	path_base of "zz_census_2509"	KIND: `path_base of path`
+path_dir	whole	-	string	path_dir of "zz_census_2509"	KIND: `path_dir of path`
+path_ext	whole	-	string	path_ext of "zz_census_2509"	KIND: `path_ext of path`
 pi	whole	-	dict	pi of {"a": 1}	IGNORED: pi of null
 pi	whole	-	list	pi of []	IGNORED: pi of null
 pi	whole	-	number	pi of 0	IGNORED: pi of null
 pi	whole	-	string	pi of "zz_census_2509"	IGNORED: pi of null
-pow	pos	0	number	pow of [0, [3, 4]]	ANY: | `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow gives infinity. A negative base with a fractional exponent gives NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `pow` (#971, R2.2). |
-pow	pos	1	number	pow of [[1, 2], 0]	ANY: | `pow` | `pow of [base, exp]` | Element-wise exponentiation; overflow gives infinity. A negative base with a fractional exponent gives NaN and sets `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `pow` (#971, R2.2). |
-print	whole	-	dict	print of {"a": 1}	ANY: | `print` | `print of value` | Output value to stdout with newline |
-print	whole	-	list	print of []	ANY: | `print` | `print of value` | Output value to stdout with newline |
-print	whole	-	number	print of 0	ANY: | `print` | `print of value` | Output value to stdout with newline |
-print	whole	-	string	print of "zz_census_2509"	ANY: | `print` | `print of value` | Output value to stdout with newline |
+pow	pos	0	number	pow of [0, [3, 4]]	ANY: `pow of [base, exp]`
+pow	pos	1	number	pow of [[1, 2], 0]	ANY: `pow of [base, exp]`
+print	whole	-	dict	print of {"a": 1}	ANY: `print of value`
+print	whole	-	list	print of []	ANY: `print of value`
+print	whole	-	number	print of 0	ANY: `print of value`
+print	whole	-	string	print of "zz_census_2509"	ANY: `print of value`
 random	whole	-	dict	random of {"a": 1}	IGNORED: random of null
 random	whole	-	list	random of []	IGNORED: random of null
 random	whole	-	number	random of 0	IGNORED: random of null
 random	whole	-	string	random of "zz_census_2509"	IGNORED: random of null
-random_hex	whole	-	number	random_hex of 0	ANY: | `random_hex` | `random_hex of n` | Generate n random hex characters from /dev/urandom (`""` for `n <= 0` or `n > 256`). The count follows N5, then the C int range: integral floats convert; fractions raise `value` before replay or randomness. |
-range	whole	-	list	range of []	KIND: | `range` | `range of n` or `range of [start, end]` | Generate int elements for [0..n), [start..end), or [start..end) by step. Every bound/step follows N5: integral floats convert, fractions raise `value`, then C int bounds and the existing element cap apply. |
-range	whole	-	number	range of 0	KIND: | `range` | `range of n` or `range of [start, end]` | Generate int elements for [0..n), [start..end), or [start..end) by step. Every bound/step follows N5: integral floats convert, fractions raise `value`, then C int bounds and the existing element cap apply. |
+random_hex	whole	-	number	random_hex of 0	ANY: `random_hex of n`
+range	whole	-	list	range of []	KIND: `range of n` or `range of [start, end]`
+range	whole	-	number	range of 0	KIND: `range of n` or `range of [start, end]`
 read_line	whole	-	dict	read_line of {"a": 1}	IGNORED: read_line of null
 read_line	whole	-	list	read_line of []	IGNORED: read_line of null
 read_line	whole	-	number	read_line of 0	IGNORED: read_line of null
 read_line	whole	-	string	read_line of "zz_census_2509"	IGNORED: read_line of null
-record_history	whole	-	number	record_history of 0	ANY: | `record_history` | `record_history of flag` | Enable (nonzero) / disable (0) per-assignment history recording that `prev of x` and `<kw> is x at <line>` temporal queries read (sets both value- and observer-state history). The C compiler auto-enables it when compiling a temporal query; a self-hosted compiler calls this. The flag must be a number — a non-numeric flag raises (it is not silently treated as disable). Returns the previous setting as an int; fractional numeric flags retain nonzero truthiness. |
+record_history	whole	-	number	record_history of 0	ANY: `record_history of flag`
 relu	whole	-	list	relu of []	KIND: `relu of t`
 relu	whole	-	number	relu of 0	KIND: `relu of t`
-round	whole	-	number	round of 0	KIND: | `round` | `round of x` | Round half away from zero; int inputs remain exact. A float result fitting int64 becomes an int; otherwise it remains float. |
-sandbox_run	whole	-	dict	sandbox_run of {"a": 1}	ANY: | `sandbox_run` | `sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?]` | Run an ABI-stamped descriptor, or compile a source string with the C compiler and run it, in the same sealed-root allowlist. Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`; source front-end failures have kind `parse`, while policy/budget failures have kind `sandbox`. Budgets are deterministic and cumulative for the whole call: loop back edges default to **1,000,000**, allocation/output bytes default to **256 MiB**, and executed VM instructions (including function-call entry/dispatch and callback re-entry) default to **10,000,000**. Source preparation additionally has a deterministic compile-phase sub-budget under `max_bytes`: **1 MiB + 128 bytes per source byte** is reserved as the worst-case lexer/parser/compiler/chunk working set, and a source whose reservation exceeds `max_bytes` is refused before tokenization. This is deliberately not a wall-clock deadline; native blocking calls are excluded, preserving replay determinism. Iteration, byte and work limits require exact integers (N5); fractions raise `value`. Error line numbers are ints. |
-sandbox_run	whole	-	list	sandbox_run of []	ANY: | `sandbox_run` | `sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?]` | Run an ABI-stamped descriptor, or compile a source string with the C compiler and run it, in the same sealed-root allowlist. Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`; source front-end failures have kind `parse`, while policy/budget failures have kind `sandbox`. Budgets are deterministic and cumulative for the whole call: loop back edges default to **1,000,000**, allocation/output bytes default to **256 MiB**, and executed VM instructions (including function-call entry/dispatch and callback re-entry) default to **10,000,000**. Source preparation additionally has a deterministic compile-phase sub-budget under `max_bytes`: **1 MiB + 128 bytes per source byte** is reserved as the worst-case lexer/parser/compiler/chunk working set, and a source whose reservation exceeds `max_bytes` is refused before tokenization. This is deliberately not a wall-clock deadline; native blocking calls are excluded, preserving replay determinism. Iteration, byte and work limits require exact integers (N5); fractions raise `value`. Error line numbers are ints. |
-sandbox_run	whole	-	number	sandbox_run of 0	ANY: | `sandbox_run` | `sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?]` | Run an ABI-stamped descriptor, or compile a source string with the C compiler and run it, in the same sealed-root allowlist. Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`; source front-end failures have kind `parse`, while policy/budget failures have kind `sandbox`. Budgets are deterministic and cumulative for the whole call: loop back edges default to **1,000,000**, allocation/output bytes default to **256 MiB**, and executed VM instructions (including function-call entry/dispatch and callback re-entry) default to **10,000,000**. Source preparation additionally has a deterministic compile-phase sub-budget under `max_bytes`: **1 MiB + 128 bytes per source byte** is reserved as the worst-case lexer/parser/compiler/chunk working set, and a source whose reservation exceeds `max_bytes` is refused before tokenization. This is deliberately not a wall-clock deadline; native blocking calls are excluded, preserving replay determinism. Iteration, byte and work limits require exact integers (N5); fractions raise `value`. Error line numbers are ints. |
-sandbox_run	whole	-	string	sandbox_run of "zz_census_2509"	ANY: | `sandbox_run` | `sandbox_run of [descriptor_or_source, max_iterations?, max_bytes?, max_work?]` | Run an ABI-stamped descriptor, or compile a source string with the C compiler and run it, in the same sealed-root allowlist. Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`; source front-end failures have kind `parse`, while policy/budget failures have kind `sandbox`. Budgets are deterministic and cumulative for the whole call: loop back edges default to **1,000,000**, allocation/output bytes default to **256 MiB**, and executed VM instructions (including function-call entry/dispatch and callback re-entry) default to **10,000,000**. Source preparation additionally has a deterministic compile-phase sub-budget under `max_bytes`: **1 MiB + 128 bytes per source byte** is reserved as the worst-case lexer/parser/compiler/chunk working set, and a source whose reservation exceeds `max_bytes` is refused before tokenization. This is deliberately not a wall-clock deadline; native blocking calls are excluded, preserving replay determinism. Iteration, byte and work limits require exact integers (N5); fractions raise `value`. Error line numbers are ints. |
-scan_int_tokens	whole	-	string	scan_int_tokens of "zz_census_2509"	ANY: | `scan_int_tokens` | `scan_int_tokens of string` or `scan_int_tokens of [string, string comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
-scan_ints	whole	-	string	scan_ints of "zz_census_2509"	KIND: | `scan_ints` | `scan_ints of string` or `scan_ints of [string, string comment_marker]` | Whitespace-delimited signed integer tokens of `s` as exact int64 values; tokens that are not integers are skipped, and so is a line whose first non-whitespace character is the first byte of a non-empty `comment_marker`. An integer token outside int64 raises `value` naming it. |
-scatter_add	pos	2	number	scatter_add of [a, [1], 0]	ANY: | `scatter_add` | `scatter_add of [dst, indices, values]` | N5 exact indices (fractions raise `value`). The gradient of `gather`, accumulated **in place** into the buffer `dst` (returned). A shaped `[rows × cols]` dst does `dst[i][indices[i]] += values[i]` per row; a 1-D dst does the flat `dst[indices[j]] += values[j]`. `values` is a buffer, a list of numbers, or one number broadcast to every index; repeats accumulate. Lengths must line up exactly — a non-scalar `values` shorter or longer than `indices`, or a per-row `dst` whose row count differs from the index count, raises `value` rather than truncating (a dropped gradient entry is a silent wrong number). Every index is validated **before** anything is written, so a raise (`index_range`, `value`, or `type_mismatch` for a non-buffer dst / non-numeric index or value) leaves `dst` untouched (#973) |
-seed_random	whole	-	number	seed_random of 0	ANY: | `seed_random` | `seed_random of n` | Seed the RNG from an exact int64 (N5); fractional floats raise. The existing srand48 generator uses the low 32 seed bits. `random` is not cryptographic. The `eigenscript` CLI reads `EIGS_SEED_RANDOM=<integer>` at startup and seeds the shared stream with it before the program runs, which makes it predictable for the whole process (for differential testing and reproduction); an unset or empty value does nothing. A nonempty value is accepted when `strtol` parses the entire value as a representable decimal `long`; leading whitespace and a sign (such as `+7`) are accepted, but trailing characters and out-of-range values are startup errors (exit 2). This environment variable is CLI-only: embedders call `seed_random`. Under `EIGS_TRACE` seeded draws are recorded; under `EIGS_REPLAY` recorded values are served and this knob is irrelevant. |
-send	pos	1	dict	send of [ch, {"a": 1}]	ANY: | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-send	pos	1	list	send of [ch, []]	ANY: | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-send	pos	1	string	send of [ch, "zz_census_2509"]	ANY: | `send` | `send of [channel, value]` | Send a value to the channel. Blocks if full. Sending to a **closed** channel raises a catchable `value` error (rather than silently dropping the value); `recv` on a closed empty channel returns `null` (EOF-like). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-set_exit_code	whole	-	number	set_exit_code of 0	ANY: | `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. Integral floats are accepted; fractions raise `value` (N5). |
-sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ANY: | `sgd_update` | `sgd_update of [params, grad, lr]` | In-place SGD: params -= lr * grad. A list cell of `params` or `grad` that is not finite raises `value` before any update. Under `EIGS_STRICT=1`, when cells alias (an index named twice, one row object twice, a `grad` row that is a `params` row), a result that is not finite can raise after cells were written. |
-sha256	whole	-	string	sha256 of "zz_census_2509"	KIND: | `sha256` | `sha256 of string` | Return the lowercase hexadecimal SHA-256 digest of a string. |
-shape	whole	-	list	shape of []	ANY: | `shape` | `shape of t` | Return dimensions as a list of exact integers |
-shape	whole	-	number	shape of 0	ANY: | `shape` | `shape of t` | Return dimensions as a list of exact integers |
+round	whole	-	number	round of 0	KIND: `round of x`
+sandbox_run	pos	0	dict	sandbox_run of [{"a": 1}, 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	list	sandbox_run of [[], 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	number	sandbox_run of [0, 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	string	sandbox_run of ["zz_census_2509", 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	dict	sandbox_run of {"a": 1}	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	list	sandbox_run of []	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	number	sandbox_run of 0	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	string	sandbox_run of "zz_census_2509"	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+scan_int_tokens	whole	-	string	scan_int_tokens of "zz_census_2509"	ANY: `scan_int_tokens of string` or `scan_int_tokens of [string, string comment_marker]`
+scan_ints	whole	-	string	scan_ints of "zz_census_2509"	KIND: `scan_ints of string` or `scan_ints of [string, string comment_marker]`
+scatter_add	pos	2	number	scatter_add of [a, [1], 0]	ANY: `scatter_add of [dst, indices, values]`
+seed_random	whole	-	number	seed_random of 0	ANY: `seed_random of n`
+send	pos	1	dict	send of [ch, {"a": 1}]	ANY: `send of [channel, value]`
+send	pos	1	list	send of [ch, []]	ANY: `send of [channel, value]`
+send	pos	1	string	send of [ch, "zz_census_2509"]	ANY: `send of [channel, value]`
+set_exit_code	whole	-	number	set_exit_code of 0	ANY: `set_exit_code of N`
+sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ANY: `sgd_update of [params, grad, lr]`
+sha256	whole	-	string	sha256 of "zz_census_2509"	KIND: `sha256 of string`
+shape	whole	-	list	shape of []	ANY: `shape of t`
+shape	whole	-	number	shape of 0	ANY: `shape of t`
 shared_set	pos	1	dict	shared_set of ["shape-key", {"a": 1}]	ANY: Store `value` (JSON-encoded).
 shared_set	pos	1	list	shared_set of ["shape-key", []]	ANY: Store `value` (JSON-encoded).
 shared_set	pos	1	string	shared_set of ["shape-key", "zz_census_2509"]	ANY: Store `value` (JSON-encoded).
-sin	whole	-	number	sin of 0	KIND: | `sin` | `sin of x` | Sine (radians). Numeric inputs convert to float; numeric results are floats. |
+sin	whole	-	number	sin of 0	KIND: `sin of x`
 softmax	whole	-	list	softmax of []	KIND: `softmax of t`
 softmax	whole	-	number	softmax of 0	KIND: `softmax of t`
-sort	whole	-	list	sort of []	KIND: | `sort` | `sort of list` | Stably sort an all-number or all-string list in-place (numeric / lexicographic); equal elements keep their input order on every platform. Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. |
+sort	whole	-	list	sort of []	KIND: `sort of list`
 split	whole	-	string	split of "zz_census_2509"	KIND: `split of s`
-sqrt	whole	-	list	sqrt of []	ANY: | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns NaN and sets `math_flags.invalid` (`EIGS_STRICT=1` raises `value`). |
-sqrt	whole	-	number	sqrt of 0	ANY: | `sqrt` | `sqrt of t` | Element-wise square root; negative input returns NaN and sets `math_flags.invalid` (`EIGS_STRICT=1` raises `value`). |
-state_at	whole	-	number	state_at of 0	ANY: | `state_at` | `state_at of line` | Dict of every tracked binding's value at or before `line`. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-store_delete	pos	2	number	store_delete of [shape_store, "items", 0]	KIND: | `store_delete` | `store_delete of [handle, collection, key]` | Delete the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. The documented operation can report `value`. |
-store_delete	pos	2	string	store_delete of [shape_store, "items", "zz_census_2509"]	KIND: | `store_delete` | `store_delete of [handle, collection, key]` | Delete the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. The documented operation can report `value`. |
-store_get	pos	2	number	store_get of [shape_store, "items", 0]	KIND: | `store_get` | `store_get of [handle, collection, key]` | Return the record dict, or `null` for an absent key. Numeric keys convert exactly to int64 and use their full decimal digits. The documented operation can report `value`. |
-store_get	pos	2	string	store_get of [shape_store, "items", "zz_census_2509"]	KIND: | `store_get` | `store_get of [handle, collection, key]` | Return the record dict, or `null` for an absent key. Numeric keys convert exactly to int64 and use their full decimal digits. The documented operation can report `value`. |
-store_open	whole	-	string	store_open of "zz_census_2509"	KIND: | `store_open` | `store_open of path` | Open/create a store; return a handle dict with integer id/generation fields. |
-store_update	pos	2	number	store_update of [shape_store, "items", 0, {"value": 2}]	KIND: | `store_update` | `store_update of [handle, collection, key, record]` | Replace the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. An oversized or non-dict replacement leaves the old record intact. The documented operation can report `value`. |
-store_update	pos	2	string	store_update of [shape_store, "items", "zz_census_2509", {"value": 2}]	KIND: | `store_update` | `store_update of [handle, collection, key, record]` | Replace the record and return `true`, or `false` when absent. Numeric keys follow the same rule as `store_get`. An oversized or non-dict replacement leaves the old record intact. The documented operation can report `value`. |
-str	whole	-	dict	str of {"a": 1}	ANY: | `str` | `str of value` | Convert to string representation |
-str	whole	-	list	str of []	ANY: | `str` | `str of value` | Convert to string representation |
-str	whole	-	number	str of 0	ANY: | `str` | `str of value` | Convert to string representation |
-str	whole	-	string	str of "zz_census_2509"	ANY: | `str` | `str of value` | Convert to string representation |
-str_from_bytes	whole	-	list	str_from_bytes of []	ANY: | `str_from_bytes` | `str_from_bytes of <list\|buffer>` | Input bytes follow N5, then 0..255; fractions/out-of-range bytes raise `value`. Build a string from raw byte values (0–255) — the list form of `chr` (`chr of n` == `str_from_bytes of ([n])` for 1–255), inverting an `ord`-over-bytes loop. Strings are NUL-terminated: a numeric byte that converts to `0` ends conversion, and later elements are not inspected — keep NUL-bearing binary in a buffer. |
-str_lower	whole	-	string	str_lower of "zz_census_2509"	KIND: | `str_lower` | `str_lower of s` | Convert to lowercase. |
-str_upper	whole	-	string	str_upper of "zz_census_2509"	KIND: | `str_upper` | `str_upper of s` | Convert to uppercase. |
-stream_close	whole	-	dict	stream_close of {"a": 1}	KIND: | `stream_close` | `stream_close of null` | Close the stream. `true` on success, `false` on failure |
-stream_close	whole	-	list	stream_close of []	KIND: | `stream_close` | `stream_close of null` | Close the stream. `true` on success, `false` on failure |
-stream_close	whole	-	number	stream_close of 0	KIND: | `stream_close` | `stream_close of null` | Close the stream. `true` on success, `false` on failure |
-stream_close	whole	-	string	stream_close of "zz_census_2509"	KIND: | `stream_close` | `stream_close of null` | Close the stream. `true` on success, `false` on failure |
-stream_write	whole	-	number	stream_write of 0	ANY: | `stream_write` | `stream_write of value` | Append one float64 to the open stream. `true` on success, `false` on failure. Numeric inputs convert to float storage (Q2). |
-subtract	pos	0	number	subtract of [0, [3, 4]]	ANY: | `subtract` | `subtract of [a, b]` | Element-wise subtraction; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-subtract	pos	1	number	subtract of [[1, 2], 0]	ANY: | `subtract` | `subtract of [a, b]` | Element-wise subtraction; two int scalar or list elements produce an exact int, raising `value` on int64 overflow. Buffer arithmetic stays float. |
-sum	whole	-	list	sum of []	ANY: | `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`sum: argument 2 is a bool, which sum does not take there`) (#1649/#2112). |
-sum	whole	-	number	sum of 0	ANY: | `sum` | `sum of t` | Sum of all elements (list, nested list or buffer). An all-int input returns an exact int and raises `value` on int64 overflow. A float anywhere in a nested input makes the reduction float from the start; buffers produce floats and refuse non-finite elements with `value` in every `EIGS_STRICT` state (N13). Under `EIGS_STRICT=1` the first NaN sets `math_flags.invalid` and raises "not a number" before reading later elements (#1417). An empty list returns int `0`. A non-number element raises an error naming its zero-based flattened index and type, in either call form; a bool directly in the top-level list raises naming its 1-based position instead (`sum: argument 2 is a bool, which sum does not take there`) (#1649/#2112). |
-tan	whole	-	number	tan of 0	KIND: | `tan` | `tan of x` | Tangent (radians). Numeric inputs convert to float; numeric results are floats. |
-task_alive	whole	-	number	task_alive of 0	ANY: | `task_alive` | `task_alive of id` | Returns `true` while the task is runnable or suspended, `false` once it has finished (or for an unknown id). Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_detach	whole	-	number	task_detach of 0	ANY: | `task_detach` | `task_detach of id` | Mark task `id` **fire-and-forget** (the pthread-detach precedent, #530): it is reaped the moment it finishes — or immediately if already finished — releasing its handle slot for reuse, so task-per-message workloads are bounded by *concurrent* tasks, not lifetime spawns. No join can ever see a detached task's failure, so its uncaught death prints its trace and **stops the program** (exit 1) at main's next scheduling point; detaching a task that already died of an uncaught error nothing joined stops the program at this call instead of discarding the error. Neither stop is catchable (#1736, [CONCURRENCY.md](CONCURRENCY.md#when-a-task-dies-of-an-uncaught-error-1736)). A reaped id reads as unknown afterwards (`task_join` null, `task_alive` `false`). A task may detach itself: `task_detach of (task_self of null)`. Returns 1, or 0 for main/unknown. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_join	whole	-	number	task_join of 0	ANY: | `task_join` | `task_join of id` | Block until task `id` finishes, then return its deep-copied result — or re-raise its uncaught error (as the same `{kind, message, line}` it died with). Joining an already-finished task returns immediately; an unknown id (or self) returns null. All tasks blocked with none runnable is a `deadlock` error, not a hang — catchable by a `try`/`catch` around the join on the main task (`e.kind == "deadlock"`); terminal only if unhandled. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_kill	whole	-	number	task_kill of 0	ANY: | `task_kill` | `task_kill of id` | Tear down task `id`: drop its mailbox, mark it dead, wake any joiner with an `interrupt` error. Returns `true` if killed, `false` for a finished/unknown/self target. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
+sqrt	whole	-	list	sqrt of []	ANY: `sqrt of t`
+sqrt	whole	-	number	sqrt of 0	ANY: `sqrt of t`
+state_at	whole	-	number	state_at of 0	ANY: `state_at of line`
+store_delete	pos	2	number	store_delete of [shape_store, "items", 0]	KIND: `store_delete of [handle, collection, key]`
+store_delete	pos	2	string	store_delete of [shape_store, "items", "zz_census_2509"]	KIND: `store_delete of [handle, collection, key]`
+store_get	pos	2	number	store_get of [shape_store, "items", 0]	KIND: `store_get of [handle, collection, key]`
+store_get	pos	2	string	store_get of [shape_store, "items", "zz_census_2509"]	KIND: `store_get of [handle, collection, key]`
+store_open	whole	-	string	store_open of "zz_census_2509"	KIND: `store_open of path`
+store_update	pos	2	number	store_update of [shape_store, "items", 0, {"value": 2}]	KIND: `store_update of [handle, collection, key, record]`
+store_update	pos	2	string	store_update of [shape_store, "items", "zz_census_2509", {"value": 2}]	KIND: `store_update of [handle, collection, key, record]`
+str	whole	-	dict	str of {"a": 1}	ANY: `str of value`
+str	whole	-	list	str of []	ANY: `str of value`
+str	whole	-	number	str of 0	ANY: `str of value`
+str	whole	-	string	str of "zz_census_2509"	ANY: `str of value`
+str_from_bytes	whole	-	list	str_from_bytes of []	ANY: `str_from_bytes of <list\|buffer>`
+str_lower	whole	-	string	str_lower of "zz_census_2509"	KIND: `str_lower of s`
+str_upper	whole	-	string	str_upper of "zz_census_2509"	KIND: `str_upper of s`
+stream_close	whole	-	dict	stream_close of {"a": 1}	KIND: `stream_close of null`
+stream_close	whole	-	list	stream_close of []	KIND: `stream_close of null`
+stream_close	whole	-	number	stream_close of 0	KIND: `stream_close of null`
+stream_close	whole	-	string	stream_close of "zz_census_2509"	KIND: `stream_close of null`
+stream_write	whole	-	number	stream_write of 0	ANY: `stream_write of value`
+subtract	pos	0	number	subtract of [0, [3, 4]]	ANY: `subtract of [a, b]`
+subtract	pos	1	number	subtract of [[1, 2], 0]	ANY: `subtract of [a, b]`
+sum	whole	-	list	sum of []	ANY: `sum of t`
+sum	whole	-	number	sum of 0	ANY: `sum of t`
+tan	whole	-	number	tan of 0	KIND: `tan of x`
+task_alive	whole	-	number	task_alive of 0	ANY: `task_alive of id`
+task_detach	whole	-	number	task_detach of 0	ANY: `task_detach of id`
+task_join	whole	-	number	task_join of 0	ANY: `task_join of id`
+task_kill	whole	-	number	task_kill of 0	ANY: `task_kill of id`
 task_recv	whole	-	dict	task_recv of {"a": 1}	IGNORED: task_recv of null
 task_recv	whole	-	list	task_recv of []	IGNORED: task_recv of null
 task_recv	whole	-	number	task_recv of 0	IGNORED: task_recv of null
 task_recv	whole	-	string	task_recv of "zz_census_2509"	IGNORED: task_recv of null
-task_sched_seed	whole	-	number	task_sched_seed of 0	KIND: | `task_sched_seed` | `task_sched_seed of n` | Install a scheduling **seed**: the scheduler switches from FIFO round-robin to picking the next ready task from a seeded, platform-independent PRNG. Same seed ⇒ same interleaving (byte-identical run + replay, zero tape nondeterminism); a different seed explores a different ordering — the lever a deterministic simulation tester uses to search interleavings. No seed ⇒ unchanged FIFO. Typically called once at program start. Returns null. |
+task_sched_seed	whole	-	number	task_sched_seed of 0	KIND: `task_sched_seed of n`
 task_self	whole	-	dict	task_self of {"a": 1}	IGNORED: task_self of null
 task_self	whole	-	list	task_self of []	IGNORED: task_self of null
 task_self	whole	-	number	task_self of 0	IGNORED: task_self of null
 task_self	whole	-	string	task_self of "zz_census_2509"	IGNORED: task_self of null
-task_send	pos	1	dict	task_send of [0, {"a": 1}]	ANY: | `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns `true` if delivered, `false` if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_send	pos	1	list	task_send of [0, []]	ANY: | `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns `true` if delivered, `false` if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_send	pos	1	string	task_send of [0, "zz_census_2509"]	ANY: | `task_send` | `task_send of [id, value]` | Append a deep-copied message to task `id`'s unbounded FIFO mailbox, waking it if it waits in `task_recv`. Returns `true` if delivered, `false` if `id` is finished/unknown (a silent drop — send-to-dead is never an error). Never blocks. Handle ids and generations require exact integers (integral floats are accepted); fractions raise `value` before effects (N5). |
-task_sleep	whole	-	number	task_sleep of 0	KIND: | `task_sleep` | `task_sleep of ticks` | Suspend this task until the **virtual clock** advances by `ticks`. The clock is logical (discrete-event): it only jumps forward — to the earliest sleeper — when nothing else is runnable, so sleeping stays deterministic, not wall-clock. A negative sleep is treated as 0. A no-op when no task has been spawned. |
+task_send	pos	1	dict	task_send of [0, {"a": 1}]	ANY: `task_send of [id, value]`
+task_send	pos	1	list	task_send of [0, []]	ANY: `task_send of [id, value]`
+task_send	pos	1	string	task_send of [0, "zz_census_2509"]	ANY: `task_send of [id, value]`
+task_sleep	whole	-	number	task_sleep of 0	KIND: `task_sleep of ticks`
 task_yield	whole	-	dict	task_yield of {"a": 1}	IGNORED: task_yield of null
 task_yield	whole	-	list	task_yield of []	IGNORED: task_yield of null
 task_yield	whole	-	number	task_yield of 0	IGNORED: task_yield of null
 task_yield	whole	-	string	task_yield of "zz_census_2509"	IGNORED: task_yield of null
-tensor_load	whole	-	string	tensor_load of "zz_census_2509"	ANY: | `tensor_load` | `tensor_load of "path"` | Load a tensor of at most 10,000,000 elements from a binary file. An over-cap header never returns `null`: it raises a catchable `limit` error naming the path, offending dimension, and cap, including under `EIGS_STRICT=0`. `NaN` bytes in the file remain NaN and set `math_flags.invalid`; `EIGS_STRICT=1` raises a `value` error naming `tensor_load` (#971, R2.2). |
-text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]	ANY: | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
-text_builder_append	pos	1	list	text_builder_append of [tb, []]	ANY: | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
-text_builder_append	pos	1	number	text_builder_append of [tb, 0]	ANY: | `text_builder_append` | `text_builder_append of [builder, value]` | Append one value as text |
-text_builder_append_line	pos	1	dict	text_builder_append_line of [tb, {"a": 1}]	ANY: | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
-text_builder_append_line	pos	1	list	text_builder_append_line of [tb, []]	ANY: | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
-text_builder_append_line	pos	1	number	text_builder_append_line of [tb, 0]	ANY: | `text_builder_append_line` | `text_builder_append_line of [builder, value]` | Append one value and a newline |
+tensor_load	whole	-	string	tensor_load of "zz_census_2509"	ANY: `tensor_load of "path"`
+text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]	ANY: `text_builder_append of [builder, value]`
+text_builder_append	pos	1	list	text_builder_append of [tb, []]	ANY: `text_builder_append of [builder, value]`
+text_builder_append	pos	1	number	text_builder_append of [tb, 0]	ANY: `text_builder_append of [builder, value]`
+text_builder_append_line	pos	1	dict	text_builder_append_line of [tb, {"a": 1}]	ANY: `text_builder_append_line of [builder, value]`
+text_builder_append_line	pos	1	list	text_builder_append_line of [tb, []]	ANY: `text_builder_append_line of [builder, value]`
+text_builder_append_line	pos	1	number	text_builder_append_line of [tb, 0]	ANY: `text_builder_append_line of [builder, value]`
 text_builder_new	whole	-	dict	text_builder_new of {"a": 1}	IGNORED: text_builder_new of null
 text_builder_new	whole	-	list	text_builder_new of []	IGNORED: text_builder_new of null
 text_builder_new	whole	-	number	text_builder_new of 0	IGNORED: text_builder_new of null
 text_builder_new	whole	-	string	text_builder_new of "zz_census_2509"	IGNORED: text_builder_new of null
-token_name	whole	-	number	token_name of 0	ANY: | `token_name` | `token_name of id` | Return token type name by ID (`"?"` for an unknown id). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-trim	whole	-	string	trim of "zz_census_2509"	KIND: | `trim` | `trim of s` | Strip leading/trailing whitespace. |
-try_parse	whole	-	string	try_parse of "zz_census_2509"	KIND: | `try_parse` | `try_parse of code_string` | `true` if string is valid EigenScript syntax, `false` otherwise. |
-type	whole	-	dict	type of {"a": 1}	ANY: | `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
-type	whole	-	list	type of []	ANY: | `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
-type	whole	-	number	type of 0	ANY: | `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
-type	whole	-	string	type of "zz_census_2509"	ANY: | `type` | `type of value` | Return type name: "num", "bool", "str", "list", "dict", "buffer", "text_builder", "fn", "builtin", "null" (the null value; the type label matches the literal) |
-u64_to_string	whole	-	number	u64_to_string of 0	KIND: | `u64_to_string` | `u64_to_string of x` | N9: N5 int64 bit pattern to unsigned decimal string (Rust std). |
-usleep	whole	-	number	usleep of 0	ANY: | `usleep` | `usleep of microseconds` | Pause execution. The continuous duration rounds half away from zero; a result outside the C int range raises `value` (Q7 magnitude). Nonpositive durations return immediately. |
-values	whole	-	dict	values of {"a": 1}	ANY: | `values` | `values of dict` | List of values |
-write	whole	-	dict	write of {"a": 1}	ANY: | `write` | `write of value` | Write to stdout without newline |
-write	whole	-	list	write of []	ANY: | `write` | `write of value` | Write to stdout without newline |
-write	whole	-	number	write of 0	ANY: | `write` | `write of value` | Write to stdout without newline |
-write	whole	-	string	write of "zz_census_2509"	ANY: | `write` | `write of value` | Write to stdout without newline |
-zeros	whole	-	number	zeros of 0	KIND: | `zeros` | `zeros of n` or `zeros of [rows, cols]` | `zeros of n` returns a **buffer** of `n` zeros (`type of` is `buffer`, `print of` shows `<buffer:n>`); `zeros of [rows, cols]` returns the nested-list 2-D tensor. Breaking change in #1093 — `zeros of n` used to return a list; write `[0 for i in range of n]` if you need that. Both spellings cap at 10,000,000 elements and charge the sandbox budget |
-zeros_like	whole	-	list	zeros_like of []	KIND: | `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0`. |
-zeros_like	whole	-	number	zeros_like of 0	KIND: | `zeros_like` | `zeros_like of t` | Zero tensor matching `t`'s shape **and container**: a buffer gives a buffer (shape preserved), a list gives a list, a number gives `0.0`. |
+token_name	whole	-	number	token_name of 0	ANY: `token_name of id`
+trim	whole	-	string	trim of "zz_census_2509"	KIND: `trim of s`
+try_parse	whole	-	string	try_parse of "zz_census_2509"	KIND: `try_parse of code_string`
+type	whole	-	dict	type of {"a": 1}	ANY: `type of value`
+type	whole	-	list	type of []	ANY: `type of value`
+type	whole	-	number	type of 0	ANY: `type of value`
+type	whole	-	string	type of "zz_census_2509"	ANY: `type of value`
+u64_to_string	whole	-	number	u64_to_string of 0	KIND: `u64_to_string of x`
+usleep	whole	-	number	usleep of 0	ANY: `usleep of microseconds`
+values	whole	-	dict	values of {"a": 1}	ANY: `values of dict`
+write	whole	-	dict	write of {"a": 1}	ANY: `write of value`
+write	whole	-	list	write of []	ANY: `write of value`
+write	whole	-	number	write of 0	ANY: `write of value`
+write	whole	-	string	write of "zz_census_2509"	ANY: `write of value`
+zeros	whole	-	number	zeros of 0	KIND: `zeros of n` or `zeros of [rows, cols]`
+zeros_like	whole	-	list	zeros_like of []	KIND: `zeros_like of t`
+zeros_like	whole	-	number	zeros_like of 0	KIND: `zeros_like of t`

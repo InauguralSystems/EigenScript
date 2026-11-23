@@ -201,3 +201,5 @@
 245|usleep|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
 246|values|core|plain|quiet|rc=0 [] [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
 247|zeros|core|plain|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
+248|http_static|http|server|quiet|rc=0 null [different on purpose: #2509, a wrong-typed argument raises type_mismatch in every state; v0.48.0 answered quietly or took a bare string]
+249|sandbox_run|core|plain|quiet|rc=0 {"ok": true, "result": 1} [different on purpose: #2509, a wrong-typed limit raises type_mismatch in every state; v0.48.0 used the default silently]

@@ -2271,6 +2271,15 @@ Value* builtin_sgd_update(Value *arg) {
  * Computes numerical gradient only for the specified rows of a 2D matrix.
  * row_indices is a 1D list of integer row indices (pre-deduplicated by caller).
  * Returns a gradient matrix of the same shape, with zero rows for untouched rows. */
+/* #2509: a matrix argument is a non-empty list whose EVERY row is a list.
+ * Testing row 0 alone let a number in a later row through silently. */
+static int tensor_rows_all_lists(Value *m) {
+    if (!m || m->type != VAL_LIST || m->data.list.count == 0) return 0;
+    for (int i = 0; i < m->data.list.count; i++)
+        if (list_elem_type(m, i) != VAL_LIST) return 0;
+    return 1;
+}
+
 Value* builtin_numerical_grad_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "numerical_grad_rows");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
@@ -2293,7 +2302,7 @@ Value* builtin_numerical_grad_rows(Value *arg) {
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_rows") || !tensor_cells_numeric(row_indices, "numerical_grad_rows")) return make_null();
     ARG_GUARD(matrix->type == VAL_LIST &&
-              (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST),
+              !tensor_rows_all_lists(matrix),
               "numerical_grad_rows", "a matrix with list rows", make_null());
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
@@ -2420,8 +2429,8 @@ Value* builtin_sgd_update_rows(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_rows") || !tensor_cells_numeric(grad, "sgd_update_rows") || !tensor_cells_numeric(row_indices, "sgd_update_rows")) return make_null();
-    ARG_GUARD((matrix->type == VAL_LIST && (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST)) ||
-              (grad->type == VAL_LIST && (grad->data.list.count == 0 || list_elem_type(grad, 0) != VAL_LIST)),
+    ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
+              (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_rows", "parameter and gradient matrices with list rows", make_null());
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
@@ -2503,7 +2512,7 @@ Value* builtin_numerical_grad_cols(Value *arg) {
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "numerical_grad_cols") || !tensor_cells_numeric(col_indices, "numerical_grad_cols")) return make_null();
     ARG_GUARD(matrix->type == VAL_LIST &&
-              (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST),
+              !tensor_rows_all_lists(matrix),
               "numerical_grad_cols", "a matrix with list rows", make_null());
     if (eps <= 0) eps = 0.001;
     int loss_valid = 1;
@@ -2633,8 +2642,8 @@ Value* builtin_sgd_update_cols(Value *arg) {
     eigs_slot_opt_float(list_slot(arg, 3), &lr, __func__);
     if (g_has_error) return make_null();
     if (!tensor_cells_numeric(matrix, "sgd_update_cols") || !tensor_cells_numeric(grad, "sgd_update_cols") || !tensor_cells_numeric(col_indices, "sgd_update_cols")) return make_null();
-    ARG_GUARD((matrix->type == VAL_LIST && (matrix->data.list.count == 0 || list_elem_type(matrix, 0) != VAL_LIST)) ||
-              (grad->type == VAL_LIST && (grad->data.list.count == 0 || list_elem_type(grad, 0) != VAL_LIST)),
+    ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
+              (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_cols", "parameter and gradient matrices with list rows", make_null());
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */

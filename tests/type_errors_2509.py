@@ -11,7 +11,17 @@ def kind_of(s):
 def program(setup,expr): return setup+'\ntry:\n    answer is '+expr+'\n    print of ("ANSWER:" + (str of answer))\ncatch e:\n    if ((type of e) == "dict") and (has_key of [e, "kind"]):\n        print of ("ERR:" + e.kind)\n        print of ("MSG:" + e.message)\n    else:\n        print of "THROWN"\nprint of "'+MARK+'"\n'
 def run(binary,src,mode):
  with tempfile.TemporaryDirectory() as d:
-  p=Path(d)/'p.eigs';p.write_text(src.replace('@TMP@',d));env={k:v for k,v in os.environ.items() if not k.startswith('EIGS_')};env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',DISPLAY='')
+  # Placeholders of tests/strict_shape_cases.json: @TMP@ is the probe's folder, @WAV@ a
+  # tiny WAV written there, @DESCRIPTOR@ a source string (sandbox_run's documented
+  # [source, ...] form; each limit position is tested the same either way). A placeholder
+  # left over means the probe never reached its builtin: UNEXPANDED, never a pass.
+  if '@WAV@' in src:
+   import wave
+   with wave.open(str(Path(d)/'sample.wav'),'wb') as w:
+    w.setnchannels(1);w.setsampwidth(2);w.setframerate(44100);w.writeframes(b'\0\0'*32)
+  src=src.replace('@TMP@',d).replace('@WAV@',str(Path(d)/'sample.wav')).replace('@DESCRIPTOR@','"return 42"')
+  if re.search(r'@[A-Z_]+@',src):return 'UNEXPANDED'
+  p=Path(d)/'p.eigs';p.write_text(src);env={k:v for k,v in os.environ.items() if not k.startswith('EIGS_')};env.update(SDL_VIDEODRIVER='dummy',SDL_AUDIODRIVER='dummy',DISPLAY='')
   if mode is not None:env['EIGS_STRICT']=mode
   try:r=subprocess.run([binary,str(p)],cwd=d,env=env,input='',capture_output=True,text=True,timeout=5)
   except subprocess.TimeoutExpired:return 'TIMEOUT'
@@ -45,12 +55,13 @@ def main():
      q=list(c['args']);q[i]=w;jobs.append((c['name'],'pos',str(i),k,c.get('setup',''),c['name']+' of '+(q[0] if len(q)==1 else '['+', '.join(q)+']')))
  def one(j):return j,[run(b,program(j[4],j[5]),m) for m in MODES]
  with ThreadPoolExecutor(1) as ex: rr=list(ex.map(one,jobs))
- # A case whose fixture needs the running environment (an audio device, a loopback
- # server) may be unreachable on a box without it. Such a probe, unreached in all
- # three states, is SKIPPED and counted; a build flag (gfx_compiled) is not a fixture.
- fixture_names={c['name'] for c in json.loads((ROOT/'tests/strict_shape_cases.json').read_text())
-                if any(not r.endswith('_compiled') for r in c.get('requirements',[]))}
- skipped={tuple(j[:4])+(j[5],) for j,v in rr if j[1]=='pos' and j[0] in fixture_names and all(x=='UNREACHED' for x in v)}
+ # A probe that never reached its builtin (UNREACHED: setup failed; UNEXPANDED: a
+ # placeholder the census cannot fill) is SKIPPED only for a builtin named, with its
+ # reason, in tests/type_errors_2509_fixture_skip.tsv. Anywhere else it fails the gate.
+ fixture_skip={l.split('\t')[0] for l in (ROOT/'tests/type_errors_2509_fixture_skip.tsv').read_text().splitlines()[1:] if l}
+ never={tuple(j[:4])+(j[5],) for j,v in rr if all(x in ('UNREACHED','UNEXPANDED') for x in v)}
+ skipped={k for k in never if k[0] in fixture_skip}
+ unreached_bad=sorted(never-skipped)
  required=[]
  for line in (ROOT/'tests/type_errors_2509_required.tsv').read_text().splitlines()[1:]:
   name,setup,expr=line.split('\t'); setup=setup.replace('\\n','\n')
@@ -70,12 +81,22 @@ def main():
  allowed=ROOT/'tests/type_errors_2509_allowed.tsv'
  expected={}; docs=(ROOT/'docs/BUILTINS.md').read_text()
  doc_rows={m.group(1):m.group(0) for m in re.finditer(r'^\| `([^`]+)` \|.*$',docs,re.M)}
+ # A reason quotes a recognised part of the builtin's own row: its whole signature cell,
+ # one backticked form of that cell, or one whole sentence of its description. A
+ # fragment such as '| `usleep` |' or a few words out of a sentence is not a reason.
+ def doc_fragments(row):
+  cells=[c.strip() for c in row.strip().strip('|').split(' | ')]
+  if len(cells)<3: return set()
+  sig=cells[1]; desc=' | '.join(cells[2:])
+  out={sig}|set(re.findall(r'`[^`]+`',sig))
+  out|={x.strip() for x in re.split(r'(?<=[.;])\s+',desc) if x.strip()}
+  return out
  reason_ok=True
  for line in allowed.read_text().splitlines()[1:]:
   c=line.split('\t'); key=tuple(c[:5]); reason=c[5] if len(c)>5 else ''
   if reason.startswith(('ANY: ', 'KIND: ')):
    quote=reason.split(': ',1)[1]
-   valid=bool(quote) and quote in doc_rows.get(c[0],'')
+   valid=quote in doc_fragments(doc_rows.get(c[0],''))
   elif reason.startswith('IGNORED: '):
    quote=reason.split(': ',1)[1]; valid=quote == c[0]+' of null' and quote in doc_rows.get(c[0],'')
   else: valid=False
@@ -108,7 +129,7 @@ def main():
  wrong_kind=[]
  for j,v in rr:
   key=tuple(j[:4])+(j[5],)
-  if key in actual or key in unreached or j[0] in stub_names: continue
+  if key in actual or key in unreached or key in never or j[0] in stub_names: continue
   allowed_kind=other.get(key,'type_mismatch')
   wanted='THROWN' if allowed_kind == 'THROWN' else 'ERR:'+allowed_kind
   # type_mismatch is always right for a wrong-typed argument; an other-kind row adds one more
@@ -123,7 +144,8 @@ def main():
  for key,v in mixed[:20]: print('FAIL: answer depends on EIGS_STRICT:',*key,'results='+','.join(v))
  for key in sorted(skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
- ok=not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
+ for key in unreached_bad[:20]: print('FAIL: probe never reached its builtin (not in the fixture list):',*key)
+ ok=not unreached_bad and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
  print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)} stub_builtins={len(stub_names)}")
  return int(ns.check and not ok)
 raise SystemExit(main())

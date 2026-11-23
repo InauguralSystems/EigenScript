@@ -944,6 +944,8 @@ guard|text_builder_append_line|print of (text_builder_append_line of 42)|text_bu
 guard|usleep|print of (usleep of "x")|usleep: expected a number
 guard|values|print of (values of 42)|values: expected a dict
 guard|zeros|print of (zeros of "x")|zeros: expected a number or [rows, columns]
+guard|http_static|print of (http_static of 42)|http_static: expected [prefix string, directory string]
+guard|sandbox_run|print of (sandbox_run of ["return 1", "x"])|sandbox_run: expected number limits
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
