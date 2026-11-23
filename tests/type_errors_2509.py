@@ -141,6 +141,9 @@ def main():
  reached_pin={tuple(line.split('\t')) for line in
               (ROOT/'tests/type_errors_2509_reached.tsv').read_text().splitlines()[1:]}
  newly_unreached=(reached_pin & unreached)-skipped
+ # A probe that reaches its builtin in some EIGS_STRICT states and not in another
+ # (a crash under one state) is never a pass, pinned or not.
+ partial=sorted(unreached-never)
  wrong_kind=[]
  for j,v in rr:
   key=tuple(j[:4])+(j[5],)
@@ -155,6 +158,7 @@ def main():
  for key in sorted(missing)[:20]: print('FAIL: allowed row now raises:', *key)
  for key in sorted((set(expected)&unreached)-skipped)[:20]: print('FAIL: previously reached allowed row is now UNREACHED:',*key)
  for key in sorted(newly_unreached)[:20]: print('FAIL: committed REACHED row is now UNREACHED:',*key)
+ for key in partial[:20]: print('FAIL: probe reaches its builtin in some EIGS_STRICT states and not in another:',*key)
  for key,v,kind in wrong_kind[:20]: print('FAIL: wrong error kind:',*key,'expected='+kind,'actual='+','.join(v))
  for key,v in mixed[:20]: print('FAIL: answer depends on EIGS_STRICT:',*key,'results='+','.join(v))
  for key in sorted(skipped-device_skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
@@ -162,7 +166,7 @@ def main():
  for key in device_bad[:20]: print('FAIL: device skip on Linux, where the census must reach it:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
  for key in unreached_bad[:20]: print('FAIL: probe never reached its builtin (not in the fixture list):',*key)
- ok=not unreached_bad and not device_bad and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
+ ok=not unreached_bad and not device_bad and not partial and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
  print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)} stub_builtins={len(stub_names)}")
  return int(ns.check and not ok)
 raise SystemExit(main())
