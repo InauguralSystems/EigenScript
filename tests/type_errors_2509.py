@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json,os,re,subprocess,tempfile
+import json,os,re,subprocess,sys,tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -61,6 +61,21 @@ def main():
  fixture_skip={l.split('\t')[0] for l in (ROOT/'tests/type_errors_2509_fixture_skip.tsv').read_text().splitlines()[1:] if l}
  never={tuple(j[:4])+(j[5],) for j,v in rr if all(x in ('UNREACHED','UNEXPANDED') for x in v)}
  skipped={k for k in never if k[0] in fixture_skip}
+ # A case that declares a device requirement (tests/strict_shape_cases.json) is
+ # skipped here only when its own setup, run alone, also fails: the device is not
+ # available on this runner (the macOS lanes cannot open SDL's dummy drivers). A
+ # setup that works while the probe does not reach its builtin still fails. On
+ # Linux every lane opens the dummy devices, so a device skip there is a failure:
+ # the census may not measure less on the platform that carries its coverage.
+ DEVICE={'sdl_dummy_audio','sdl_dummy_video','sdl_mixer'}
+ device_cases={c['name']:c for c in json.loads((ROOT/'tests/strict_shape_cases.json').read_text())
+               if c['name'] in present and DEVICE & set(c.get('requirements',[]))}
+ never_pos={k[0] for k in never if k[1]=='pos'}
+ device_down={n:sorted(DEVICE & set(c['requirements'])) for n,c in device_cases.items()
+              if n in never_pos and run(b,program(c.get('setup',''),'null'),None)!='ANSWER'}
+ device_skipped={k for k in never if k[1]=='pos' and k[0] in device_down}
+ device_bad=sorted(device_skipped) if sys.platform.startswith('linux') else []
+ skipped|=device_skipped
  unreached_bad=sorted(never-skipped)
  required=[]
  for line in (ROOT/'tests/type_errors_2509_required.tsv').read_text().splitlines()[1:]:
@@ -142,10 +157,12 @@ def main():
  for key in sorted(newly_unreached)[:20]: print('FAIL: committed REACHED row is now UNREACHED:',*key)
  for key,v,kind in wrong_kind[:20]: print('FAIL: wrong error kind:',*key,'expected='+kind,'actual='+','.join(v))
  for key,v in mixed[:20]: print('FAIL: answer depends on EIGS_STRICT:',*key,'results='+','.join(v))
- for key in sorted(skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
+ for key in sorted(skipped-device_skipped)[:20]: print('SKIP: fixture unavailable here:',*key)
+ for n,reqs in sorted(device_down.items()): print('SKIP: device unavailable here ('+','.join(reqs)+'): its setup fails alone, so every probe of',n,'is skipped')
+ for key in device_bad[:20]: print('FAIL: device skip on Linux, where the census must reach it:',*key)
  for key,v in required_bad: print('FAIL: required type mismatch:',*key,'actual='+','.join(v))
  for key in unreached_bad[:20]: print('FAIL: probe never reached its builtin (not in the fixture list):',*key)
- ok=not unreached_bad and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
+ ok=not unreached_bad and not device_bad and not mixed and not missing and not extra and not broken and not newly_unreached and not wrong_kind and not required_bad and reason_ok
  print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)} unreached={len(unreached)} skipped={len(skipped)} stub_builtins={len(stub_names)}")
  return int(ns.check and not ok)
 raise SystemExit(main())
