@@ -10,8 +10,7 @@ define refuses_nested(value, label) as:
 
 cycle is []
 append of [cycle, cycle]
-usleep of cycle
-assert_true of [true, "self-referencing list without a bool terminates"]
+refuses_nested of [cycle, "self-referencing wrong-typed list terminates and raises"]
 append of [cycle, {"nested": true}]
 refuses_nested of [cycle, "bool reached through a dict after a cycle"]
 cycle[0] is null

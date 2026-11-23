@@ -1,6 +1,6 @@
 add	arg2:list-element->string
 append	NO_WRONG_TYPE
-assert	NO_WRONG_TYPE
+assert	arg2:string->number
 atan2	arg2:number->string
 bit_and	arg2:number->string
 bit_or	arg2:number->string
@@ -40,12 +40,12 @@ has_key	arg2:string->number
 hex	arg2:number->string
 index_of	arg2:string->number
 join	arg2:string->number
-json_path	NO_WRONG_TYPE
+json_path	arg2:string->number
 list_contains	NO_WRONG_TYPE
 list_index_of	NO_WRONG_TYPE
 list_insert_at	arg2:number->string
 list_remove_at	arg2:number->string
-list_slice	NO_WRONG_TYPE
+list_slice	arg3:number->string
 list_truncate	arg2:number->string
 matmul	arg2:list-element->string
 matmul_at	arg2:list-element->string
@@ -69,10 +69,10 @@ regex_find	arg2:string->number
 regex_match	arg2:string->number
 regex_replace	arg3:string->number
 rename	arg2:string->number
-reshape	NO_WRONG_TYPE
+reshape	arg3:number->string
 sandbox_run	SKIPPED
-scan_int_tokens	arg1:string->number
-scan_ints	arg1:string->number
+scan_int_tokens	arg2:string->number
+scan_ints	arg2:string->number
 scatter_add	arg3:list-element->string
 secure_equals	arg2:string->number
 send	NO_WRONG_TYPE
@@ -100,7 +100,7 @@ text_builder_append	NO_WRONG_TYPE
 text_builder_append_line	NO_WRONG_TYPE
 write_bytes	arg2:list-element->string
 write_text	arg2:string->number
-zeros	NO_WRONG_TYPE
+zeros	arg2:number->string
 stream_write	legacy-data-or-mutation
 set_at	legacy-data-or-mutation
 sort	legacy-data-or-mutation

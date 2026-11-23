@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import json,os,re,subprocess,sys,tempfile
+import json,os,re,subprocess,tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -15,8 +15,11 @@ def run(binary,src,mode):
   if mode is not None:env['EIGS_STRICT']=mode
   try:r=subprocess.run([binary,str(p)],cwd=d,env=env,input='',capture_output=True,text=True,timeout=5)
   except subprocess.TimeoutExpired:return 'TIMEOUT'
-  if MARK not in r.stdout.splitlines():return 'BROKEN'
-  x=next((x for x in r.stdout.splitlines() if x.startswith(('ANSWER:','ERR:','THROWN'))),'NONE');return 'ANSWER' if x.startswith('ANSWER:') else x
+  combined=r.stdout+'\n'+r.stderr
+  hard=re.search(r'AddressSanitizer: (?!.*byte\(s\) leaked)|UndefinedBehaviorSanitizer|runtime error:|ThreadSanitizer|MemorySanitizer',combined)
+  x=next((x for x in r.stdout.splitlines() if x.startswith(('ANSWER:','ERR:','THROWN'))),'NONE')
+  if hard or ((MARK not in r.stdout.splitlines() or r.returncode != 0) and x.startswith('ANSWER:')):return 'BROKEN'
+  return 'ANSWER' if x.startswith('ANSWER:') else x
 def main():
  import argparse
  ap=argparse.ArgumentParser()
@@ -31,7 +34,7 @@ def main():
     if k!=kind_of(a):
      q=list(c['args']);q[i]=w;jobs.append((c['name'],'pos',str(i),k,c.get('setup',''),c['name']+' of '+(q[0] if len(q)==1 else '['+', '.join(q)+']')))
  def one(j):return j,[run(b,program(j[4],j[5]),m) for m in MODES]
- with ThreadPoolExecutor(2) as ex: rr=list(ex.map(one,jobs))
+ with ThreadPoolExecutor(1) as ex: rr=list(ex.map(one,jobs))
  out=Path(ns.out) if ns.out else None
  rows=[]
  for j,v in rr:
@@ -45,14 +48,27 @@ def main():
   f.write('builtin\tpop\tpos\twrong\texpr\tunset\ts0\ts1\n')
   for j,v in rr:f.write('\t'.join([j[0],j[1],j[2],j[3],j[5],*v])+'\n')
  allowed=ROOT/'tests/type_errors_2509_allowed.tsv'
- expected={}
+ expected={}; docs=(ROOT/'docs/BUILTINS.md').read_text()
+ reason_ok=True
  for line in allowed.read_text().splitlines()[1:]:
-  c=line.split('\t'); expected[tuple(c[:5])]=c[5]
+  c=line.split('\t'); key=tuple(c[:5]); reason=c[5] if len(c)>5 else ''
+  if reason.startswith(('ANY: ', 'KIND: ')):
+   quote=reason.split(': ',1)[1]
+   valid=bool(quote) and quote in docs
+  elif reason.startswith('IGNORED: '):
+   quote=reason.split(': ',1)[1]; valid=quote == c[0]+' of null' and quote in docs
+  else: valid=False
+  if not valid:
+   print('FAIL: invalid allowed-row classification:', *key, reason)
+   reason_ok=False
+  expected[key]=reason
+ broken={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='BROKEN' for x in v) and not j[4]}
+ for key in sorted(broken)[:20]: print('FAIL: broken probe:', *key)
  actual={tuple(r[:5]) for r in rows}
  missing=set(expected)-actual; extra=actual-set(expected)
  for key in sorted(extra)[:20]: print('FAIL: unclassified silent answer:', *key)
  for key in sorted(missing)[:20]: print('FAIL: allowed row now raises:', *key)
- ok=not missing and not extra
+ ok=not missing and not extra and not broken and reason_ok
  print(f"{'PASS' if ok else 'FAIL'}: type_errors_2509 examined={len(rr)} population={len(jobs)} answering={len(rows)} allowed={len(expected)}")
  return int(ns.check and not ok)
 raise SystemExit(main())

@@ -4,8 +4,8 @@ Builtins are organized by module. `eigenscript --api` prints the live index.
 Core builtins are always available; extension builtins (HTTP, net, DB,
 gfx, audio) require a full build or the `gfx` target.
 
-A signature written `name of null` takes no meaningful argument and ignores
-the value supplied in that position. Otherwise a wrong-typed argument raises
+A signature whose argument is written as `null` takes no meaningful argument and
+ignores the value supplied in that position. Otherwise a wrong-typed argument raises
 `type_mismatch` in every `EIGS_STRICT` state, except for positions explicitly
 documented as accepting any value; the executable census and classifications
 are in `tests/type_errors_2509.py` and `tests/type_errors_2509_allowed.tsv`.
@@ -85,7 +85,7 @@ examples are `tests/phase2/rows/N6.float-repr.eigs` and
 | `num_type` | `num_type of value` | Return "int" for an int64, "float" for a binary64, or `null` for any other value. Both numeric kinds still have `type of` "num" (#1758 N7). |
 | `f64_bits` | `f64_bits of number` | Return IEEE-754 binary64 bits as signed int64 two's complement; `-0.0` gives `-9223372036854775808`. An int input first converts to float (Q2). Accepts infinity and canonical NaN without changing `math_flags`. Non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
 | `f64_from_bits` | `f64_from_bits of bits` | Reconstruct a float from exact int64 bits (N5 accepts integral floats in int64 range). All NaN payloads canonicalize to `0x7FF8000000000000`; other representations retain their bits. No arithmetic trap or `math_flags` change. Fractions, non-finite inputs and out-of-range floats raise `value`; non-numbers raise `type_mismatch` in every `EIGS_STRICT` state (N12). |
-| `assert` | `assert of [cond, msg]` | Raise catchable error `"ASSERT FAIL: <msg>"` if condition is false |
+| `assert` | `assert of [any condition, optional string message]` | Read the condition by truthiness, as `if` does. A non-list argument or a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
 | `exit` | `exit of N` | Terminate the program with a numeric code `N`, or a one-number list. `null`, `[]` and `([])` default to 0. Other types raise catchable `type_mismatch` before any exit request in every `EIGS_STRICT` state. A surplus list raises `type_mismatch` in every `EIGS_STRICT` state. **Uncatchable** — a `try`/`catch` does not intercept it — and unwinds through normal teardown, so it is leak-clean even with live closures. Code after it does not run. The request is scoped to the evaluating thread and cleared at each host eval entry, so under the embedding API a script that calls `exit` does not disable `try`/`catch` for the host's *next* eval (#739). A supplied numeric code follows N5, then the C int range; invalid codes raise catchably before requesting exit. |
 | `set_exit_code` | `set_exit_code of N` | Set the status (integer 0..255) used when the process ends gracefully, without ending it. The last call wins. Explicit `exit` and runtime failures retain their own status. Integral floats are accepted; fractions raise `value` (N5). |
 | `coalesce` | `coalesce of [value, default]` | Return value unless empty/null, else default |
@@ -119,7 +119,7 @@ tokens, and raises `value` naming any integer token outside int64.
 | `get_at` | `get_at of [list, index]` | Get element at index; negative indices count from the end, like `[]`. Also takes a **buffer**: `get_at of [buf, i]`, or `get_at of [shaped_buf, row, col]`. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). Buffer elements must be finite; non-finite cells raise `value` in every `EIGS_STRICT` state (N13). |
 | `copy_into` | `copy_into of [dest, offset, src]` | Copy src elements into dest starting at offset — a list into a list, or a buffer / list of numbers into a buffer. Returns dest. Wrong arity, a non-number offset (the doc used to list `[dest, src, offset]`, the code has always read `[dest, offset, src]`), a bad type, or a non-number element bound for a buffer RAISES (#1069; it silently returned null). Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 | `list_slice` | `list_slice of [list, start, end]` | New list with the elements of [start, end) — dual of `copy_into`. Negative indices count from the end, like `[]`; bounds then clamp to [0, len]. `start >= end` gives `[]`. Clamped integer bounds remain valid. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
-| `num_copy` | `num_copy of value` | Create an independent numeric copy, preserving int/float kind and every int64 bit |
+| `num_copy` | `num_copy of number` | Create an independent numeric copy, preserving int/float kind and every int64 bit; a non-number raises `type_mismatch`. |
 | `hex` | `hex of n` or `hex of [n, nibbles]` | Exact uppercase hex digits for any non-negative int64. Value and optional nibble count follow N5; fractions raise, integral floats convert. Width clamps to 0..16, never truncating digits. |
 | `sort` | `sort of list` | Stably sort an all-number or all-string list in-place (numeric / lexicographic); equal elements keep their input order on every platform. Mixed or non-scalar elements raise — use `sort_by` for records. Returns the list. |
 | `list_truncate` | `list_truncate of [list, new_len]` | Shrink list in-place to new_len items. No-op if new_len >= length. Returns the list. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
@@ -144,8 +144,8 @@ tokens, and raises `value` naming any integer token outside int64.
 | `index_of` | `index_of of [haystack, needle]` | First byte index as an int, or int -1 when absent. |
 | `substr` | `substr of [s, start, length]` | Extract substring. Integer positions, lengths and counts accept integral floats; fractions or values outside the C int range raise `value` (N5). |
 | `split` | `split of [s, delim]` | Split string by delimiter into list. |
-| `scan_ints` | `scan_ints of s` or `scan_ints of [s, comment_marker]` | Whitespace-delimited signed integer tokens of `s` as exact int64 values; tokens that are not integers are skipped, and so is a line whose first non-whitespace character is the first byte of a non-empty `comment_marker`. An integer token outside int64 raises `value` naming it. |
-| `scan_int_tokens` | `scan_int_tokens of s` or `scan_int_tokens of [s, comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
+| `scan_ints` | `scan_ints of string` or `scan_ints of [string, string comment_marker]` | Whitespace-delimited signed integer tokens of `s` as exact int64 values; tokens that are not integers are skipped, and so is a line whose first non-whitespace character is the first byte of a non-empty `comment_marker`. An integer token outside int64 raises `value` naming it. |
+| `scan_int_tokens` | `scan_int_tokens of string` or `scan_int_tokens of [string, string comment_marker]` | Token rows `[text, line, col, start, end, is_int, value]`; all numeric fields are ints. Integer text beyond int64 raises `value` naming the token (C3). |
 | `trim` | `trim of s` | Strip leading/trailing whitespace. |
 | `str_replace` | `str_replace of [s, old, new]` | Replace all occurrences of old with new. |
 | `chr` | `chr of byte` | One-byte string from a byte value 1–255 (the writing inverse of `ord`). Raises outside 1–255 — including 0, since strings are NUL-terminated — and on fractions; for a Unicode *codepoint* use `utf8_encode` (lib/utf8.eigs). |
@@ -388,7 +388,7 @@ Requires the `zlib` build (`make zlib`, `-DEIGENSCRIPT_EXT_ZLIB=1
 | `json_encode` | `json_encode of value` | Serialize value to JSON string. Raises on a value nested deeper than 200 levels — which includes any **cyclic** value (`dict_set of [d, "self", d]`, `append of [a, a]`), since a cycle has no depth. Catchable. |
 | `json_decode` | `json_decode of s` | Parse JSON string to value. Integer text fitting int64 decodes exactly as int; decimal overflow, a point or exponent produces float (N14). Raises past the same 200-level limit, so a document that decodes always re-encodes. `\uXXXX` surrogate pairs are combined into one code point; unpaired surrogates, an escaped NUL, and malformed `\u` escapes raise. |
 | `json_build` | `json_build of [k1, v1, k2, v2, ...]` | Build JSON object from key-value pairs. `json_build of null` is `{}`. |
-| `json_path` | `json_path of [json_str, "dot.path"]` | Extract nested values as text, with exact int64 digits (N14). A document that `json_decode` rejects raises a catchable `value` error naming the position in every `EIGS_STRICT` state. Valid JSON `false`, `null`, and absent keys keep their documented answers; an absent value returns `""`. |
+| `json_path` | `json_path of [json string, path string]` | Extract nested values as text, with exact int64 digits (N14). A document that `json_decode` rejects raises a catchable `value` error naming the position in every `EIGS_STRICT` state. Valid JSON `false`, `null`, and absent keys keep their documented answers; an absent value returns `""`. |
 
 ## Dictionaries
 
@@ -1195,7 +1195,7 @@ first use, so no SDL2 headers or link-time SDL dependency are needed.
 
 | Name | Signature | Description |
 |------|-----------|-------------|
-| `gfx_open` | `gfx_open of [width, height, title]` | Open window and renderer. Continuous sizes round half away from zero; a rounded size outside the C int range raises `value`. Returns `true` on success or `false` when libSDL2 is unavailable. A non-numeric size raises in every `EIGS_STRICT` state.|
+| `gfx_open` | `gfx_open of [number width, number height, string title]` | Open window and renderer. Continuous sizes round half away from zero; a rounded size outside the C int range raises `value`. Returns `true` on success or `false` when libSDL2 is unavailable. A non-numeric size raises in every `EIGS_STRICT` state.|
 | `gfx_close` | `gfx_close of null` | Destroy window and quit SDL |
 | `gfx_clear` | `gfx_clear of [r, g, b]` / `gfx_clear of null` | Clear backbuffer to color; channels clamp to 0..255, then round half away from zero. `null` clears to black |
 | `gfx_rect` | `gfx_rect of [x, y, w, h, r, g, b]` or `[..., a]` | Filled rectangle; intersect the whole rectangle with the drawable area in float space, then round |

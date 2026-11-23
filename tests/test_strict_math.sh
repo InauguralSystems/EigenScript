@@ -190,7 +190,7 @@ print of f"[{r}]"'
 run "SM32 strict: join of an empty list still empty"   1 0 "[]" \
 'local r is join of [[], ","]
 print of f"[{r}]"'
-run "SM33 strict: num still COERCES a list to 0"       1 0 "0" 'print of (num of ([1, 2]))'
+run "SM33 strict: num rejects a list"                  1 1 "num: expected a number or numeric string" 'print of (num of ([1, 2]))'
 run "SM34 strict: list_contains finding nothing is false"  1 0 "false" 'print of (list_contains of [[1, 2], 9])'
 run "SM35 strict: JSON false decodes to false (#1637)" 1 0 "false" \
     'print of (json_path of ["{\"a\": false}", "a"])'

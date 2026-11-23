@@ -313,18 +313,22 @@ Value* builtin_text_builder_new(Value *arg) {
 
 Value* builtin_text_builder_append(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "text_builder_append");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "text_builder_append", "[text builder, value]", make_null());
     Value *builder = list_get_ref(arg, 0);
-    if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
+    ARG_GUARD(!builder || builder->type != VAL_TEXT_BUILDER, "text_builder_append",
+              "a text builder as its first argument", make_null());
     text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));
     return builder;
 }
 
 Value* builtin_text_builder_append_line(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "text_builder_append_line");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "text_builder_append_line", "[text builder, value]", make_null());
     Value *builder = list_get_ref(arg, 0);
-    if (!builder || builder->type != VAL_TEXT_BUILDER) return make_null();
+    ARG_GUARD(!builder || builder->type != VAL_TEXT_BUILDER, "text_builder_append_line",
+              "a text builder as its first argument", make_null());
     text_builder_append_value(builder, BUILTIN_LIST_VIEW(arg, 1));
     text_builder_append_raw(builder, "\n", 1);
     return builder;
@@ -676,9 +680,12 @@ Value* builtin_assert(Value *arg) {
      * standard teardown (env_decref, gc_collect_at_exit, chunk_free). Direct
      * exit leaked the global env and every registered builtin. Side effect:
      * assert failures are now catchable in `try`/`catch`, matching `throw`. */
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 1,
+              "assert", "[condition, optional message string]", make_null());
     if (arg->type == VAL_LIST && arg->data.list.count >= 2) {
         Value *cond = BUILTIN_LIST_VIEW(arg, 0);
         Value *msg = BUILTIN_LIST_VIEW(arg, 1);
+        ARG_GUARD(!msg || msg->type != VAL_STR, "assert", "a string message", make_null());
         if (!is_truthy(cond)) {
             char *msg_str = value_to_string(msg);
             rt_error(EK_ASSERT, 0, "ASSERT FAIL: %s", msg_str);
@@ -686,7 +693,8 @@ Value* builtin_assert(Value *arg) {
         }
         return make_null();
     }
-    if (!is_truthy(arg)) {
+    Value *cond = BUILTIN_LIST_VIEW(arg, 0);
+    if (!is_truthy(cond)) {
         rt_error(EK_ASSERT, 0, "ASSERT FAIL");
     }
     return make_null();
@@ -1723,6 +1731,8 @@ Value* builtin_scan_ints(Value *arg) {
      * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
      * allocated first would be abandoned by the raise (see write_bytes in
      * builtins_host.c, which frees instead because its buffer is raw). */
+    ARG_GUARD(arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+              list_elem_type(arg, 1) != VAL_STR, "scan_ints", "a string comment marker", make_null());
     STRICT_REQUIRE(!str, "scan_ints", "a string or [string, comment_marker]");
 
     Value *out = make_list(128);
@@ -1790,6 +1800,8 @@ Value* builtin_scan_int_tokens(Value *arg) {
      * The guard sits ABOVE the make_list: STRICT_REQUIRE returns, so a list
      * allocated first would be abandoned by the raise (see write_bytes in
      * builtins_host.c, which frees instead because its buffer is raw). */
+    ARG_GUARD(arg && arg->type == VAL_LIST && arg->data.list.count >= 2 &&
+              list_elem_type(arg, 1) != VAL_STR, "scan_int_tokens", "a string comment marker", make_null());
     STRICT_REQUIRE(!str, "scan_int_tokens", "a string or [string, comment_marker]");
 
     Value *out = make_list(128);
@@ -2437,6 +2449,8 @@ Value* builtin_json_path(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "json_path");
     /* json_path of [json_string, "dot.path"] -> value as string, or "" */
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "json_path", "[json_string, path]", make_str(""));
+    ARG_GUARD(list_elem_type(arg, 0) != VAL_STR || list_elem_type(arg, 1) != VAL_STR,
+              "json_path", "[json string, path string]", make_str(""));
     const char *json_str = "", *path = "";
     if (BUILTIN_LIST_VIEW(arg, 0)->type == VAL_STR) json_str = BUILTIN_LIST_VIEW(arg, 0)->data.str;
     if (BUILTIN_LIST_VIEW(arg, 1)->type == VAL_STR) path = BUILTIN_LIST_VIEW(arg, 1)->data.str;
@@ -2687,7 +2701,7 @@ Value* builtin_token_name(Value *arg) {
  * the dict snapshot it returns is independent of subsequent program state. */
 Value* builtin_state_at(Value *arg) {
     BOOL_REFUSE(arg, "state_at");
-    if (!arg || !val_is_number(arg)) return make_null();
+    ARG_GUARD(!arg || !val_is_number(arg), "state_at", "a line number", make_null());
     int line = builtin_c_int(arg, "state_at");
     if (g_has_error) return make_null();
     Value *d = trace_state_at(line);
@@ -2857,7 +2871,7 @@ Value* builtin_try_parse(Value *arg) {
 /* ==== BUILTIN: eval ==== */
 /* eval of code_string — execute EigenScript code and return result */
 Value* builtin_eval(Value *arg) {
-    if (!arg || arg->type != VAL_STR) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_STR, "eval", "a source string", make_null());
     const char *src = arg->data.str;
     if (!src || !src[0]) return make_null();
 
@@ -4155,15 +4169,16 @@ Value* builtin_copy_into(Value *arg) {
  * start >= end gives []. Never raises on bounds. */
 Value* builtin_list_slice(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "list_slice");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "list_slice", "[list, start, end]", make_null());
     Value *list = list_get_ref(arg, 0);
-    if (!list || list->type != VAL_LIST) return make_null();
+    ARG_GUARD(!list || list->type != VAL_LIST, "list_slice", "a list as its first argument", make_null());
     Value *start_v = BUILTIN_LIST_VIEW(arg, 1);
     Value *end_v = BUILTIN_LIST_VIEW(arg, 2);
     BOOL_REFUSE(start_v, "list_slice");
     BOOL_REFUSE(end_v, "list_slice");
-    if (!start_v || !val_is_number(start_v) || !end_v || !val_is_number(end_v))
-        return make_null();
+    ARG_GUARD(!start_v || !val_is_number(start_v) || !end_v || !val_is_number(end_v),
+              "list_slice", "numeric start and end indices", make_null());
     int n = list->data.list.count;
     int start = builtin_c_int(start_v, "list_slice");
     int end = builtin_c_int(end_v, "list_slice");
@@ -4189,7 +4204,7 @@ Value* builtin_list_slice(Value *arg) {
  */
 Value* builtin_num_copy(Value *arg) {
     BOOL_REFUSE(arg, "num_copy");
-    if (!arg || !val_is_number(arg)) return make_null();
+    ARG_GUARD(!arg || !val_is_number(arg), "num_copy", "a number", make_null());
     EigsNum n = eigs_arithmetic_number(arg, "num_copy");
     return g_has_error ? make_null() : builtin_number_value(n);
 }
@@ -4198,10 +4213,12 @@ Value* builtin_num_copy(Value *arg) {
 /* concat of [list_a, list_b] → new 1D list with a's elements then b's */
 Value* builtin_concat(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "concat");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "concat", "[list, list]", make_null());
     Value *a = BUILTIN_LIST_VIEW(arg, 0);
     Value *b = BUILTIN_LIST_VIEW(arg, 1);
-    if (!a || a->type != VAL_LIST || !b || b->type != VAL_LIST) return make_null();
+    ARG_GUARD(!a || a->type != VAL_LIST || !b || b->type != VAL_LIST,
+              "concat", "two lists", make_null());
     int total = a->data.list.count + b->data.list.count;
     /* #292: charge the new slots — `result is concat of [result, more]` in a loop
      * grows quadratically and would otherwise aggregate past the budget. */
@@ -5528,7 +5545,7 @@ Value* builtin_task_yield(Value *arg) {
  * returns immediately. Joining an unknown id, self, or with no scheduler
  * returns null. Same nesting restriction as task_yield. */
 Value* builtin_task_join(Value *arg) {
-    if (!arg || !val_is_number(arg)) return make_null();
+    ARG_GUARD(!arg || !val_is_number(arg), "task_join", "a task id number", make_null());
     (void)eigs_int_arg(arg, "task_join");
     if (g_has_error || !g_task_sched) return make_null();
     int target = 0;
@@ -5869,7 +5886,8 @@ Value* builtin_nearest_in_range(Value *arg) {
         return make_null();
     }
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
-    if (!entities || entities->type != VAL_LIST) return make_null();
+    ARG_GUARD(!entities || entities->type != VAL_LIST, "nearest_in_range",
+              "an entities list as its first argument", make_null());
     /* Typed scalar readers validate numeric positions; entity flags and
      * unrelated dict metadata are any-value data and must not be scanned. */
     double px = eigs_list_float(arg, 1, __func__);
@@ -6013,7 +6031,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
         return make_null();
     }
     Value *entities = BUILTIN_LIST_VIEW(arg, 0);
-    if (!entities || entities->type != VAL_LIST) return make_null();
+    ARG_GUARD(!entities || entities->type != VAL_LIST, "nearest_in_range_all",
+              "an entities list as its first argument", make_null());
     /* Typed scalar readers validate numeric positions; entity flags and
      * unrelated dict metadata are any-value data and must not be scanned. */
     double range = eigs_list_float(arg, 1, __func__);
@@ -6235,10 +6254,12 @@ Value* builtin_list_truncate(Value *arg) {
  * Out-of-bounds index is a no-op. Returns the list. */
 Value* builtin_list_remove_at(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "list_remove_at");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "list_remove_at", "[list, index]", make_null());
     Value *list = list_get_ref(arg, 0);
     Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
-    if (!list || list->type != VAL_LIST) return make_null();
+    ARG_GUARD(!list || list->type != VAL_LIST, "list_remove_at",
+              "a list as its first argument", make_null());
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || !val_is_number(idx_val), "list_remove_at", "a number index", list);
@@ -6258,10 +6279,12 @@ Value* builtin_list_remove_at(Value *arg) {
  * index is a no-op. Returns the list. */
 Value* builtin_list_insert_at(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "list_insert_at");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "list_insert_at", "[list, index, value]", make_null());
     Value *list = list_get_ref(arg, 0);
     Value *idx_val = BUILTIN_LIST_VIEW(arg, 1);
-    if (!list || list->type != VAL_LIST) return make_null();
+    ARG_GUARD(!list || list->type != VAL_LIST, "list_insert_at",
+              "a list as its first argument", make_null());
     /* #1637: a non-number index raises under EIGS_STRICT (a bool in every
      * mode) instead of silently doing nothing. */
     ARG_GUARD(!idx_val || !val_is_number(idx_val), "list_insert_at", "a number index", list);
@@ -6354,12 +6377,13 @@ static int sort_by_pair_cmp(const void *a, const void *b) {
 
 Value* builtin_sort_by(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "sort_by");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "sort_by", "[list, key function]", make_null());
     Value *list = list_get_ref(arg, 0);
     Value *key_fn = BUILTIN_LIST_VIEW(arg, 1);
-    if (!list || list->type != VAL_LIST) return make_null();
-    if (!key_fn || (key_fn->type != VAL_FN && key_fn->type != VAL_BUILTIN))
-        return make_null();
+    ARG_GUARD(!list || list->type != VAL_LIST, "sort_by", "a list as its first argument", make_null());
+    ARG_GUARD(!key_fn || (key_fn->type != VAL_FN && key_fn->type != VAL_BUILTIN),
+              "sort_by", "a key function as its second argument", make_null());
     int n = list->data.list.count;
     if (n == 0) return make_list(0);
     SortByPair *pairs = calloc(n, sizeof(SortByPair));

@@ -14,10 +14,10 @@
   {
     "function": "builtin_assert",
     "file": "src/builtins.c",
-    "category": "optional_or_scalar",
-    "minimum": 2,
+    "category": "optional",
+    "minimum": 1,
     "maximum": 2,
-    "reason": "Two-or-more elements currently select condition/message; shorter list and scalar use truthiness. Preserve shorter forms.",
+    "reason": "A one-element list supplies the truthy condition; a second optional element supplies the string message. Scalar arguments and lists outside this width raise.",
     "public_names": [
       "assert"
     ],
@@ -387,11 +387,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "62d524fce828a136c69d911f201bf63239c7d1630d60c8500611884a5d4f816f"
+      "a6c8cd4b4524021c7b4f8a7916501d3b59973f2bc6d58afb8126fccf554b35e0"
     ],
     "source_sha256": {
       "builtin_buf_from_list": [
-        "62d524fce828a136c69d911f201bf63239c7d1630d60c8500611884a5d4f816f"
+        "a6c8cd4b4524021c7b4f8a7916501d3b59973f2bc6d58afb8126fccf554b35e0"
       ]
     }
   },
@@ -2342,7 +2342,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "5f524413082aeedaa300e425f0c2b23f211521a21eacff3176cbb11082dd4314"
+        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
       ]
     }
   },
@@ -2575,7 +2575,7 @@
         "244c127abae1a7bf7fa14097cf4c4930239ba42febae9d6d8f3264ea974d4dd1"
       ],
       "tensor_to_flat": [
-        "5f524413082aeedaa300e425f0c2b23f211521a21eacff3176cbb11082dd4314"
+        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
       ]
     }
   },
@@ -2615,11 +2615,11 @@
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "b63ea605f6ab1cac996fb74bb08680c675dc0723695a362a240391dea4337fad"
+      "eded45f675e02a87bfa7f670a0ebe310654bce099240a8ada39eebb7280fcda1"
     ],
     "source_sha256": {
       "builtin_tensor_shape": [
-        "b63ea605f6ab1cac996fb74bb08680c675dc0723695a362a240391dea4337fad"
+        "eded45f675e02a87bfa7f670a0ebe310654bce099240a8ada39eebb7280fcda1"
       ]
     }
   },
@@ -2651,7 +2651,7 @@
         "65240f647516c2717f73e1df84f89fa46da785a5ff51062d545adca210986100"
       ],
       "tensor_to_flat": [
-        "5f524413082aeedaa300e425f0c2b23f211521a21eacff3176cbb11082dd4314"
+        "5671d8751c6f549311a699cbf7f57843d027258e9d2207e3b36e26af3ab30e4d"
       ]
     }
   },

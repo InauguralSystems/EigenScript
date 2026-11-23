@@ -845,6 +845,29 @@ guard|numerical_grad|define bad(_) as:\n    return "bad"\np is [1.0]\nprint of (
 guard|numerical_grad_rows|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_rows of [bad, m, [0], 0.001])|numerical_grad_rows: expected loss function to return a number
 guard|numerical_grad_cols|define bad(_) as:\n    return "bad"\nm is [[1.0]]\nprint of (numerical_grad_cols of [bad, m, [0], 0.001])|numerical_grad_cols: expected loss function to return a number
 arithmetic|divide|print of (divide of [[1], [0]])|divide: division by zero
+guard|assert|print of (assert of 42)|assert: expected [condition, optional message string]
+guard|buf_from_list|print of (buf_from_list of 42)|buf_from_list: expected a list
+guard|concat|print of (concat of 42)|concat: expected [list, list]
+guard|eval|print of (eval of 42)|eval: expected a source string
+guard|keys|print of (keys of 42)|keys: expected a dict
+guard|list_slice|print of (list_slice of 42)|list_slice: expected [list, start, end]
+guard|nearest_in_range|print of (nearest_in_range of [42, 0, 0, 1, 8, 8])|nearest_in_range: expected an entities list as its first argument
+guard|nearest_in_range_all|print of (nearest_in_range_all of [42, 1, 8, 8])|nearest_in_range_all: expected an entities list as its first argument
+guard|num_copy|print of (num_copy of "x")|num_copy: expected a number
+guard|random_normal|print of (random_normal of 42)|random_normal: expected [length, scale] or [rows, columns, scale]
+guard|reshape|print of (reshape of 42)|reshape: expected [buffer, rows, columns]
+guard|sgd_update|print of (sgd_update of 42)|sgd_update: expected [parameter tensor, gradient tensor, learning rate]
+guard|sgd_update_cols|print of (sgd_update_cols of 42)|sgd_update_cols: expected a 4-argument list
+guard|sgd_update_rows|print of (sgd_update_rows of 42)|sgd_update_rows: expected a 4-argument list
+guard|shape|print of (shape of "x")|shape: expected a number, buffer, or list tensor
+guard|sort_by|print of (sort_by of 42)|sort_by: expected [list, key function]
+guard|state_at|print of (state_at of "x")|state_at: expected a line number
+guard|task_join|print of (task_join of "x")|task_join: expected a task id number
+guard|text_builder_append|print of (text_builder_append of 42)|text_builder_append: expected [text builder, value]
+guard|text_builder_append_line|print of (text_builder_append_line of 42)|text_builder_append_line: expected [text builder, value]
+guard|usleep|print of (usleep of "x")|usleep: expected a number
+guard|values|print of (values of 42)|values: expected a dict
+guard|zeros|print of (zeros of "x")|zeros: expected a number or [rows, columns]
 guard|split|print of (split of 42)
 guard|scan_ints|print of (scan_ints of ({"k": 1}))
 guard|scan_int_tokens|print of (scan_int_tokens of ({"k": 1}))
@@ -931,7 +954,6 @@ ends_with with a suffix longer than the string is 0|print of (ends_with of ["ab"
 char_at past the end is ""|print of (char_at of ["ab", 9])
 substr starting past the end is ""|print of (substr of ["ab", 9, 1])
 join of an empty list is ""|print of (join of [[], ","])
-num coerces a list to 0 (documented)|print of (num of ([1, 2]))
 try_parse of invalid syntax is 0|print of (try_parse of "!!!")
 sum of an empty list is 0 (the identity, not a type mistake)|print of (sum of ([]))
 mean of an empty list is 0|print of (mean of ([]))

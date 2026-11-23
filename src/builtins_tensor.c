@@ -276,10 +276,7 @@ static double* tensor_to_flat(Value *v, int *rows, int *cols,
             return NULL;
         }
     }
-    if (ndim == 0 || *rows <= 0 || *cols <= 0) {
-        rt_error(EK_TYPE, 0, "%s: expected a non-empty numeric tensor", who);
-        return NULL;
-    }
+    if (ndim == 0 || *rows <= 0 || *cols <= 0) return NULL;
     size_t total = safe_size_mul((size_t)*rows, (size_t)*cols);
     if (total > EIGS_TENSOR_MAX_ELEMENTS) {
         fprintf(stderr, "Error: tensor too large (%d x %d)\n", *rows, *cols);
@@ -708,28 +705,32 @@ Value* builtin_tensor_add(Value *arg) {
 /* ==== BUILTIN: subtract ==== */
 Value* builtin_tensor_subtract(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "subtract");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "subtract", "[left, right]", make_null());
     return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_sub);
 }
 
 /* ==== BUILTIN: multiply ==== */
 Value* builtin_tensor_multiply(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "multiply");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "multiply", "[left, right]", make_null());
     return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_mul);
 }
 
 /* ==== BUILTIN: divide ==== */
 Value* builtin_tensor_divide(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "divide");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "divide", "[left, right]", make_null());
     return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_div);
 }
 
 /* ==== BUILTIN: pow ==== */
 Value* builtin_tensor_pow(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "pow");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "pow", "[left, right]", make_null());
     return tensor_elementwise_slots(list_slot(arg, 0), list_slot(arg, 1), op_pow);
 }
 
@@ -1473,7 +1474,7 @@ Value* builtin_tensor_zeros(Value *arg) {
         }
         return outer;
     }
-    return make_null();
+    ARG_GUARD(1, "zeros", "a number or [rows, columns]", make_null());
 }
 
 /* ==== BUILTIN: zeros_like ==== */
@@ -1611,7 +1612,8 @@ static int validate_list_columns_snapshot(const int *indices, int count,
  * index vector still truncates to the row count. */
 Value* builtin_tensor_gather(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "gather");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 2) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2,
+              "gather", "[tensor, indices]", make_null());
     EIGS_VIEW(tensor_view);
     Value *tensor = list_get_view(arg, 0, &tensor_view);
     EIGS_VIEW(indices_view);
@@ -1816,7 +1818,10 @@ Value* builtin_random_normal(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "random_normal");
     /* #1750: every dimension and scale reader precedes the tape seam. */
     BOOL_REFUSE(arg, "random_normal");
-    int argc = arg && arg->type == VAL_LIST ? arg->data.list.count : 0;
+    ARG_GUARD(!arg || arg->type != VAL_LIST ||
+              (arg->data.list.count != 2 && arg->data.list.count != 3),
+              "random_normal", "[length, scale] or [rows, columns, scale]", make_null());
+    int argc = arg->data.list.count;
     int rows = 0, cols = 0;
     double scale = 1.0;
     if (argc == 2 || argc == 3) {
@@ -1878,7 +1883,7 @@ Value* builtin_tensor_shape(Value *arg) {
         list_append_owned(out, make_int(arg->data.buffer.count));
         return out;
     }
-    if (arg->type != VAL_LIST) return make_null();
+    ARG_GUARD(arg->type != VAL_LIST, "shape", "a number, buffer, or list tensor", make_null());
     if (arg->data.list.count == 0) {
         Value *out = make_list(1);
         list_append_owned(out, make_int(0));
@@ -1998,11 +2003,14 @@ static int tensor_cells_numeric(const Value *v, const char *who) {
 
 Value* builtin_numerical_grad(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "numerical_grad");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "numerical_grad", "a 3-argument list", make_null());
     EIGS_VIEW(loss_fn_view);
     Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
     EIGS_VIEW(param_view);
     Value *param = list_get_view(arg, 1, &param_view);
+    ARG_GUARD(!param || (param->type != VAL_LIST && param->type != VAL_BUFFER),
+              "numerical_grad", "a list or buffer parameter tensor", make_null());
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
@@ -2207,13 +2215,19 @@ Value* builtin_sgd_update(Value *arg) {
  * Returns a gradient matrix of the same shape, with zero rows for untouched rows. */
 Value* builtin_numerical_grad_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "numerical_grad_rows");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
+              "numerical_grad_rows", "a 4-argument list", make_null());
     EIGS_VIEW(loss_fn_view);
     Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
     EIGS_VIEW(matrix_view);
     Value *matrix = list_get_view(arg, 1, &matrix_view);
     EIGS_VIEW(row_indices_view);
     Value *row_indices = list_get_view(arg, 2, &row_indices_view);
+    ARG_GUARD(!matrix || (matrix->type != VAL_LIST && matrix->type != VAL_BUFFER) ||
+              !row_indices || (row_indices->type != VAL_LIST && row_indices->type != VAL_BUFFER),
+              "numerical_grad_rows", "a list or buffer matrix and index vector", make_null());
+    ARG_GUARD(matrix->type == VAL_LIST && matrix->data.list.count == 0,
+              "numerical_grad_rows", "a non-empty parameter matrix", make_null());
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
@@ -2327,13 +2341,18 @@ rows_grad_failed:
  * Updates only the specified rows of matrix in-place: row -= lr * grad_row */
 Value* builtin_sgd_update_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_rows");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
+              "sgd_update_rows", "a 4-argument list", make_null());
     EIGS_VIEW(matrix_view);
     Value *matrix = list_get_view(arg, 0, &matrix_view);
     EIGS_VIEW(grad_view);
     Value *grad = list_get_view(arg, 1, &grad_view);
     EIGS_VIEW(row_indices_view);
     Value *row_indices = list_get_view(arg, 2, &row_indices_view);
+    ARG_GUARD(!matrix || (matrix->type != VAL_LIST && matrix->type != VAL_BUFFER) ||
+              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
+              !row_indices || (row_indices->type != VAL_LIST && row_indices->type != VAL_BUFFER),
+              "sgd_update_rows", "list or buffer parameter, gradient, and indices", make_null());
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2400,13 +2419,19 @@ Value* builtin_sgd_update_rows(Value *arg) {
  * Returns a gradient matrix of the same shape, with zero columns for untouched cols. */
 Value* builtin_numerical_grad_cols(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "numerical_grad_cols");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
+              "numerical_grad_cols", "a 4-argument list", make_null());
     EIGS_VIEW(loss_fn_view);
     Value *loss_fn = list_get_view(arg, 0, &loss_fn_view);
     EIGS_VIEW(matrix_view);
     Value *matrix = list_get_view(arg, 1, &matrix_view);
     EIGS_VIEW(col_indices_view);
     Value *col_indices = list_get_view(arg, 2, &col_indices_view);
+    ARG_GUARD(!matrix || (matrix->type != VAL_LIST && matrix->type != VAL_BUFFER) ||
+              !col_indices || (col_indices->type != VAL_LIST && col_indices->type != VAL_BUFFER),
+              "numerical_grad_cols", "a list or buffer matrix and index vector", make_null());
+    ARG_GUARD(matrix->type == VAL_LIST && matrix->data.list.count == 0,
+              "numerical_grad_cols", "a non-empty parameter matrix", make_null());
     /* #1637: the optional eps: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double eps = 0.001;
@@ -2523,13 +2548,18 @@ cols_grad_failed:
  * Updates only the specified columns of matrix in-place: elem -= lr * grad_elem */
 Value* builtin_sgd_update_cols(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_cols");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 4) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
+              "sgd_update_cols", "a 4-argument list", make_null());
     EIGS_VIEW(matrix_view);
     Value *matrix = list_get_view(arg, 0, &matrix_view);
     EIGS_VIEW(grad_view);
     Value *grad = list_get_view(arg, 1, &grad_view);
     EIGS_VIEW(col_indices_view);
     Value *col_indices = list_get_view(arg, 2, &col_indices_view);
+    ARG_GUARD(!matrix || (matrix->type != VAL_LIST && matrix->type != VAL_BUFFER) ||
+              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
+              !col_indices || (col_indices->type != VAL_LIST && col_indices->type != VAL_BUFFER),
+              "sgd_update_cols", "list or buffer parameter, gradient, and indices", make_null());
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
