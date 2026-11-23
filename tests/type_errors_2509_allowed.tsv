@@ -15,6 +15,7 @@ asin	whole	-	number	asin of 0	ANY: | `asin` | `asin of x` | Inverse sine; input 
 assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ANY: | `assert` | `assert of [any condition, optional string message]` | Read the condition by truthiness, as `if` does. A non-list argument or a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
 assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ANY: | `assert` | `assert of [any condition, optional string message]` | Read the condition by truthiness, as `if` does. A non-list argument or a supplied non-string message raises `type_mismatch`; otherwise raise catchable error `"ASSERT FAIL: <msg>"` if the condition is false. |
 atan	whole	-	number	atan of 0	KIND: | `atan` | `atan of x` | Inverse tangent. Numeric inputs convert to float; numeric results are floats. |
+audio_volume	pos	0	number	audio_volume of [0, 0.5]	KIND: `audio_volume of [channel, vol]`
 bit_not	whole	-	number	bit_not of 0	KIND: | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
 buf_from_list	whole	-	list	buf_from_list of []	KIND: | `buf_from_list` | `buf_from_list of list` | Integer cells convert to float storage (Q2). Convert numeric list to buffer |
 buffer	whole	-	number	buffer of 0	ANY: | `buffer` | `buffer of count` | Dimensions and size follow N5, then the C int range. Create zero-filled buffer of given size (or `buffer of [rows, cols]` for a shaped one). |
