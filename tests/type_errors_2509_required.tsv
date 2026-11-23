@@ -1,0 +1,16 @@
+builtin	setup	expr
+softmax		softmax of {"a": 1}
+softmax		softmax of "bad"
+log_softmax		log_softmax of {"a": 1}
+log_softmax		log_softmax of "bad"
+relu		relu of {"a": 1}
+relu		relu of "bad"
+leaky_relu		leaky_relu of {"a": 1}
+leaky_relu		leaky_relu of "bad"
+sort		sort of ([{"a": 1}])
+sgd_update_rows		sgd_update_rows of [[7], [[2]], [0], 0.5]
+sgd_update_cols		sgd_update_cols of [[7], [[2]], [0], 0.5]
+numerical_grad_rows	define loss(n) as:\n    return 0	numerical_grad_rows of [loss, [7], [0], 0.001]
+numerical_grad_cols	define loss(n) as:\n    return 0	numerical_grad_cols of [loss, [7], [0], 0.001]
+nearest_in_range		nearest_in_range of [[{"px": "zz", "py": 0}], 0, 0, 2, 4, 4]
+nearest_in_range_all		nearest_in_range_all of [[{"px": "zz", "py": 0}, {"px": 1, "py": 0}], 2, 4, 4]

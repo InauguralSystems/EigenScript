@@ -85,17 +85,25 @@ assert of [bn == -1, "CV2-16 bit_not of 0"]
 bn2 is bit_not of 255
 assert of [bn2 == -256, "CV2-17 bit_not of 255"]
 
-# --- num of null and fallback ---
-n1 is num of null
-assert of [n1 == 0, "CV2-18 num of null"]
+# --- wrong-typed num/keys/values raise ---
+try:
+    num of null
+    assert of [false, "CV2-18 num of null must raise"]
+catch e:
+    assert of [e.kind == "type_mismatch", "CV2-18 num of null raises type_mismatch"]
 n2 is num of "3.14"
 assert of [n2 == 3.14, "CV2-19 num of string"]
 
-# --- keys/values on non-dict ---
-k_empty is keys of 42
-assert of [(len of k_empty) == 0, "CV2-20 keys of non-dict"]
-v_empty is values of "hello"
-assert of [(len of v_empty) == 0, "CV2-21 values of non-dict"]
+try:
+    keys of 42
+    assert of [false, "CV2-20 keys of non-dict must raise"]
+catch e:
+    assert of [e.kind == "type_mismatch", "CV2-20 keys of non-dict raises type_mismatch"]
+try:
+    values of "hello"
+    assert of [false, "CV2-21 values of non-dict must raise"]
+catch e:
+    assert of [e.kind == "type_mismatch", "CV2-21 values of non-dict raises type_mismatch"]
 
 # --- json_encode: null, list, special floats ---
 je_null is json_encode of null

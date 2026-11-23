@@ -59,8 +59,12 @@ run() {
     esac
     local exit_ok=0
     if [ "$xexit" = "0" ] && [ "$rc" = "0" ]; then exit_ok=1; fi
-    if [ "$xexit" = "1" ] && [ "$rc" != "0" ]; then exit_ok=1; fi
-    if ! leak_clean "$out"; then
+    # An expected error is a runtime error: exit 1. A crash (134, 139) or a
+    # hard sanitizer report after the expected text is not a pass (#2509 review).
+    if [ "$xexit" = "1" ] && [ "$rc" = "1" ]; then exit_ok=1; fi
+    if echo "$out" | grep -qE 'UndefinedBehaviorSanitizer|runtime error:|ThreadSanitizer|MemorySanitizer|AddressSanitizer: (heap|stack|global|dynamic)|AddressSanitizer: (SEGV|attempting|use-after)'; then
+        fail "$name" "hard sanitizer report: $(echo "$out" | grep -m1 -E 'Sanitizer|runtime error:')"
+    elif ! leak_clean "$out"; then
         fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
     elif [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
@@ -82,8 +86,12 @@ run_jitoff() {
     esac
     local exit_ok=0
     if [ "$xexit" = "0" ] && [ "$rc" = "0" ]; then exit_ok=1; fi
-    if [ "$xexit" = "1" ] && [ "$rc" != "0" ]; then exit_ok=1; fi
-    if ! leak_clean "$out"; then
+    # An expected error is a runtime error: exit 1. A crash (134, 139) or a
+    # hard sanitizer report after the expected text is not a pass (#2509 review).
+    if [ "$xexit" = "1" ] && [ "$rc" = "1" ]; then exit_ok=1; fi
+    if echo "$out" | grep -qE 'UndefinedBehaviorSanitizer|runtime error:|ThreadSanitizer|MemorySanitizer|AddressSanitizer: (heap|stack|global|dynamic)|AddressSanitizer: (SEGV|attempting|use-after)'; then
+        fail "$name" "hard sanitizer report: $(echo "$out" | grep -m1 -E 'Sanitizer|runtime error:')"
+    elif ! leak_clean "$out"; then
         fail "$name" "LEAKED on this path: $(echo "$out" | grep -F 'SUMMARY: AddressSanitizer')"
     elif [ "$exit_ok" = "1" ] && echo "$out" | grep -qF -- "$substr"; then
         ok "$name"
@@ -190,7 +198,7 @@ print of f"[{r}]"'
 run "SM32 strict: join of an empty list still empty"   1 0 "[]" \
 'local r is join of [[], ","]
 print of f"[{r}]"'
-run "SM33 strict: num still COERCES a list to 0"       1 0 "0" 'print of (num of ([1, 2]))'
+run "SM33 strict: num rejects a list"                  1 1 "num: expected a number or numeric string" 'print of (num of ([1, 2]))'
 run "SM34 strict: list_contains finding nothing is false"  1 0 "false" 'print of (list_contains of [[1, 2], 9])'
 run "SM35 strict: JSON false decodes to false (#1637)" 1 0 "false" \
     'print of (json_path of ["{\"a\": false}", "a"])'

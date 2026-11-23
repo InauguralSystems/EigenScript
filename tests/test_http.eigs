@@ -40,9 +40,13 @@ assert_true of [r3 == "route registered", "HTTP05 http_route_authed returns ack"
 s1 is http_static of ["/static", "/tmp"]
 assert_true of [s1 == "static registered", "HTTP06 http_static returns ack"]
 
-# ---- http_static: bad args return null ----
-s_bad is http_static of "just-a-string"
-assert_true of [s_bad == null, "HTTP07 http_static non-list returns null"]
+# ---- http_static: a wrong-typed argument raises (#2509; it answered null before) ----
+s_bad_kind is "none"
+try:
+    http_static of "just-a-string"
+catch e:
+    s_bad_kind is e.kind
+assert_true of [s_bad_kind == "type_mismatch", "HTTP07 http_static non-list raises type_mismatch"]
 
 # ---- http_request_body: default empty-request returns '{}' ----
 body is http_request_body of null

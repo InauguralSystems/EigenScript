@@ -1,0 +1,5 @@
+builtin	reason
+http_post	needs an owned loopback HTTP server (@HTTP_URL@, @HTTP_COUNT_URL@); its wrong-typed arguments are not covered by this census
+shared_incr	its setup calls the server profile's shared store, which raises before the probe on a build without it
+report	a reserved observer form: `report of x` does not parse as a call
+exit	ends the process, so its probe never prints the completion marker

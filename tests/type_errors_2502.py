@@ -21,9 +21,9 @@ MARK = '2502:done'
 # Core builtins whose shape case has no argument that can be made
 # wrong-typed (measured at #2502's head; --writer all fails if it changes).
 NO_WRONG_TYPE_EXPECTED = frozenset((
-    'append', 'assert', 'classify', 'coalesce', 'concat', 'dot', 'json_path',
-    'list_contains', 'list_index_of', 'list_slice', 'reshape', 'send',
-    'text_builder_append', 'text_builder_append_line', 'zeros'))
+    'append', 'assert', 'classify', 'coalesce', 'concat', 'dot',
+    'list_contains', 'list_index_of', 'send',
+    'text_builder_append', 'text_builder_append_line'))
 BAD = ('AddressSanitizer', 'LeakSanitizer', 'UndefinedBehaviorSanitizer',
        'ThreadSanitizer', 'runtime error:', 'undefined variable')
 
@@ -475,6 +475,18 @@ def main():
         # change to review, not a silent skip.
         no_type_names = sorted(r[0] for r in rows if r[2] == 'NO_WRONG_TYPE')
         pin_ok = (args.writer != 'all' or no_type_names == sorted(NO_WRONG_TYPE_EXPECTED))
+        chosen = {}
+        for row in rows:
+            chosen.setdefault(row[0], row[1])
+        pin_path = ROOT / 'tests/type_errors_2502_writer_args.tsv'
+        pinned = dict(line.split('\t', 1) for line in pin_path.read_text().splitlines())
+        expected_chosen = pinned if args.writer == 'all' else {
+            args.writer: pinned[args.writer]} if args.writer in pinned else {}
+        args_ok = chosen == expected_chosen
+        if args.writer == 'all' or expected_chosen:
+            if not args_ok:
+                print('FAIL: chosen writer arguments differ from pin')
+            pin_ok = pin_ok and args_ok
         if not pin_ok:
             print('FAIL: NO_WRONG_TYPE set differs from the pinned set: '
                   f'extra={sorted(set(no_type_names) - NO_WRONG_TYPE_EXPECTED)} '

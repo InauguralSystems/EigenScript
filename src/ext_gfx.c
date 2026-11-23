@@ -565,7 +565,8 @@ Value* builtin_gfx_open(Value *arg) {
         !eigs_list_magnitude(arg, 1, INT_MIN, INT_MAX, &height, "gfx_open"))
         return make_null();
     int w = (int)width, h = (int)height;
-    const char *title = list_elem_type(arg, 2) == VAL_STR ? list_get_ref(arg, 2)->data.str : "EigenScript";
+    ARG_GUARD(list_elem_type(arg, 2) != VAL_STR, "gfx_open", "a string title", make_bool(0));
+    const char *title = list_get_ref(arg, 2)->data.str;
 
     gfx_select_title_locale();
     if (!load_sdl2()) {

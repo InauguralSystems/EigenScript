@@ -76,13 +76,15 @@ Value* builtin_buffer(Value *arg) {
  * must equal the element count). */
 Value* builtin_reshape(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "reshape");
-    if (!arg || arg->type != VAL_LIST || arg->data.list.count < 3) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
+              "reshape", "[buffer, rows, columns]", make_null());
     EIGS_VIEW(b_view);
     Value *b = list_get_view(arg, 0, &b_view);
-    if (b->type != VAL_BUFFER) return make_null();
+    ARG_GUARD(!b || b->type != VAL_BUFFER, "reshape", "a buffer as its first argument", make_null());
     BOOL_REFUSE(arg, "reshape");   /* rows/cols; the buffer is not a bool */
-    if ((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
-        (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT)) return make_null();
+    ARG_GUARD((list_elem_type(arg, 1) != VAL_FLOAT && list_elem_type(arg, 1) != VAL_INT) ||
+              (list_elem_type(arg, 2) != VAL_FLOAT && list_elem_type(arg, 2) != VAL_INT),
+              "reshape", "numeric rows and columns", make_null());
     int64_t r64, c64;
     if (!eigs_list_int_range(arg, 1, INT_MIN, INT_MAX, &r64, "reshape") ||
         !eigs_list_int_range(arg, 2, INT_MIN, INT_MAX, &c64, "reshape")) return make_null();
@@ -283,7 +285,7 @@ Value* builtin_buf_len(Value *arg) {
 
 /* buf_from_list of list — convert list of numbers to buffer */
 Value* builtin_buf_from_list(Value *arg) {
-    if (!arg || arg->type != VAL_LIST) return make_null();
+    ARG_GUARD(!arg || arg->type != VAL_LIST, "buf_from_list", "a list", make_null());
     int n = arg->data.list.count;
     /* Sandbox chokepoint: the only two buffer producers not routed through the
      * charged make_shaped_buffer/buf_alloc_flat allocators (this + reshape).

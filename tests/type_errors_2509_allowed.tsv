@@ -1,0 +1,288 @@
+builtin	pop	pos	wrong	expr	classification
+abs	whole	-	number	abs of 0	KIND: `abs of x`
+acos	whole	-	number	acos of 0	ANY: `acos of x`
+add	pos	0	number	add of [0, [3, 4]]	KIND: `add of [a, b]`
+add	pos	1	number	add of [[1, 2], 0]	KIND: `add of [a, b]`
+append	pos	0	list	append of [[], 3]	ANY: `append of [list, item]`
+append	pos	1	dict	append of [xs, {"a": 1}]	ANY: `append of [list, item]`
+append	pos	1	list	append of [xs, []]	ANY: `append of [list, item]`
+append	pos	1	string	append of [xs, "zz_census_2509"]	ANY: `append of [list, item]`
+args	whole	-	dict	args of {"a": 1}	IGNORED: args of null
+args	whole	-	list	args of []	IGNORED: args of null
+args	whole	-	number	args of 0	IGNORED: args of null
+args	whole	-	string	args of "zz_census_2509"	IGNORED: args of null
+asin	whole	-	number	asin of 0	ANY: `asin of x`
+assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
+assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]	ANY: Read the condition by truthiness, as `if` does.
+assert	pos	1	dict	assert of [1, {"a": 1}]	ANY: the message may be any value and is shown as text (N6);
+assert	pos	1	list	assert of [1, []]	ANY: the message may be any value and is shown as text (N6);
+assert	pos	1	number	assert of [1, 0]	ANY: the message may be any value and is shown as text (N6);
+assert	whole	-	dict	assert of {"a": 1}	ANY: Read the condition by truthiness, as `if` does.
+assert	whole	-	string	assert of "zz_census_2509"	ANY: Read the condition by truthiness, as `if` does.
+atan	whole	-	number	atan of 0	KIND: `atan of x`
+audio_volume	pos	0	number	audio_volume of [0, 0.5]	KIND: `audio_volume of [channel, vol]`
+bit_not	whole	-	number	bit_not of 0	KIND: `bit_not of x`
+buf_from_list	whole	-	list	buf_from_list of []	KIND: `buf_from_list of list`
+buffer	whole	-	number	buffer of 0	ANY: `buffer of count`
+ceil	whole	-	number	ceil of 0	ANY: `ceil of x`
+channel	whole	-	number	channel of 0	KIND: `channel of capacity`
+clock_unix	whole	-	dict	clock_unix of {"a": 1}	IGNORED: clock_unix of null
+clock_unix	whole	-	list	clock_unix of []	IGNORED: clock_unix of null
+clock_unix	whole	-	number	clock_unix of 0	IGNORED: clock_unix of null
+clock_unix	whole	-	string	clock_unix of "zz_census_2509"	IGNORED: clock_unix of null
+coalesce	pos	0	dict	coalesce of [{"a": 1}, 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	list	coalesce of [[], 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	number	coalesce of [0, 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	0	string	coalesce of ["zz_census_2509", 4]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	dict	coalesce of [null, {"a": 1}]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	list	coalesce of [null, []]	ANY: `coalesce of [value, default]`
+coalesce	pos	1	string	coalesce of [null, "zz_census_2509"]	ANY: `coalesce of [value, default]`
+coalesce	whole	-	dict	coalesce of {"a": 1}	ANY: `coalesce of [value, default]`
+coalesce	whole	-	list	coalesce of []	ANY: `coalesce of [value, default]`
+coalesce	whole	-	number	coalesce of 0	ANY: `coalesce of [value, default]`
+coalesce	whole	-	string	coalesce of "zz_census_2509"	ANY: `coalesce of [value, default]`
+copy_into	pos	0	list	copy_into of [[], 1, [3]]	ANY: `copy_into of [dest, offset, src]`
+cos	whole	-	number	cos of 0	KIND: `cos of x`
+dict_remove	pos	0	dict	dict_remove of [{"a": 1}, "k"]	KIND: `dict_remove of [dict, "key"]`
+dict_set	pos	0	dict	dict_set of [{"a": 1}, "k", 3]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	dict	dict_set of [d, "k", {"a": 1}]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	list	dict_set of [d, "k", []]	ANY: `dict_set of [dict, "key", value]`
+dict_set	pos	2	string	dict_set of [d, "k", "zz_census_2509"]	ANY: `dict_set of [dict, "key", value]`
+divide	pos	0	number	divide of [0, [3, 4]]	KIND: `divide of [a, b]`
+divide	pos	1	number	divide of [[1, 2], 0]	KIND: `divide of [a, b]`
+env_get	whole	-	string	env_get of "zz_census_2509"	KIND: `env_get of "VAR_NAME"`
+exe_path	whole	-	dict	exe_path of {"a": 1}	IGNORED: exe_path of null
+exe_path	whole	-	list	exe_path of []	IGNORED: exe_path of null
+exe_path	whole	-	number	exe_path of 0	IGNORED: exe_path of null
+exe_path	whole	-	string	exe_path of "zz_census_2509"	IGNORED: exe_path of null
+exp	whole	-	list	exp of []	KIND: `exp of t`
+exp	whole	-	number	exp of 0	KIND: `exp of t`
+f64_bits	whole	-	number	f64_bits of 0	KIND: `f64_bits of number`
+f64_from_bits	whole	-	number	f64_from_bits of 0	ANY: `f64_from_bits of bits`
+f64_to_bytes	whole	-	number	f64_to_bytes of 0	KIND: `f64_to_bytes of x`
+file_exists	whole	-	string	file_exists of "zz_census_2509"	ANY: `file_exists of "path"`
+fill	pos	1	dict	fill of [2, {"a": 1}]	ANY: `fill of [count, value]`
+fill	pos	1	list	fill of [2, []]	ANY: `fill of [count, value]`
+fill	pos	1	number	fill of [2, 0]	ANY: `fill of [count, value]`
+floor	whole	-	number	floor of 0	ANY: `floor of x`
+flush	whole	-	dict	flush of {"a": 1}	IGNORED: flush of null
+flush	whole	-	list	flush of []	IGNORED: flush of null
+flush	whole	-	number	flush of 0	IGNORED: flush of null
+flush	whole	-	string	flush of "zz_census_2509"	IGNORED: flush of null
+fround	whole	-	number	fround of 0	KIND: `fround of x`
+get_observer_thresholds	whole	-	dict	get_observer_thresholds of {"a": 1}	IGNORED: get_observer_thresholds of null
+get_observer_thresholds	whole	-	list	get_observer_thresholds of []	IGNORED: get_observer_thresholds of null
+get_observer_thresholds	whole	-	number	get_observer_thresholds of 0	IGNORED: get_observer_thresholds of null
+get_observer_thresholds	whole	-	string	get_observer_thresholds of "zz_census_2509"	IGNORED: get_observer_thresholds of null
+getcwd	whole	-	dict	getcwd of {"a": 1}	IGNORED: getcwd of null
+getcwd	whole	-	list	getcwd of []	IGNORED: getcwd of null
+getcwd	whole	-	number	getcwd of 0	IGNORED: getcwd of null
+getcwd	whole	-	string	getcwd of "zz_census_2509"	IGNORED: getcwd of null
+hex	whole	-	number	hex of 0	ANY: `hex of n` or `hex of [n, nibbles]`
+http_route	pos	3	dict	http_route of ["GET", "/shape", "static", {"a": 1}]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
+http_route	pos	3	list	http_route of ["GET", "/shape", "static", []]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
+http_route	pos	3	number	http_route of ["GET", "/shape", "static", 0]	ANY: `body` is a literal response body, **not** a callback — passing a function raises (#877);
+http_route_authed	pos	3	dict	http_route_authed of ["GET", "/shape", "static", {"a": 1}]	ANY: `http_route_authed of [method, path, body]`
+http_route_authed	pos	3	list	http_route_authed of ["GET", "/shape", "static", []]	ANY: `http_route_authed of [method, path, body]`
+http_route_authed	pos	3	number	http_route_authed of ["GET", "/shape", "static", 0]	ANY: `http_route_authed of [method, path, body]`
+is_dir	whole	-	string	is_dir of "zz_census_2509"	KIND: `is_dir of "path"`
+is_file	whole	-	string	is_file of "zz_census_2509"	KIND: `is_file of "path"`
+json_build	whole	-	list	json_build of []	ANY: `json_build of [k1, v1, k2, v2, ...]`
+json_encode	whole	-	dict	json_encode of {"a": 1}	ANY: `json_encode of value`
+json_encode	whole	-	list	json_encode of []	ANY: `json_encode of value`
+json_encode	whole	-	number	json_encode of 0	ANY: `json_encode of value`
+json_encode	whole	-	string	json_encode of "zz_census_2509"	ANY: `json_encode of value`
+keys	whole	-	dict	keys of {"a": 1}	KIND: `keys of dict`
+leaky_relu	whole	-	list	leaky_relu of []	KIND: `leaky_relu of t`
+leaky_relu	whole	-	number	leaky_relu of 0	KIND: `leaky_relu of t`
+len	whole	-	dict	len of {"a": 1}	ANY: `len of value`
+len	whole	-	list	len of []	ANY: `len of value`
+len	whole	-	string	len of "zz_census_2509"	ANY: `len of value`
+list_contains	pos	1	dict	list_contains of [[1, 2], {"a": 1}]	ANY: `list_contains of [list, value]`
+list_contains	pos	1	list	list_contains of [[1, 2], []]	ANY: `list_contains of [list, value]`
+list_contains	pos	1	string	list_contains of [[1, 2], "zz_census_2509"]	ANY: `list_contains of [list, value]`
+list_index_of	pos	1	dict	list_index_of of [[1, 2], {"a": 1}]	KIND: `list_index_of of [list, value]`
+list_index_of	pos	1	list	list_index_of of [[1, 2], []]	KIND: `list_index_of of [list, value]`
+list_index_of	pos	1	string	list_index_of of [[1, 2], "zz_census_2509"]	KIND: `list_index_of of [list, value]`
+list_insert_at	pos	0	list	list_insert_at of [[], 1, 3]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	dict	list_insert_at of [xs, 1, {"a": 1}]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	list	list_insert_at of [xs, 1, []]	ANY: `list_insert_at of [list, index, value]`
+list_insert_at	pos	2	string	list_insert_at of [xs, 1, "zz_census_2509"]	ANY: `list_insert_at of [list, index, value]`
+list_remove_at	pos	0	list	list_remove_at of [[], 0]	ANY: `list_remove_at of [list, index]`
+list_truncate	pos	0	list	list_truncate of [[], 1]	ANY: `list_truncate of [list, new_len]`
+log	whole	-	list	log of []	KIND: `log of t`
+log	whole	-	number	log of 0	KIND: `log of t`
+log_softmax	whole	-	list	log_softmax of []	KIND: `log_softmax of t`
+log_softmax	whole	-	number	log_softmax of 0	KIND: `log_softmax of t`
+math_flags	whole	-	dict	math_flags of {"a": 1}	IGNORED: math_flags of null
+math_flags	whole	-	list	math_flags of []	IGNORED: math_flags of null
+math_flags	whole	-	number	math_flags of 0	IGNORED: math_flags of null
+math_flags	whole	-	string	math_flags of "zz_census_2509"	IGNORED: math_flags of null
+max	whole	-	number	max of 0	KIND: `max of [n1, n2, ...]`
+md5	whole	-	string	md5 of "zz_census_2509"	KIND: `md5 of string`
+mean	whole	-	list	mean of []	KIND: `mean of t`
+mean	whole	-	number	mean of 0	KIND: `mean of t`
+min	whole	-	number	min of 0	ANY: `min of [n1, n2, ...]`
+mkdir	whole	-	string	mkdir of "zz_census_2509"	KIND: `mkdir of "path"`
+mktemp	whole	-	dict	mktemp of {"a": 1}	KIND: `mktemp of null`
+mktemp	whole	-	list	mktemp of []	KIND: `mktemp of null`
+mktemp	whole	-	number	mktemp of 0	KIND: `mktemp of null`
+mktemp	whole	-	string	mktemp of "zz_census_2509"	KIND: `mktemp of null`
+monotonic_ms	whole	-	dict	monotonic_ms of {"a": 1}	IGNORED: monotonic_ms of null
+monotonic_ms	whole	-	list	monotonic_ms of []	IGNORED: monotonic_ms of null
+monotonic_ms	whole	-	number	monotonic_ms of 0	IGNORED: monotonic_ms of null
+monotonic_ms	whole	-	string	monotonic_ms of "zz_census_2509"	IGNORED: monotonic_ms of null
+monotonic_ns	whole	-	dict	monotonic_ns of {"a": 1}	IGNORED: monotonic_ns of null
+monotonic_ns	whole	-	list	monotonic_ns of []	IGNORED: monotonic_ns of null
+monotonic_ns	whole	-	number	monotonic_ns of 0	IGNORED: monotonic_ns of null
+monotonic_ns	whole	-	string	monotonic_ns of "zz_census_2509"	IGNORED: monotonic_ns of null
+multiply	pos	0	number	multiply of [0, [3, 4]]	ANY: `multiply of [a, b]`
+multiply	pos	1	number	multiply of [[1, 2], 0]	ANY: `multiply of [a, b]`
+negative	whole	-	list	negative of []	KIND: `negative of t`
+negative	whole	-	number	negative of 0	KIND: `negative of t`
+norm	whole	-	list	norm of []	ANY: `norm of t`
+norm	whole	-	number	norm of 0	ANY: `norm of t`
+num	whole	-	number	num of 0	KIND: `num of number_or_text`
+num_copy	whole	-	number	num_copy of 0	KIND: `num_copy of number`
+num_type	whole	-	dict	num_type of {"a": 1}	ANY: `num_type of value`
+num_type	whole	-	list	num_type of []	ANY: `num_type of value`
+num_type	whole	-	number	num_type of 0	ANY: `num_type of value`
+num_type	whole	-	string	num_type of "zz_census_2509"	ANY: `num_type of value`
+numerical_grad	pos	1	list	numerical_grad of [loss, [], 0.001]	KIND: `numerical_grad of [loss_fn, params, eps]`
+observe	whole	-	dict	observe of {"a": 1}	ANY: `observe of value`
+observe	whole	-	list	observe of []	ANY: `observe of value`
+observe	whole	-	number	observe of 0	ANY: `observe of value`
+observe	whole	-	string	observe of "zz_census_2509"	ANY: `observe of value`
+ord	whole	-	string	ord of "zz_census_2509"	KIND: `ord of s`
+path_base	whole	-	string	path_base of "zz_census_2509"	KIND: `path_base of path`
+path_dir	whole	-	string	path_dir of "zz_census_2509"	KIND: `path_dir of path`
+path_ext	whole	-	string	path_ext of "zz_census_2509"	KIND: `path_ext of path`
+pi	whole	-	dict	pi of {"a": 1}	IGNORED: pi of null
+pi	whole	-	list	pi of []	IGNORED: pi of null
+pi	whole	-	number	pi of 0	IGNORED: pi of null
+pi	whole	-	string	pi of "zz_census_2509"	IGNORED: pi of null
+pow	pos	0	number	pow of [0, [3, 4]]	ANY: `pow of [base, exp]`
+pow	pos	1	number	pow of [[1, 2], 0]	ANY: `pow of [base, exp]`
+print	whole	-	dict	print of {"a": 1}	ANY: `print of value`
+print	whole	-	list	print of []	ANY: `print of value`
+print	whole	-	number	print of 0	ANY: `print of value`
+print	whole	-	string	print of "zz_census_2509"	ANY: `print of value`
+random	whole	-	dict	random of {"a": 1}	IGNORED: random of null
+random	whole	-	list	random of []	IGNORED: random of null
+random	whole	-	number	random of 0	IGNORED: random of null
+random	whole	-	string	random of "zz_census_2509"	IGNORED: random of null
+random_hex	whole	-	number	random_hex of 0	ANY: `random_hex of n`
+range	whole	-	list	range of []	KIND: `range of n` or `range of [start, end]`
+range	whole	-	number	range of 0	KIND: `range of n` or `range of [start, end]`
+read_line	whole	-	dict	read_line of {"a": 1}	IGNORED: read_line of null
+read_line	whole	-	list	read_line of []	IGNORED: read_line of null
+read_line	whole	-	number	read_line of 0	IGNORED: read_line of null
+read_line	whole	-	string	read_line of "zz_census_2509"	IGNORED: read_line of null
+record_history	whole	-	number	record_history of 0	ANY: `record_history of flag`
+relu	whole	-	list	relu of []	KIND: `relu of t`
+relu	whole	-	number	relu of 0	KIND: `relu of t`
+round	whole	-	number	round of 0	KIND: `round of x`
+sandbox_run	pos	0	dict	sandbox_run of [{"a": 1}, 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	list	sandbox_run of [[], 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	number	sandbox_run of [0, 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	pos	0	string	sandbox_run of ["zz_census_2509", 100, 1048576, 10000]	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	dict	sandbox_run of {"a": 1}	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	list	sandbox_run of []	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	number	sandbox_run of 0	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+sandbox_run	whole	-	string	sandbox_run of "zz_census_2509"	ANY: Returns `{ok:true,result:...}` or `{ok:false,error:{kind,message,line,file}}`;
+scan_int_tokens	whole	-	string	scan_int_tokens of "zz_census_2509"	ANY: `scan_int_tokens of string` or `scan_int_tokens of [string, string comment_marker]`
+scan_ints	whole	-	string	scan_ints of "zz_census_2509"	KIND: `scan_ints of string` or `scan_ints of [string, string comment_marker]`
+scatter_add	pos	2	number	scatter_add of [a, [1], 0]	ANY: `scatter_add of [dst, indices, values]`
+seed_random	whole	-	number	seed_random of 0	ANY: `seed_random of n`
+send	pos	1	dict	send of [ch, {"a": 1}]	ANY: `send of [channel, value]`
+send	pos	1	list	send of [ch, []]	ANY: `send of [channel, value]`
+send	pos	1	string	send of [ch, "zz_census_2509"]	ANY: `send of [channel, value]`
+set_exit_code	whole	-	number	set_exit_code of 0	ANY: `set_exit_code of N`
+sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ANY: `sgd_update of [params, grad, lr]`
+sha256	whole	-	string	sha256 of "zz_census_2509"	KIND: `sha256 of string`
+shape	whole	-	list	shape of []	ANY: `shape of t`
+shape	whole	-	number	shape of 0	ANY: `shape of t`
+shared_set	pos	1	dict	shared_set of ["shape-key", {"a": 1}]	ANY: Store `value` (JSON-encoded).
+shared_set	pos	1	list	shared_set of ["shape-key", []]	ANY: Store `value` (JSON-encoded).
+shared_set	pos	1	string	shared_set of ["shape-key", "zz_census_2509"]	ANY: Store `value` (JSON-encoded).
+sin	whole	-	number	sin of 0	KIND: `sin of x`
+softmax	whole	-	list	softmax of []	KIND: `softmax of t`
+softmax	whole	-	number	softmax of 0	KIND: `softmax of t`
+sort	whole	-	list	sort of []	KIND: `sort of list`
+split	whole	-	string	split of "zz_census_2509"	KIND: `split of s`
+sqrt	whole	-	list	sqrt of []	ANY: `sqrt of t`
+sqrt	whole	-	number	sqrt of 0	ANY: `sqrt of t`
+state_at	whole	-	number	state_at of 0	ANY: `state_at of line`
+store_delete	pos	2	number	store_delete of [shape_store, "items", 0]	KIND: `store_delete of [handle, collection, key]`
+store_delete	pos	2	string	store_delete of [shape_store, "items", "zz_census_2509"]	KIND: `store_delete of [handle, collection, key]`
+store_get	pos	2	number	store_get of [shape_store, "items", 0]	KIND: `store_get of [handle, collection, key]`
+store_get	pos	2	string	store_get of [shape_store, "items", "zz_census_2509"]	KIND: `store_get of [handle, collection, key]`
+store_open	whole	-	string	store_open of "zz_census_2509"	KIND: `store_open of path`
+store_update	pos	2	number	store_update of [shape_store, "items", 0, {"value": 2}]	KIND: `store_update of [handle, collection, key, record]`
+store_update	pos	2	string	store_update of [shape_store, "items", "zz_census_2509", {"value": 2}]	KIND: `store_update of [handle, collection, key, record]`
+str	whole	-	dict	str of {"a": 1}	ANY: `str of value`
+str	whole	-	list	str of []	ANY: `str of value`
+str	whole	-	number	str of 0	ANY: `str of value`
+str	whole	-	string	str of "zz_census_2509"	ANY: `str of value`
+str_from_bytes	whole	-	list	str_from_bytes of []	ANY: `str_from_bytes of <list\|buffer>`
+str_lower	whole	-	string	str_lower of "zz_census_2509"	KIND: `str_lower of s`
+str_upper	whole	-	string	str_upper of "zz_census_2509"	KIND: `str_upper of s`
+stream_close	whole	-	dict	stream_close of {"a": 1}	KIND: `stream_close of null`
+stream_close	whole	-	list	stream_close of []	KIND: `stream_close of null`
+stream_close	whole	-	number	stream_close of 0	KIND: `stream_close of null`
+stream_close	whole	-	string	stream_close of "zz_census_2509"	KIND: `stream_close of null`
+stream_write	whole	-	number	stream_write of 0	ANY: `stream_write of value`
+subtract	pos	0	number	subtract of [0, [3, 4]]	ANY: `subtract of [a, b]`
+subtract	pos	1	number	subtract of [[1, 2], 0]	ANY: `subtract of [a, b]`
+sum	whole	-	list	sum of []	ANY: `sum of t`
+sum	whole	-	number	sum of 0	ANY: `sum of t`
+tan	whole	-	number	tan of 0	KIND: `tan of x`
+task_alive	whole	-	number	task_alive of 0	ANY: `task_alive of id`
+task_detach	whole	-	number	task_detach of 0	ANY: `task_detach of id`
+task_join	whole	-	number	task_join of 0	ANY: `task_join of id`
+task_kill	whole	-	number	task_kill of 0	ANY: `task_kill of id`
+task_recv	whole	-	dict	task_recv of {"a": 1}	IGNORED: task_recv of null
+task_recv	whole	-	list	task_recv of []	IGNORED: task_recv of null
+task_recv	whole	-	number	task_recv of 0	IGNORED: task_recv of null
+task_recv	whole	-	string	task_recv of "zz_census_2509"	IGNORED: task_recv of null
+task_sched_seed	whole	-	number	task_sched_seed of 0	KIND: `task_sched_seed of n`
+task_self	whole	-	dict	task_self of {"a": 1}	IGNORED: task_self of null
+task_self	whole	-	list	task_self of []	IGNORED: task_self of null
+task_self	whole	-	number	task_self of 0	IGNORED: task_self of null
+task_self	whole	-	string	task_self of "zz_census_2509"	IGNORED: task_self of null
+task_send	pos	1	dict	task_send of [0, {"a": 1}]	ANY: `task_send of [id, value]`
+task_send	pos	1	list	task_send of [0, []]	ANY: `task_send of [id, value]`
+task_send	pos	1	string	task_send of [0, "zz_census_2509"]	ANY: `task_send of [id, value]`
+task_sleep	whole	-	number	task_sleep of 0	KIND: `task_sleep of ticks`
+task_yield	whole	-	dict	task_yield of {"a": 1}	IGNORED: task_yield of null
+task_yield	whole	-	list	task_yield of []	IGNORED: task_yield of null
+task_yield	whole	-	number	task_yield of 0	IGNORED: task_yield of null
+task_yield	whole	-	string	task_yield of "zz_census_2509"	IGNORED: task_yield of null
+tensor_load	whole	-	string	tensor_load of "zz_census_2509"	ANY: `tensor_load of "path"`
+text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]	ANY: `text_builder_append of [builder, value]`
+text_builder_append	pos	1	list	text_builder_append of [tb, []]	ANY: `text_builder_append of [builder, value]`
+text_builder_append	pos	1	number	text_builder_append of [tb, 0]	ANY: `text_builder_append of [builder, value]`
+text_builder_append_line	pos	1	dict	text_builder_append_line of [tb, {"a": 1}]	ANY: `text_builder_append_line of [builder, value]`
+text_builder_append_line	pos	1	list	text_builder_append_line of [tb, []]	ANY: `text_builder_append_line of [builder, value]`
+text_builder_append_line	pos	1	number	text_builder_append_line of [tb, 0]	ANY: `text_builder_append_line of [builder, value]`
+text_builder_new	whole	-	dict	text_builder_new of {"a": 1}	IGNORED: text_builder_new of null
+text_builder_new	whole	-	list	text_builder_new of []	IGNORED: text_builder_new of null
+text_builder_new	whole	-	number	text_builder_new of 0	IGNORED: text_builder_new of null
+text_builder_new	whole	-	string	text_builder_new of "zz_census_2509"	IGNORED: text_builder_new of null
+token_name	whole	-	number	token_name of 0	ANY: `token_name of id`
+trim	whole	-	string	trim of "zz_census_2509"	KIND: `trim of s`
+try_parse	whole	-	string	try_parse of "zz_census_2509"	KIND: `try_parse of code_string`
+type	whole	-	dict	type of {"a": 1}	ANY: `type of value`
+type	whole	-	list	type of []	ANY: `type of value`
+type	whole	-	number	type of 0	ANY: `type of value`
+type	whole	-	string	type of "zz_census_2509"	ANY: `type of value`
+u64_to_string	whole	-	number	u64_to_string of 0	KIND: `u64_to_string of x`
+usleep	whole	-	number	usleep of 0	ANY: `usleep of microseconds`
+values	whole	-	dict	values of {"a": 1}	ANY: `values of dict`
+write	whole	-	dict	write of {"a": 1}	ANY: `write of value`
+write	whole	-	list	write of []	ANY: `write of value`
+write	whole	-	number	write of 0	ANY: `write of value`
+write	whole	-	string	write of "zz_census_2509"	ANY: `write of value`
+zeros	whole	-	number	zeros of 0	KIND: `zeros of n` or `zeros of [rows, cols]`
+zeros_like	whole	-	list	zeros_like of []	KIND: `zeros_like of t`
+zeros_like	whole	-	number	zeros_like of 0	KIND: `zeros_like of t`

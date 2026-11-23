@@ -376,7 +376,12 @@ An argument guard rejects a wrong type, a short or surplus argument list, a wron
 | `0` | raise | IEEE value |
 | `1` | raise | raise |
 
-No answer to a type error depends on `EIGS_STRICT`: argument guards raise in every state. Builtins that still answer `null` for a wrong-typed argument in every state are tracked in #2509. Bools rejected by numeric argument contracts raise at any list or dictionary depth; valid any-value container positions keep their documented meaning.
+No answer to a type error depends on `EIGS_STRICT`: an argument that violates
+a builtin's documented type contract raises `type_mismatch` in every state.
+The census separately classifies explicitly any-valued positions, ignored
+`name of null` positions, and valid values that reach a documented non-type
+error. Bools rejected by numeric argument
+contracts raise at any list or dictionary depth.
 
 Numeric conversion arguments (indices, counts, bytes, durations, stored or encoded numbers) and a buffer's stored cells refuse non-finite values in every state; scalar math, its list forms and list reductions are arithmetic positions.
 

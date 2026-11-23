@@ -1,0 +1,2219 @@
+builtin	pop	pos	wrong	expr
+abs	whole	-	string	abs of "zz_census_2509"
+abs	whole	-	number	abs of 0
+abs	whole	-	dict	abs of {"a": 1}
+abs	whole	-	list	abs of []
+acos	whole	-	string	acos of "zz_census_2509"
+acos	whole	-	number	acos of 0
+acos	whole	-	dict	acos of {"a": 1}
+acos	whole	-	list	acos of []
+add	whole	-	string	add of "zz_census_2509"
+add	whole	-	number	add of 0
+add	whole	-	dict	add of {"a": 1}
+add	whole	-	list	add of []
+append	whole	-	string	append of "zz_census_2509"
+append	whole	-	number	append of 0
+append	whole	-	dict	append of {"a": 1}
+append	whole	-	list	append of []
+args	whole	-	string	args of "zz_census_2509"
+args	whole	-	number	args of 0
+args	whole	-	dict	args of {"a": 1}
+args	whole	-	list	args of []
+asin	whole	-	string	asin of "zz_census_2509"
+asin	whole	-	number	asin of 0
+asin	whole	-	dict	asin of {"a": 1}
+asin	whole	-	list	asin of []
+assert	whole	-	string	assert of "zz_census_2509"
+assert	whole	-	number	assert of 0
+assert	whole	-	dict	assert of {"a": 1}
+assert	whole	-	list	assert of []
+atan	whole	-	string	atan of "zz_census_2509"
+atan	whole	-	number	atan of 0
+atan	whole	-	dict	atan of {"a": 1}
+atan	whole	-	list	atan of []
+atan2	whole	-	string	atan2 of "zz_census_2509"
+atan2	whole	-	number	atan2 of 0
+atan2	whole	-	dict	atan2 of {"a": 1}
+atan2	whole	-	list	atan2 of []
+bit_and	whole	-	string	bit_and of "zz_census_2509"
+bit_and	whole	-	number	bit_and of 0
+bit_and	whole	-	dict	bit_and of {"a": 1}
+bit_and	whole	-	list	bit_and of []
+bit_not	whole	-	string	bit_not of "zz_census_2509"
+bit_not	whole	-	number	bit_not of 0
+bit_not	whole	-	dict	bit_not of {"a": 1}
+bit_not	whole	-	list	bit_not of []
+bit_or	whole	-	string	bit_or of "zz_census_2509"
+bit_or	whole	-	number	bit_or of 0
+bit_or	whole	-	dict	bit_or of {"a": 1}
+bit_or	whole	-	list	bit_or of []
+bit_shl	whole	-	string	bit_shl of "zz_census_2509"
+bit_shl	whole	-	number	bit_shl of 0
+bit_shl	whole	-	dict	bit_shl of {"a": 1}
+bit_shl	whole	-	list	bit_shl of []
+bit_shr	whole	-	string	bit_shr of "zz_census_2509"
+bit_shr	whole	-	number	bit_shr of 0
+bit_shr	whole	-	dict	bit_shr of {"a": 1}
+bit_shr	whole	-	list	bit_shr of []
+bit_xor	whole	-	string	bit_xor of "zz_census_2509"
+bit_xor	whole	-	number	bit_xor of 0
+bit_xor	whole	-	dict	bit_xor of {"a": 1}
+bit_xor	whole	-	list	bit_xor of []
+buf_copy	whole	-	string	buf_copy of "zz_census_2509"
+buf_copy	whole	-	number	buf_copy of 0
+buf_copy	whole	-	dict	buf_copy of {"a": 1}
+buf_copy	whole	-	list	buf_copy of []
+buf_deinterleave	whole	-	string	buf_deinterleave of "zz_census_2509"
+buf_deinterleave	whole	-	number	buf_deinterleave of 0
+buf_deinterleave	whole	-	dict	buf_deinterleave of {"a": 1}
+buf_deinterleave	whole	-	list	buf_deinterleave of []
+buf_dot	whole	-	string	buf_dot of "zz_census_2509"
+buf_dot	whole	-	number	buf_dot of 0
+buf_dot	whole	-	dict	buf_dot of {"a": 1}
+buf_dot	whole	-	list	buf_dot of []
+buf_fill	whole	-	string	buf_fill of "zz_census_2509"
+buf_fill	whole	-	number	buf_fill of 0
+buf_fill	whole	-	dict	buf_fill of {"a": 1}
+buf_fill	whole	-	list	buf_fill of []
+buf_from_list	whole	-	string	buf_from_list of "zz_census_2509"
+buf_from_list	whole	-	number	buf_from_list of 0
+buf_from_list	whole	-	dict	buf_from_list of {"a": 1}
+buf_from_list	whole	-	list	buf_from_list of []
+buf_from_pcm16le	whole	-	string	buf_from_pcm16le of "zz_census_2509"
+buf_from_pcm16le	whole	-	number	buf_from_pcm16le of 0
+buf_from_pcm16le	whole	-	dict	buf_from_pcm16le of {"a": 1}
+buf_from_pcm16le	whole	-	list	buf_from_pcm16le of []
+buf_get	whole	-	string	buf_get of "zz_census_2509"
+buf_get	whole	-	number	buf_get of 0
+buf_get	whole	-	dict	buf_get of {"a": 1}
+buf_get	whole	-	list	buf_get of []
+buf_get_bits	whole	-	string	buf_get_bits of "zz_census_2509"
+buf_get_bits	whole	-	number	buf_get_bits of 0
+buf_get_bits	whole	-	dict	buf_get_bits of {"a": 1}
+buf_get_bits	whole	-	list	buf_get_bits of []
+buf_len	whole	-	string	buf_len of "zz_census_2509"
+buf_len	whole	-	number	buf_len of 0
+buf_len	whole	-	dict	buf_len of {"a": 1}
+buf_len	whole	-	list	buf_len of []
+buf_mix	whole	-	string	buf_mix of "zz_census_2509"
+buf_mix	whole	-	number	buf_mix of 0
+buf_mix	whole	-	dict	buf_mix of {"a": 1}
+buf_mix	whole	-	list	buf_mix of []
+buf_peak	whole	-	string	buf_peak of "zz_census_2509"
+buf_peak	whole	-	number	buf_peak of 0
+buf_peak	whole	-	dict	buf_peak of {"a": 1}
+buf_peak	whole	-	list	buf_peak of []
+buf_resample_linear	whole	-	string	buf_resample_linear of "zz_census_2509"
+buf_resample_linear	whole	-	number	buf_resample_linear of 0
+buf_resample_linear	whole	-	dict	buf_resample_linear of {"a": 1}
+buf_resample_linear	whole	-	list	buf_resample_linear of []
+buf_scale_range	whole	-	string	buf_scale_range of "zz_census_2509"
+buf_scale_range	whole	-	number	buf_scale_range of 0
+buf_scale_range	whole	-	dict	buf_scale_range of {"a": 1}
+buf_scale_range	whole	-	list	buf_scale_range of []
+buf_set	whole	-	string	buf_set of "zz_census_2509"
+buf_set	whole	-	number	buf_set of 0
+buf_set	whole	-	dict	buf_set of {"a": 1}
+buf_set	whole	-	list	buf_set of []
+buf_set_bits	whole	-	string	buf_set_bits of "zz_census_2509"
+buf_set_bits	whole	-	number	buf_set_bits of 0
+buf_set_bits	whole	-	dict	buf_set_bits of {"a": 1}
+buf_set_bits	whole	-	list	buf_set_bits of []
+buf_to_pcm16le	whole	-	string	buf_to_pcm16le of "zz_census_2509"
+buf_to_pcm16le	whole	-	number	buf_to_pcm16le of 0
+buf_to_pcm16le	whole	-	dict	buf_to_pcm16le of {"a": 1}
+buf_to_pcm16le	whole	-	list	buf_to_pcm16le of []
+buffer	whole	-	string	buffer of "zz_census_2509"
+buffer	whole	-	number	buffer of 0
+buffer	whole	-	dict	buffer of {"a": 1}
+buffer	whole	-	list	buffer of []
+ceil	whole	-	string	ceil of "zz_census_2509"
+ceil	whole	-	number	ceil of 0
+ceil	whole	-	dict	ceil of {"a": 1}
+ceil	whole	-	list	ceil of []
+channel	whole	-	string	channel of "zz_census_2509"
+channel	whole	-	number	channel of 0
+channel	whole	-	dict	channel of {"a": 1}
+channel	whole	-	list	channel of []
+channel_closed	whole	-	string	channel_closed of "zz_census_2509"
+channel_closed	whole	-	number	channel_closed of 0
+channel_closed	whole	-	dict	channel_closed of {"a": 1}
+channel_closed	whole	-	list	channel_closed of []
+char_at	whole	-	string	char_at of "zz_census_2509"
+char_at	whole	-	number	char_at of 0
+char_at	whole	-	dict	char_at of {"a": 1}
+char_at	whole	-	list	char_at of []
+chr	whole	-	string	chr of "zz_census_2509"
+chr	whole	-	number	chr of 0
+chr	whole	-	dict	chr of {"a": 1}
+chr	whole	-	list	chr of []
+classify	whole	-	string	classify of "zz_census_2509"
+classify	whole	-	number	classify of 0
+classify	whole	-	dict	classify of {"a": 1}
+classify	whole	-	list	classify of []
+clock_unix	whole	-	string	clock_unix of "zz_census_2509"
+clock_unix	whole	-	number	clock_unix of 0
+clock_unix	whole	-	dict	clock_unix of {"a": 1}
+clock_unix	whole	-	list	clock_unix of []
+close_channel	whole	-	string	close_channel of "zz_census_2509"
+close_channel	whole	-	number	close_channel of 0
+close_channel	whole	-	dict	close_channel of {"a": 1}
+close_channel	whole	-	list	close_channel of []
+coalesce	whole	-	string	coalesce of "zz_census_2509"
+coalesce	whole	-	number	coalesce of 0
+coalesce	whole	-	dict	coalesce of {"a": 1}
+coalesce	whole	-	list	coalesce of []
+concat	whole	-	string	concat of "zz_census_2509"
+concat	whole	-	number	concat of 0
+concat	whole	-	dict	concat of {"a": 1}
+concat	whole	-	list	concat of []
+contains	whole	-	string	contains of "zz_census_2509"
+contains	whole	-	number	contains of 0
+contains	whole	-	dict	contains of {"a": 1}
+contains	whole	-	list	contains of []
+copy_into	whole	-	string	copy_into of "zz_census_2509"
+copy_into	whole	-	number	copy_into of 0
+copy_into	whole	-	dict	copy_into of {"a": 1}
+copy_into	whole	-	list	copy_into of []
+cos	whole	-	string	cos of "zz_census_2509"
+cos	whole	-	number	cos of 0
+cos	whole	-	dict	cos of {"a": 1}
+cos	whole	-	list	cos of []
+dict_remove	whole	-	string	dict_remove of "zz_census_2509"
+dict_remove	whole	-	number	dict_remove of 0
+dict_remove	whole	-	dict	dict_remove of {"a": 1}
+dict_remove	whole	-	list	dict_remove of []
+dict_set	whole	-	string	dict_set of "zz_census_2509"
+dict_set	whole	-	number	dict_set of 0
+dict_set	whole	-	dict	dict_set of {"a": 1}
+dict_set	whole	-	list	dict_set of []
+dir_sync	whole	-	string	dir_sync of "zz_census_2509"
+dir_sync	whole	-	number	dir_sync of 0
+dir_sync	whole	-	dict	dir_sync of {"a": 1}
+dir_sync	whole	-	list	dir_sync of []
+dispatch	whole	-	string	dispatch of "zz_census_2509"
+dispatch	whole	-	number	dispatch of 0
+dispatch	whole	-	dict	dispatch of {"a": 1}
+dispatch	whole	-	list	dispatch of []
+divide	whole	-	string	divide of "zz_census_2509"
+divide	whole	-	number	divide of 0
+divide	whole	-	dict	divide of {"a": 1}
+divide	whole	-	list	divide of []
+dot	whole	-	string	dot of "zz_census_2509"
+dot	whole	-	number	dot of 0
+dot	whole	-	dict	dot of {"a": 1}
+dot	whole	-	list	dot of []
+ends_with	whole	-	string	ends_with of "zz_census_2509"
+ends_with	whole	-	number	ends_with of 0
+ends_with	whole	-	dict	ends_with of {"a": 1}
+ends_with	whole	-	list	ends_with of []
+env_get	whole	-	string	env_get of "zz_census_2509"
+env_get	whole	-	number	env_get of 0
+env_get	whole	-	dict	env_get of {"a": 1}
+env_get	whole	-	list	env_get of []
+eval	whole	-	string	eval of "zz_census_2509"
+eval	whole	-	number	eval of 0
+eval	whole	-	dict	eval of {"a": 1}
+eval	whole	-	list	eval of []
+exe_path	whole	-	string	exe_path of "zz_census_2509"
+exe_path	whole	-	number	exe_path of 0
+exe_path	whole	-	dict	exe_path of {"a": 1}
+exe_path	whole	-	list	exe_path of []
+exec_capture	whole	-	string	exec_capture of "zz_census_2509"
+exec_capture	whole	-	number	exec_capture of 0
+exec_capture	whole	-	dict	exec_capture of {"a": 1}
+exec_capture	whole	-	list	exec_capture of []
+exp	whole	-	string	exp of "zz_census_2509"
+exp	whole	-	number	exp of 0
+exp	whole	-	dict	exp of {"a": 1}
+exp	whole	-	list	exp of []
+f64_bits	whole	-	string	f64_bits of "zz_census_2509"
+f64_bits	whole	-	number	f64_bits of 0
+f64_bits	whole	-	dict	f64_bits of {"a": 1}
+f64_bits	whole	-	list	f64_bits of []
+f64_from_bits	whole	-	string	f64_from_bits of "zz_census_2509"
+f64_from_bits	whole	-	number	f64_from_bits of 0
+f64_from_bits	whole	-	dict	f64_from_bits of {"a": 1}
+f64_from_bits	whole	-	list	f64_from_bits of []
+f64_from_bytes	whole	-	string	f64_from_bytes of "zz_census_2509"
+f64_from_bytes	whole	-	number	f64_from_bytes of 0
+f64_from_bytes	whole	-	dict	f64_from_bytes of {"a": 1}
+f64_from_bytes	whole	-	list	f64_from_bytes of []
+f64_to_bytes	whole	-	string	f64_to_bytes of "zz_census_2509"
+f64_to_bytes	whole	-	number	f64_to_bytes of 0
+f64_to_bytes	whole	-	dict	f64_to_bytes of {"a": 1}
+f64_to_bytes	whole	-	list	f64_to_bytes of []
+file_exists	whole	-	string	file_exists of "zz_census_2509"
+file_exists	whole	-	number	file_exists of 0
+file_exists	whole	-	dict	file_exists of {"a": 1}
+file_exists	whole	-	list	file_exists of []
+file_sync	whole	-	string	file_sync of "zz_census_2509"
+file_sync	whole	-	number	file_sync of 0
+file_sync	whole	-	dict	file_sync of {"a": 1}
+file_sync	whole	-	list	file_sync of []
+fill	whole	-	string	fill of "zz_census_2509"
+fill	whole	-	number	fill of 0
+fill	whole	-	dict	fill of {"a": 1}
+fill	whole	-	list	fill of []
+floor	whole	-	string	floor of "zz_census_2509"
+floor	whole	-	number	floor of 0
+floor	whole	-	dict	floor of {"a": 1}
+floor	whole	-	list	floor of []
+flush	whole	-	string	flush of "zz_census_2509"
+flush	whole	-	number	flush of 0
+flush	whole	-	dict	flush of {"a": 1}
+flush	whole	-	list	flush of []
+fround	whole	-	string	fround of "zz_census_2509"
+fround	whole	-	number	fround of 0
+fround	whole	-	dict	fround of {"a": 1}
+fround	whole	-	list	fround of []
+gather	whole	-	string	gather of "zz_census_2509"
+gather	whole	-	number	gather of 0
+gather	whole	-	dict	gather of {"a": 1}
+gather	whole	-	list	gather of []
+get_at	whole	-	string	get_at of "zz_census_2509"
+get_at	whole	-	number	get_at of 0
+get_at	whole	-	dict	get_at of {"a": 1}
+get_at	whole	-	list	get_at of []
+get_observer_thresholds	whole	-	string	get_observer_thresholds of "zz_census_2509"
+get_observer_thresholds	whole	-	number	get_observer_thresholds of 0
+get_observer_thresholds	whole	-	dict	get_observer_thresholds of {"a": 1}
+get_observer_thresholds	whole	-	list	get_observer_thresholds of []
+getcwd	whole	-	string	getcwd of "zz_census_2509"
+getcwd	whole	-	number	getcwd of 0
+getcwd	whole	-	dict	getcwd of {"a": 1}
+getcwd	whole	-	list	getcwd of []
+has_key	whole	-	string	has_key of "zz_census_2509"
+has_key	whole	-	number	has_key of 0
+has_key	whole	-	dict	has_key of {"a": 1}
+has_key	whole	-	list	has_key of []
+hex	whole	-	string	hex of "zz_census_2509"
+hex	whole	-	number	hex of 0
+hex	whole	-	dict	hex of {"a": 1}
+hex	whole	-	list	hex of []
+i16_checked_add	whole	-	string	i16_checked_add of "zz_census_2509"
+i16_checked_add	whole	-	number	i16_checked_add of 0
+i16_checked_add	whole	-	dict	i16_checked_add of {"a": 1}
+i16_checked_add	whole	-	list	i16_checked_add of []
+i16_checked_mul	whole	-	string	i16_checked_mul of "zz_census_2509"
+i16_checked_mul	whole	-	number	i16_checked_mul of 0
+i16_checked_mul	whole	-	dict	i16_checked_mul of {"a": 1}
+i16_checked_mul	whole	-	list	i16_checked_mul of []
+i16_checked_sub	whole	-	string	i16_checked_sub of "zz_census_2509"
+i16_checked_sub	whole	-	number	i16_checked_sub of 0
+i16_checked_sub	whole	-	dict	i16_checked_sub of {"a": 1}
+i16_checked_sub	whole	-	list	i16_checked_sub of []
+i16_saturating_add	whole	-	string	i16_saturating_add of "zz_census_2509"
+i16_saturating_add	whole	-	number	i16_saturating_add of 0
+i16_saturating_add	whole	-	dict	i16_saturating_add of {"a": 1}
+i16_saturating_add	whole	-	list	i16_saturating_add of []
+i16_saturating_mul	whole	-	string	i16_saturating_mul of "zz_census_2509"
+i16_saturating_mul	whole	-	number	i16_saturating_mul of 0
+i16_saturating_mul	whole	-	dict	i16_saturating_mul of {"a": 1}
+i16_saturating_mul	whole	-	list	i16_saturating_mul of []
+i16_saturating_sub	whole	-	string	i16_saturating_sub of "zz_census_2509"
+i16_saturating_sub	whole	-	number	i16_saturating_sub of 0
+i16_saturating_sub	whole	-	dict	i16_saturating_sub of {"a": 1}
+i16_saturating_sub	whole	-	list	i16_saturating_sub of []
+i16_wrapping_add	whole	-	string	i16_wrapping_add of "zz_census_2509"
+i16_wrapping_add	whole	-	number	i16_wrapping_add of 0
+i16_wrapping_add	whole	-	dict	i16_wrapping_add of {"a": 1}
+i16_wrapping_add	whole	-	list	i16_wrapping_add of []
+i16_wrapping_mul	whole	-	string	i16_wrapping_mul of "zz_census_2509"
+i16_wrapping_mul	whole	-	number	i16_wrapping_mul of 0
+i16_wrapping_mul	whole	-	dict	i16_wrapping_mul of {"a": 1}
+i16_wrapping_mul	whole	-	list	i16_wrapping_mul of []
+i16_wrapping_sub	whole	-	string	i16_wrapping_sub of "zz_census_2509"
+i16_wrapping_sub	whole	-	number	i16_wrapping_sub of 0
+i16_wrapping_sub	whole	-	dict	i16_wrapping_sub of {"a": 1}
+i16_wrapping_sub	whole	-	list	i16_wrapping_sub of []
+i32_checked_add	whole	-	string	i32_checked_add of "zz_census_2509"
+i32_checked_add	whole	-	number	i32_checked_add of 0
+i32_checked_add	whole	-	dict	i32_checked_add of {"a": 1}
+i32_checked_add	whole	-	list	i32_checked_add of []
+i32_checked_mul	whole	-	string	i32_checked_mul of "zz_census_2509"
+i32_checked_mul	whole	-	number	i32_checked_mul of 0
+i32_checked_mul	whole	-	dict	i32_checked_mul of {"a": 1}
+i32_checked_mul	whole	-	list	i32_checked_mul of []
+i32_checked_sub	whole	-	string	i32_checked_sub of "zz_census_2509"
+i32_checked_sub	whole	-	number	i32_checked_sub of 0
+i32_checked_sub	whole	-	dict	i32_checked_sub of {"a": 1}
+i32_checked_sub	whole	-	list	i32_checked_sub of []
+i32_saturating_add	whole	-	string	i32_saturating_add of "zz_census_2509"
+i32_saturating_add	whole	-	number	i32_saturating_add of 0
+i32_saturating_add	whole	-	dict	i32_saturating_add of {"a": 1}
+i32_saturating_add	whole	-	list	i32_saturating_add of []
+i32_saturating_mul	whole	-	string	i32_saturating_mul of "zz_census_2509"
+i32_saturating_mul	whole	-	number	i32_saturating_mul of 0
+i32_saturating_mul	whole	-	dict	i32_saturating_mul of {"a": 1}
+i32_saturating_mul	whole	-	list	i32_saturating_mul of []
+i32_saturating_sub	whole	-	string	i32_saturating_sub of "zz_census_2509"
+i32_saturating_sub	whole	-	number	i32_saturating_sub of 0
+i32_saturating_sub	whole	-	dict	i32_saturating_sub of {"a": 1}
+i32_saturating_sub	whole	-	list	i32_saturating_sub of []
+i32_wrapping_add	whole	-	string	i32_wrapping_add of "zz_census_2509"
+i32_wrapping_add	whole	-	number	i32_wrapping_add of 0
+i32_wrapping_add	whole	-	dict	i32_wrapping_add of {"a": 1}
+i32_wrapping_add	whole	-	list	i32_wrapping_add of []
+i32_wrapping_mul	whole	-	string	i32_wrapping_mul of "zz_census_2509"
+i32_wrapping_mul	whole	-	number	i32_wrapping_mul of 0
+i32_wrapping_mul	whole	-	dict	i32_wrapping_mul of {"a": 1}
+i32_wrapping_mul	whole	-	list	i32_wrapping_mul of []
+i32_wrapping_sub	whole	-	string	i32_wrapping_sub of "zz_census_2509"
+i32_wrapping_sub	whole	-	number	i32_wrapping_sub of 0
+i32_wrapping_sub	whole	-	dict	i32_wrapping_sub of {"a": 1}
+i32_wrapping_sub	whole	-	list	i32_wrapping_sub of []
+i64_checked_add	whole	-	string	i64_checked_add of "zz_census_2509"
+i64_checked_add	whole	-	number	i64_checked_add of 0
+i64_checked_add	whole	-	dict	i64_checked_add of {"a": 1}
+i64_checked_add	whole	-	list	i64_checked_add of []
+i64_checked_mul	whole	-	string	i64_checked_mul of "zz_census_2509"
+i64_checked_mul	whole	-	number	i64_checked_mul of 0
+i64_checked_mul	whole	-	dict	i64_checked_mul of {"a": 1}
+i64_checked_mul	whole	-	list	i64_checked_mul of []
+i64_checked_sub	whole	-	string	i64_checked_sub of "zz_census_2509"
+i64_checked_sub	whole	-	number	i64_checked_sub of 0
+i64_checked_sub	whole	-	dict	i64_checked_sub of {"a": 1}
+i64_checked_sub	whole	-	list	i64_checked_sub of []
+i64_saturating_add	whole	-	string	i64_saturating_add of "zz_census_2509"
+i64_saturating_add	whole	-	number	i64_saturating_add of 0
+i64_saturating_add	whole	-	dict	i64_saturating_add of {"a": 1}
+i64_saturating_add	whole	-	list	i64_saturating_add of []
+i64_saturating_mul	whole	-	string	i64_saturating_mul of "zz_census_2509"
+i64_saturating_mul	whole	-	number	i64_saturating_mul of 0
+i64_saturating_mul	whole	-	dict	i64_saturating_mul of {"a": 1}
+i64_saturating_mul	whole	-	list	i64_saturating_mul of []
+i64_saturating_sub	whole	-	string	i64_saturating_sub of "zz_census_2509"
+i64_saturating_sub	whole	-	number	i64_saturating_sub of 0
+i64_saturating_sub	whole	-	dict	i64_saturating_sub of {"a": 1}
+i64_saturating_sub	whole	-	list	i64_saturating_sub of []
+i64_wrapping_add	whole	-	string	i64_wrapping_add of "zz_census_2509"
+i64_wrapping_add	whole	-	number	i64_wrapping_add of 0
+i64_wrapping_add	whole	-	dict	i64_wrapping_add of {"a": 1}
+i64_wrapping_add	whole	-	list	i64_wrapping_add of []
+i64_wrapping_mul	whole	-	string	i64_wrapping_mul of "zz_census_2509"
+i64_wrapping_mul	whole	-	number	i64_wrapping_mul of 0
+i64_wrapping_mul	whole	-	dict	i64_wrapping_mul of {"a": 1}
+i64_wrapping_mul	whole	-	list	i64_wrapping_mul of []
+i64_wrapping_sub	whole	-	string	i64_wrapping_sub of "zz_census_2509"
+i64_wrapping_sub	whole	-	number	i64_wrapping_sub of 0
+i64_wrapping_sub	whole	-	dict	i64_wrapping_sub of {"a": 1}
+i64_wrapping_sub	whole	-	list	i64_wrapping_sub of []
+i8_checked_add	whole	-	string	i8_checked_add of "zz_census_2509"
+i8_checked_add	whole	-	number	i8_checked_add of 0
+i8_checked_add	whole	-	dict	i8_checked_add of {"a": 1}
+i8_checked_add	whole	-	list	i8_checked_add of []
+i8_checked_mul	whole	-	string	i8_checked_mul of "zz_census_2509"
+i8_checked_mul	whole	-	number	i8_checked_mul of 0
+i8_checked_mul	whole	-	dict	i8_checked_mul of {"a": 1}
+i8_checked_mul	whole	-	list	i8_checked_mul of []
+i8_checked_sub	whole	-	string	i8_checked_sub of "zz_census_2509"
+i8_checked_sub	whole	-	number	i8_checked_sub of 0
+i8_checked_sub	whole	-	dict	i8_checked_sub of {"a": 1}
+i8_checked_sub	whole	-	list	i8_checked_sub of []
+i8_saturating_add	whole	-	string	i8_saturating_add of "zz_census_2509"
+i8_saturating_add	whole	-	number	i8_saturating_add of 0
+i8_saturating_add	whole	-	dict	i8_saturating_add of {"a": 1}
+i8_saturating_add	whole	-	list	i8_saturating_add of []
+i8_saturating_mul	whole	-	string	i8_saturating_mul of "zz_census_2509"
+i8_saturating_mul	whole	-	number	i8_saturating_mul of 0
+i8_saturating_mul	whole	-	dict	i8_saturating_mul of {"a": 1}
+i8_saturating_mul	whole	-	list	i8_saturating_mul of []
+i8_saturating_sub	whole	-	string	i8_saturating_sub of "zz_census_2509"
+i8_saturating_sub	whole	-	number	i8_saturating_sub of 0
+i8_saturating_sub	whole	-	dict	i8_saturating_sub of {"a": 1}
+i8_saturating_sub	whole	-	list	i8_saturating_sub of []
+i8_wrapping_add	whole	-	string	i8_wrapping_add of "zz_census_2509"
+i8_wrapping_add	whole	-	number	i8_wrapping_add of 0
+i8_wrapping_add	whole	-	dict	i8_wrapping_add of {"a": 1}
+i8_wrapping_add	whole	-	list	i8_wrapping_add of []
+i8_wrapping_mul	whole	-	string	i8_wrapping_mul of "zz_census_2509"
+i8_wrapping_mul	whole	-	number	i8_wrapping_mul of 0
+i8_wrapping_mul	whole	-	dict	i8_wrapping_mul of {"a": 1}
+i8_wrapping_mul	whole	-	list	i8_wrapping_mul of []
+i8_wrapping_sub	whole	-	string	i8_wrapping_sub of "zz_census_2509"
+i8_wrapping_sub	whole	-	number	i8_wrapping_sub of 0
+i8_wrapping_sub	whole	-	dict	i8_wrapping_sub of {"a": 1}
+i8_wrapping_sub	whole	-	list	i8_wrapping_sub of []
+index_of	whole	-	string	index_of of "zz_census_2509"
+index_of	whole	-	number	index_of of 0
+index_of	whole	-	dict	index_of of {"a": 1}
+index_of	whole	-	list	index_of of []
+inflate	whole	-	string	inflate of "zz_census_2509"
+inflate	whole	-	number	inflate of 0
+inflate	whole	-	dict	inflate of {"a": 1}
+inflate	whole	-	list	inflate of []
+is_dir	whole	-	string	is_dir of "zz_census_2509"
+is_dir	whole	-	number	is_dir of 0
+is_dir	whole	-	dict	is_dir of {"a": 1}
+is_dir	whole	-	list	is_dir of []
+is_file	whole	-	string	is_file of "zz_census_2509"
+is_file	whole	-	number	is_file of 0
+is_file	whole	-	dict	is_file of {"a": 1}
+is_file	whole	-	list	is_file of []
+join	whole	-	string	join of "zz_census_2509"
+join	whole	-	number	join of 0
+join	whole	-	dict	join of {"a": 1}
+join	whole	-	list	join of []
+json_build	whole	-	string	json_build of "zz_census_2509"
+json_build	whole	-	number	json_build of 0
+json_build	whole	-	dict	json_build of {"a": 1}
+json_build	whole	-	list	json_build of []
+json_decode	whole	-	string	json_decode of "zz_census_2509"
+json_decode	whole	-	number	json_decode of 0
+json_decode	whole	-	dict	json_decode of {"a": 1}
+json_decode	whole	-	list	json_decode of []
+json_encode	whole	-	string	json_encode of "zz_census_2509"
+json_encode	whole	-	number	json_encode of 0
+json_encode	whole	-	dict	json_encode of {"a": 1}
+json_encode	whole	-	list	json_encode of []
+json_path	whole	-	string	json_path of "zz_census_2509"
+json_path	whole	-	number	json_path of 0
+json_path	whole	-	dict	json_path of {"a": 1}
+json_path	whole	-	list	json_path of []
+keys	whole	-	string	keys of "zz_census_2509"
+keys	whole	-	number	keys of 0
+keys	whole	-	dict	keys of {"a": 1}
+keys	whole	-	list	keys of []
+leaky_relu	whole	-	string	leaky_relu of "zz_census_2509"
+leaky_relu	whole	-	number	leaky_relu of 0
+leaky_relu	whole	-	dict	leaky_relu of {"a": 1}
+leaky_relu	whole	-	list	leaky_relu of []
+len	whole	-	string	len of "zz_census_2509"
+len	whole	-	number	len of 0
+len	whole	-	dict	len of {"a": 1}
+len	whole	-	list	len of []
+list_contains	whole	-	string	list_contains of "zz_census_2509"
+list_contains	whole	-	number	list_contains of 0
+list_contains	whole	-	dict	list_contains of {"a": 1}
+list_contains	whole	-	list	list_contains of []
+list_index_of	whole	-	string	list_index_of of "zz_census_2509"
+list_index_of	whole	-	number	list_index_of of 0
+list_index_of	whole	-	dict	list_index_of of {"a": 1}
+list_index_of	whole	-	list	list_index_of of []
+list_insert_at	whole	-	string	list_insert_at of "zz_census_2509"
+list_insert_at	whole	-	number	list_insert_at of 0
+list_insert_at	whole	-	dict	list_insert_at of {"a": 1}
+list_insert_at	whole	-	list	list_insert_at of []
+list_remove_at	whole	-	string	list_remove_at of "zz_census_2509"
+list_remove_at	whole	-	number	list_remove_at of 0
+list_remove_at	whole	-	dict	list_remove_at of {"a": 1}
+list_remove_at	whole	-	list	list_remove_at of []
+list_slice	whole	-	string	list_slice of "zz_census_2509"
+list_slice	whole	-	number	list_slice of 0
+list_slice	whole	-	dict	list_slice of {"a": 1}
+list_slice	whole	-	list	list_slice of []
+list_truncate	whole	-	string	list_truncate of "zz_census_2509"
+list_truncate	whole	-	number	list_truncate of 0
+list_truncate	whole	-	dict	list_truncate of {"a": 1}
+list_truncate	whole	-	list	list_truncate of []
+load_file	whole	-	string	load_file of "zz_census_2509"
+load_file	whole	-	number	load_file of 0
+load_file	whole	-	dict	load_file of {"a": 1}
+load_file	whole	-	list	load_file of []
+log	whole	-	string	log of "zz_census_2509"
+log	whole	-	number	log of 0
+log	whole	-	dict	log of {"a": 1}
+log	whole	-	list	log of []
+log_softmax	whole	-	string	log_softmax of "zz_census_2509"
+log_softmax	whole	-	number	log_softmax of 0
+log_softmax	whole	-	dict	log_softmax of {"a": 1}
+log_softmax	whole	-	list	log_softmax of []
+ls	whole	-	string	ls of "zz_census_2509"
+ls	whole	-	number	ls of 0
+ls	whole	-	dict	ls of {"a": 1}
+ls	whole	-	list	ls of []
+math_flags	whole	-	string	math_flags of "zz_census_2509"
+math_flags	whole	-	number	math_flags of 0
+math_flags	whole	-	dict	math_flags of {"a": 1}
+math_flags	whole	-	list	math_flags of []
+matmul	whole	-	string	matmul of "zz_census_2509"
+matmul	whole	-	number	matmul of 0
+matmul	whole	-	dict	matmul of {"a": 1}
+matmul	whole	-	list	matmul of []
+matmul_at	whole	-	string	matmul_at of "zz_census_2509"
+matmul_at	whole	-	number	matmul_at of 0
+matmul_at	whole	-	dict	matmul_at of {"a": 1}
+matmul_at	whole	-	list	matmul_at of []
+matmul_bt	whole	-	string	matmul_bt of "zz_census_2509"
+matmul_bt	whole	-	number	matmul_bt of 0
+matmul_bt	whole	-	dict	matmul_bt of {"a": 1}
+matmul_bt	whole	-	list	matmul_bt of []
+max	whole	-	string	max of "zz_census_2509"
+max	whole	-	number	max of 0
+max	whole	-	dict	max of {"a": 1}
+max	whole	-	list	max of []
+md5	whole	-	string	md5 of "zz_census_2509"
+md5	whole	-	number	md5 of 0
+md5	whole	-	dict	md5 of {"a": 1}
+md5	whole	-	list	md5 of []
+md5_file	whole	-	string	md5_file of "zz_census_2509"
+md5_file	whole	-	number	md5_file of 0
+md5_file	whole	-	dict	md5_file of {"a": 1}
+md5_file	whole	-	list	md5_file of []
+mean	whole	-	string	mean of "zz_census_2509"
+mean	whole	-	number	mean of 0
+mean	whole	-	dict	mean of {"a": 1}
+mean	whole	-	list	mean of []
+min	whole	-	string	min of "zz_census_2509"
+min	whole	-	number	min of 0
+min	whole	-	dict	min of {"a": 1}
+min	whole	-	list	min of []
+mkdir	whole	-	string	mkdir of "zz_census_2509"
+mkdir	whole	-	number	mkdir of 0
+mkdir	whole	-	dict	mkdir of {"a": 1}
+mkdir	whole	-	list	mkdir of []
+mktemp	whole	-	string	mktemp of "zz_census_2509"
+mktemp	whole	-	number	mktemp of 0
+mktemp	whole	-	dict	mktemp of {"a": 1}
+mktemp	whole	-	list	mktemp of []
+monotonic_ms	whole	-	string	monotonic_ms of "zz_census_2509"
+monotonic_ms	whole	-	number	monotonic_ms of 0
+monotonic_ms	whole	-	dict	monotonic_ms of {"a": 1}
+monotonic_ms	whole	-	list	monotonic_ms of []
+monotonic_ns	whole	-	string	monotonic_ns of "zz_census_2509"
+monotonic_ns	whole	-	number	monotonic_ns of 0
+monotonic_ns	whole	-	dict	monotonic_ns of {"a": 1}
+monotonic_ns	whole	-	list	monotonic_ns of []
+multiply	whole	-	string	multiply of "zz_census_2509"
+multiply	whole	-	number	multiply of 0
+multiply	whole	-	dict	multiply of {"a": 1}
+multiply	whole	-	list	multiply of []
+must_not_yield	whole	-	string	must_not_yield of "zz_census_2509"
+must_not_yield	whole	-	number	must_not_yield of 0
+must_not_yield	whole	-	dict	must_not_yield of {"a": 1}
+must_not_yield	whole	-	list	must_not_yield of []
+nearest_in_range	whole	-	string	nearest_in_range of "zz_census_2509"
+nearest_in_range	whole	-	number	nearest_in_range of 0
+nearest_in_range	whole	-	dict	nearest_in_range of {"a": 1}
+nearest_in_range	whole	-	list	nearest_in_range of []
+nearest_in_range_all	whole	-	string	nearest_in_range_all of "zz_census_2509"
+nearest_in_range_all	whole	-	number	nearest_in_range_all of 0
+nearest_in_range_all	whole	-	dict	nearest_in_range_all of {"a": 1}
+nearest_in_range_all	whole	-	list	nearest_in_range_all of []
+negative	whole	-	string	negative of "zz_census_2509"
+negative	whole	-	number	negative of 0
+negative	whole	-	dict	negative of {"a": 1}
+negative	whole	-	list	negative of []
+norm	whole	-	string	norm of "zz_census_2509"
+norm	whole	-	number	norm of 0
+norm	whole	-	dict	norm of {"a": 1}
+norm	whole	-	list	norm of []
+num	whole	-	string	num of "zz_census_2509"
+num	whole	-	number	num of 0
+num	whole	-	dict	num of {"a": 1}
+num	whole	-	list	num of []
+num_copy	whole	-	string	num_copy of "zz_census_2509"
+num_copy	whole	-	number	num_copy of 0
+num_copy	whole	-	dict	num_copy of {"a": 1}
+num_copy	whole	-	list	num_copy of []
+num_type	whole	-	string	num_type of "zz_census_2509"
+num_type	whole	-	number	num_type of 0
+num_type	whole	-	dict	num_type of {"a": 1}
+num_type	whole	-	list	num_type of []
+numerical_grad	whole	-	string	numerical_grad of "zz_census_2509"
+numerical_grad	whole	-	number	numerical_grad of 0
+numerical_grad	whole	-	dict	numerical_grad of {"a": 1}
+numerical_grad	whole	-	list	numerical_grad of []
+numerical_grad_cols	whole	-	string	numerical_grad_cols of "zz_census_2509"
+numerical_grad_cols	whole	-	number	numerical_grad_cols of 0
+numerical_grad_cols	whole	-	dict	numerical_grad_cols of {"a": 1}
+numerical_grad_cols	whole	-	list	numerical_grad_cols of []
+numerical_grad_rows	whole	-	string	numerical_grad_rows of "zz_census_2509"
+numerical_grad_rows	whole	-	number	numerical_grad_rows of 0
+numerical_grad_rows	whole	-	dict	numerical_grad_rows of {"a": 1}
+numerical_grad_rows	whole	-	list	numerical_grad_rows of []
+observe	whole	-	string	observe of "zz_census_2509"
+observe	whole	-	number	observe of 0
+observe	whole	-	dict	observe of {"a": 1}
+observe	whole	-	list	observe of []
+ord	whole	-	string	ord of "zz_census_2509"
+ord	whole	-	number	ord of 0
+ord	whole	-	dict	ord of {"a": 1}
+ord	whole	-	list	ord of []
+path_base	whole	-	string	path_base of "zz_census_2509"
+path_base	whole	-	number	path_base of 0
+path_base	whole	-	dict	path_base of {"a": 1}
+path_base	whole	-	list	path_base of []
+path_dir	whole	-	string	path_dir of "zz_census_2509"
+path_dir	whole	-	number	path_dir of 0
+path_dir	whole	-	dict	path_dir of {"a": 1}
+path_dir	whole	-	list	path_dir of []
+path_ext	whole	-	string	path_ext of "zz_census_2509"
+path_ext	whole	-	number	path_ext of 0
+path_ext	whole	-	dict	path_ext of {"a": 1}
+path_ext	whole	-	list	path_ext of []
+path_join	whole	-	string	path_join of "zz_census_2509"
+path_join	whole	-	number	path_join of 0
+path_join	whole	-	dict	path_join of {"a": 1}
+path_join	whole	-	list	path_join of []
+pi	whole	-	string	pi of "zz_census_2509"
+pi	whole	-	number	pi of 0
+pi	whole	-	dict	pi of {"a": 1}
+pi	whole	-	list	pi of []
+pow	whole	-	string	pow of "zz_census_2509"
+pow	whole	-	number	pow of 0
+pow	whole	-	dict	pow of {"a": 1}
+pow	whole	-	list	pow of []
+print	whole	-	string	print of "zz_census_2509"
+print	whole	-	number	print of 0
+print	whole	-	dict	print of {"a": 1}
+print	whole	-	list	print of []
+random	whole	-	string	random of "zz_census_2509"
+random	whole	-	number	random of 0
+random	whole	-	dict	random of {"a": 1}
+random	whole	-	list	random of []
+random_hex	whole	-	string	random_hex of "zz_census_2509"
+random_hex	whole	-	number	random_hex of 0
+random_hex	whole	-	dict	random_hex of {"a": 1}
+random_hex	whole	-	list	random_hex of []
+random_int	whole	-	string	random_int of "zz_census_2509"
+random_int	whole	-	number	random_int of 0
+random_int	whole	-	dict	random_int of {"a": 1}
+random_int	whole	-	list	random_int of []
+random_normal	whole	-	string	random_normal of "zz_census_2509"
+random_normal	whole	-	number	random_normal of 0
+random_normal	whole	-	dict	random_normal of {"a": 1}
+random_normal	whole	-	list	random_normal of []
+range	whole	-	string	range of "zz_census_2509"
+range	whole	-	number	range of 0
+range	whole	-	dict	range of {"a": 1}
+range	whole	-	list	range of []
+read_bytes	whole	-	string	read_bytes of "zz_census_2509"
+read_bytes	whole	-	number	read_bytes of 0
+read_bytes	whole	-	dict	read_bytes of {"a": 1}
+read_bytes	whole	-	list	read_bytes of []
+read_bytes_buf	whole	-	string	read_bytes_buf of "zz_census_2509"
+read_bytes_buf	whole	-	number	read_bytes_buf of 0
+read_bytes_buf	whole	-	dict	read_bytes_buf of {"a": 1}
+read_bytes_buf	whole	-	list	read_bytes_buf of []
+read_line	whole	-	string	read_line of "zz_census_2509"
+read_line	whole	-	number	read_line of 0
+read_line	whole	-	dict	read_line of {"a": 1}
+read_line	whole	-	list	read_line of []
+read_text	whole	-	string	read_text of "zz_census_2509"
+read_text	whole	-	number	read_text of 0
+read_text	whole	-	dict	read_text of {"a": 1}
+read_text	whole	-	list	read_text of []
+record_history	whole	-	string	record_history of "zz_census_2509"
+record_history	whole	-	number	record_history of 0
+record_history	whole	-	dict	record_history of {"a": 1}
+record_history	whole	-	list	record_history of []
+recv	whole	-	string	recv of "zz_census_2509"
+recv	whole	-	number	recv of 0
+recv	whole	-	dict	recv of {"a": 1}
+recv	whole	-	list	recv of []
+recv_timeout	whole	-	string	recv_timeout of "zz_census_2509"
+recv_timeout	whole	-	number	recv_timeout of 0
+recv_timeout	whole	-	dict	recv_timeout of {"a": 1}
+recv_timeout	whole	-	list	recv_timeout of []
+regex_find	whole	-	string	regex_find of "zz_census_2509"
+regex_find	whole	-	number	regex_find of 0
+regex_find	whole	-	dict	regex_find of {"a": 1}
+regex_find	whole	-	list	regex_find of []
+regex_match	whole	-	string	regex_match of "zz_census_2509"
+regex_match	whole	-	number	regex_match of 0
+regex_match	whole	-	dict	regex_match of {"a": 1}
+regex_match	whole	-	list	regex_match of []
+regex_replace	whole	-	string	regex_replace of "zz_census_2509"
+regex_replace	whole	-	number	regex_replace of 0
+regex_replace	whole	-	dict	regex_replace of {"a": 1}
+regex_replace	whole	-	list	regex_replace of []
+relu	whole	-	string	relu of "zz_census_2509"
+relu	whole	-	number	relu of 0
+relu	whole	-	dict	relu of {"a": 1}
+relu	whole	-	list	relu of []
+remove_file	whole	-	string	remove_file of "zz_census_2509"
+remove_file	whole	-	number	remove_file of 0
+remove_file	whole	-	dict	remove_file of {"a": 1}
+remove_file	whole	-	list	remove_file of []
+rename	whole	-	string	rename of "zz_census_2509"
+rename	whole	-	number	rename of 0
+rename	whole	-	dict	rename of {"a": 1}
+rename	whole	-	list	rename of []
+reshape	whole	-	string	reshape of "zz_census_2509"
+reshape	whole	-	number	reshape of 0
+reshape	whole	-	dict	reshape of {"a": 1}
+reshape	whole	-	list	reshape of []
+round	whole	-	string	round of "zz_census_2509"
+round	whole	-	number	round of 0
+round	whole	-	dict	round of {"a": 1}
+round	whole	-	list	round of []
+sandbox_run	whole	-	string	sandbox_run of "zz_census_2509"
+sandbox_run	whole	-	number	sandbox_run of 0
+sandbox_run	whole	-	dict	sandbox_run of {"a": 1}
+sandbox_run	whole	-	list	sandbox_run of []
+scan_int_tokens	whole	-	string	scan_int_tokens of "zz_census_2509"
+scan_int_tokens	whole	-	number	scan_int_tokens of 0
+scan_int_tokens	whole	-	dict	scan_int_tokens of {"a": 1}
+scan_int_tokens	whole	-	list	scan_int_tokens of []
+scan_ints	whole	-	string	scan_ints of "zz_census_2509"
+scan_ints	whole	-	number	scan_ints of 0
+scan_ints	whole	-	dict	scan_ints of {"a": 1}
+scan_ints	whole	-	list	scan_ints of []
+scatter_add	whole	-	string	scatter_add of "zz_census_2509"
+scatter_add	whole	-	number	scatter_add of 0
+scatter_add	whole	-	dict	scatter_add of {"a": 1}
+scatter_add	whole	-	list	scatter_add of []
+secure_equals	whole	-	string	secure_equals of "zz_census_2509"
+secure_equals	whole	-	number	secure_equals of 0
+secure_equals	whole	-	dict	secure_equals of {"a": 1}
+secure_equals	whole	-	list	secure_equals of []
+seed_random	whole	-	string	seed_random of "zz_census_2509"
+seed_random	whole	-	number	seed_random of 0
+seed_random	whole	-	dict	seed_random of {"a": 1}
+seed_random	whole	-	list	seed_random of []
+send	whole	-	string	send of "zz_census_2509"
+send	whole	-	number	send of 0
+send	whole	-	dict	send of {"a": 1}
+send	whole	-	list	send of []
+set_at	whole	-	string	set_at of "zz_census_2509"
+set_at	whole	-	number	set_at of 0
+set_at	whole	-	dict	set_at of {"a": 1}
+set_at	whole	-	list	set_at of []
+set_exit_code	whole	-	string	set_exit_code of "zz_census_2509"
+set_exit_code	whole	-	number	set_exit_code of 0
+set_exit_code	whole	-	dict	set_exit_code of {"a": 1}
+set_exit_code	whole	-	list	set_exit_code of []
+sgd_update	whole	-	string	sgd_update of "zz_census_2509"
+sgd_update	whole	-	number	sgd_update of 0
+sgd_update	whole	-	dict	sgd_update of {"a": 1}
+sgd_update	whole	-	list	sgd_update of []
+sgd_update_cols	whole	-	string	sgd_update_cols of "zz_census_2509"
+sgd_update_cols	whole	-	number	sgd_update_cols of 0
+sgd_update_cols	whole	-	dict	sgd_update_cols of {"a": 1}
+sgd_update_cols	whole	-	list	sgd_update_cols of []
+sgd_update_rows	whole	-	string	sgd_update_rows of "zz_census_2509"
+sgd_update_rows	whole	-	number	sgd_update_rows of 0
+sgd_update_rows	whole	-	dict	sgd_update_rows of {"a": 1}
+sgd_update_rows	whole	-	list	sgd_update_rows of []
+sha256	whole	-	string	sha256 of "zz_census_2509"
+sha256	whole	-	number	sha256 of 0
+sha256	whole	-	dict	sha256 of {"a": 1}
+sha256	whole	-	list	sha256 of []
+shape	whole	-	string	shape of "zz_census_2509"
+shape	whole	-	number	shape of 0
+shape	whole	-	dict	shape of {"a": 1}
+shape	whole	-	list	shape of []
+sign_extend	whole	-	string	sign_extend of "zz_census_2509"
+sign_extend	whole	-	number	sign_extend of 0
+sign_extend	whole	-	dict	sign_extend of {"a": 1}
+sign_extend	whole	-	list	sign_extend of []
+sin	whole	-	string	sin of "zz_census_2509"
+sin	whole	-	number	sin of 0
+sin	whole	-	dict	sin of {"a": 1}
+sin	whole	-	list	sin of []
+softmax	whole	-	string	softmax of "zz_census_2509"
+softmax	whole	-	number	softmax of 0
+softmax	whole	-	dict	softmax of {"a": 1}
+softmax	whole	-	list	softmax of []
+sort	whole	-	string	sort of "zz_census_2509"
+sort	whole	-	number	sort of 0
+sort	whole	-	dict	sort of {"a": 1}
+sort	whole	-	list	sort of []
+sort_by	whole	-	string	sort_by of "zz_census_2509"
+sort_by	whole	-	number	sort_by of 0
+sort_by	whole	-	dict	sort_by of {"a": 1}
+sort_by	whole	-	list	sort_by of []
+spawn	whole	-	string	spawn of "zz_census_2509"
+spawn	whole	-	number	spawn of 0
+spawn	whole	-	dict	spawn of {"a": 1}
+spawn	whole	-	list	spawn of []
+split	whole	-	string	split of "zz_census_2509"
+split	whole	-	number	split of 0
+split	whole	-	dict	split of {"a": 1}
+split	whole	-	list	split of []
+sqrt	whole	-	string	sqrt of "zz_census_2509"
+sqrt	whole	-	number	sqrt of 0
+sqrt	whole	-	dict	sqrt of {"a": 1}
+sqrt	whole	-	list	sqrt of []
+starts_with	whole	-	string	starts_with of "zz_census_2509"
+starts_with	whole	-	number	starts_with of 0
+starts_with	whole	-	dict	starts_with of {"a": 1}
+starts_with	whole	-	list	starts_with of []
+state_at	whole	-	string	state_at of "zz_census_2509"
+state_at	whole	-	number	state_at of 0
+state_at	whole	-	dict	state_at of {"a": 1}
+state_at	whole	-	list	state_at of []
+store_close	whole	-	string	store_close of "zz_census_2509"
+store_close	whole	-	number	store_close of 0
+store_close	whole	-	dict	store_close of {"a": 1}
+store_close	whole	-	list	store_close of []
+store_collections	whole	-	string	store_collections of "zz_census_2509"
+store_collections	whole	-	number	store_collections of 0
+store_collections	whole	-	dict	store_collections of {"a": 1}
+store_collections	whole	-	list	store_collections of []
+store_count	whole	-	string	store_count of "zz_census_2509"
+store_count	whole	-	number	store_count of 0
+store_count	whole	-	dict	store_count of {"a": 1}
+store_count	whole	-	list	store_count of []
+store_delete	whole	-	string	store_delete of "zz_census_2509"
+store_delete	whole	-	number	store_delete of 0
+store_delete	whole	-	dict	store_delete of {"a": 1}
+store_delete	whole	-	list	store_delete of []
+store_drop	whole	-	string	store_drop of "zz_census_2509"
+store_drop	whole	-	number	store_drop of 0
+store_drop	whole	-	dict	store_drop of {"a": 1}
+store_drop	whole	-	list	store_drop of []
+store_get	whole	-	string	store_get of "zz_census_2509"
+store_get	whole	-	number	store_get of 0
+store_get	whole	-	dict	store_get of {"a": 1}
+store_get	whole	-	list	store_get of []
+store_open	whole	-	string	store_open of "zz_census_2509"
+store_open	whole	-	number	store_open of 0
+store_open	whole	-	dict	store_open of {"a": 1}
+store_open	whole	-	list	store_open of []
+store_put	whole	-	string	store_put of "zz_census_2509"
+store_put	whole	-	number	store_put of 0
+store_put	whole	-	dict	store_put of {"a": 1}
+store_put	whole	-	list	store_put of []
+store_query	whole	-	string	store_query of "zz_census_2509"
+store_query	whole	-	number	store_query of 0
+store_query	whole	-	dict	store_query of {"a": 1}
+store_query	whole	-	list	store_query of []
+store_update	whole	-	string	store_update of "zz_census_2509"
+store_update	whole	-	number	store_update of 0
+store_update	whole	-	dict	store_update of {"a": 1}
+store_update	whole	-	list	store_update of []
+str	whole	-	string	str of "zz_census_2509"
+str	whole	-	number	str of 0
+str	whole	-	dict	str of {"a": 1}
+str	whole	-	list	str of []
+str_from_bytes	whole	-	string	str_from_bytes of "zz_census_2509"
+str_from_bytes	whole	-	number	str_from_bytes of 0
+str_from_bytes	whole	-	dict	str_from_bytes of {"a": 1}
+str_from_bytes	whole	-	list	str_from_bytes of []
+str_lower	whole	-	string	str_lower of "zz_census_2509"
+str_lower	whole	-	number	str_lower of 0
+str_lower	whole	-	dict	str_lower of {"a": 1}
+str_lower	whole	-	list	str_lower of []
+str_replace	whole	-	string	str_replace of "zz_census_2509"
+str_replace	whole	-	number	str_replace of 0
+str_replace	whole	-	dict	str_replace of {"a": 1}
+str_replace	whole	-	list	str_replace of []
+str_upper	whole	-	string	str_upper of "zz_census_2509"
+str_upper	whole	-	number	str_upper of 0
+str_upper	whole	-	dict	str_upper of {"a": 1}
+str_upper	whole	-	list	str_upper of []
+stream_close	whole	-	string	stream_close of "zz_census_2509"
+stream_close	whole	-	number	stream_close of 0
+stream_close	whole	-	dict	stream_close of {"a": 1}
+stream_close	whole	-	list	stream_close of []
+stream_open	whole	-	string	stream_open of "zz_census_2509"
+stream_open	whole	-	number	stream_open of 0
+stream_open	whole	-	dict	stream_open of {"a": 1}
+stream_open	whole	-	list	stream_open of []
+stream_write	whole	-	string	stream_write of "zz_census_2509"
+stream_write	whole	-	number	stream_write of 0
+stream_write	whole	-	dict	stream_write of {"a": 1}
+stream_write	whole	-	list	stream_write of []
+substr	whole	-	string	substr of "zz_census_2509"
+substr	whole	-	number	substr of 0
+substr	whole	-	dict	substr of {"a": 1}
+substr	whole	-	list	substr of []
+subtract	whole	-	string	subtract of "zz_census_2509"
+subtract	whole	-	number	subtract of 0
+subtract	whole	-	dict	subtract of {"a": 1}
+subtract	whole	-	list	subtract of []
+sum	whole	-	string	sum of "zz_census_2509"
+sum	whole	-	number	sum of 0
+sum	whole	-	dict	sum of {"a": 1}
+sum	whole	-	list	sum of []
+tan	whole	-	string	tan of "zz_census_2509"
+tan	whole	-	number	tan of 0
+tan	whole	-	dict	tan of {"a": 1}
+tan	whole	-	list	tan of []
+task_alive	whole	-	string	task_alive of "zz_census_2509"
+task_alive	whole	-	number	task_alive of 0
+task_alive	whole	-	dict	task_alive of {"a": 1}
+task_alive	whole	-	list	task_alive of []
+task_detach	whole	-	string	task_detach of "zz_census_2509"
+task_detach	whole	-	number	task_detach of 0
+task_detach	whole	-	dict	task_detach of {"a": 1}
+task_detach	whole	-	list	task_detach of []
+task_join	whole	-	string	task_join of "zz_census_2509"
+task_join	whole	-	number	task_join of 0
+task_join	whole	-	dict	task_join of {"a": 1}
+task_join	whole	-	list	task_join of []
+task_kill	whole	-	string	task_kill of "zz_census_2509"
+task_kill	whole	-	number	task_kill of 0
+task_kill	whole	-	dict	task_kill of {"a": 1}
+task_kill	whole	-	list	task_kill of []
+task_recv	whole	-	string	task_recv of "zz_census_2509"
+task_recv	whole	-	number	task_recv of 0
+task_recv	whole	-	dict	task_recv of {"a": 1}
+task_recv	whole	-	list	task_recv of []
+task_sched_seed	whole	-	string	task_sched_seed of "zz_census_2509"
+task_sched_seed	whole	-	number	task_sched_seed of 0
+task_sched_seed	whole	-	dict	task_sched_seed of {"a": 1}
+task_sched_seed	whole	-	list	task_sched_seed of []
+task_self	whole	-	string	task_self of "zz_census_2509"
+task_self	whole	-	number	task_self of 0
+task_self	whole	-	dict	task_self of {"a": 1}
+task_self	whole	-	list	task_self of []
+task_send	whole	-	string	task_send of "zz_census_2509"
+task_send	whole	-	number	task_send of 0
+task_send	whole	-	dict	task_send of {"a": 1}
+task_send	whole	-	list	task_send of []
+task_sleep	whole	-	string	task_sleep of "zz_census_2509"
+task_sleep	whole	-	number	task_sleep of 0
+task_sleep	whole	-	dict	task_sleep of {"a": 1}
+task_sleep	whole	-	list	task_sleep of []
+task_spawn	whole	-	string	task_spawn of "zz_census_2509"
+task_spawn	whole	-	number	task_spawn of 0
+task_spawn	whole	-	dict	task_spawn of {"a": 1}
+task_spawn	whole	-	list	task_spawn of []
+task_yield	whole	-	string	task_yield of "zz_census_2509"
+task_yield	whole	-	number	task_yield of 0
+task_yield	whole	-	dict	task_yield of {"a": 1}
+task_yield	whole	-	list	task_yield of []
+tensor_load	whole	-	string	tensor_load of "zz_census_2509"
+tensor_load	whole	-	number	tensor_load of 0
+tensor_load	whole	-	dict	tensor_load of {"a": 1}
+tensor_load	whole	-	list	tensor_load of []
+tensor_save	whole	-	string	tensor_save of "zz_census_2509"
+tensor_save	whole	-	number	tensor_save of 0
+tensor_save	whole	-	dict	tensor_save of {"a": 1}
+tensor_save	whole	-	list	tensor_save of []
+text_builder_append	whole	-	string	text_builder_append of "zz_census_2509"
+text_builder_append	whole	-	number	text_builder_append of 0
+text_builder_append	whole	-	dict	text_builder_append of {"a": 1}
+text_builder_append	whole	-	list	text_builder_append of []
+text_builder_append_line	whole	-	string	text_builder_append_line of "zz_census_2509"
+text_builder_append_line	whole	-	number	text_builder_append_line of 0
+text_builder_append_line	whole	-	dict	text_builder_append_line of {"a": 1}
+text_builder_append_line	whole	-	list	text_builder_append_line of []
+text_builder_new	whole	-	string	text_builder_new of "zz_census_2509"
+text_builder_new	whole	-	number	text_builder_new of 0
+text_builder_new	whole	-	dict	text_builder_new of {"a": 1}
+text_builder_new	whole	-	list	text_builder_new of []
+text_builder_to_string	whole	-	string	text_builder_to_string of "zz_census_2509"
+text_builder_to_string	whole	-	number	text_builder_to_string of 0
+text_builder_to_string	whole	-	dict	text_builder_to_string of {"a": 1}
+text_builder_to_string	whole	-	list	text_builder_to_string of []
+thread_join	whole	-	string	thread_join of "zz_census_2509"
+thread_join	whole	-	number	thread_join of 0
+thread_join	whole	-	dict	thread_join of {"a": 1}
+thread_join	whole	-	list	thread_join of []
+throw	whole	-	string	throw of "zz_census_2509"
+throw	whole	-	number	throw of 0
+throw	whole	-	dict	throw of {"a": 1}
+throw	whole	-	list	throw of []
+token_name	whole	-	string	token_name of "zz_census_2509"
+token_name	whole	-	number	token_name of 0
+token_name	whole	-	dict	token_name of {"a": 1}
+token_name	whole	-	list	token_name of []
+trim	whole	-	string	trim of "zz_census_2509"
+trim	whole	-	number	trim of 0
+trim	whole	-	dict	trim of {"a": 1}
+trim	whole	-	list	trim of []
+try_parse	whole	-	string	try_parse of "zz_census_2509"
+try_parse	whole	-	number	try_parse of 0
+try_parse	whole	-	dict	try_parse of {"a": 1}
+try_parse	whole	-	list	try_parse of []
+try_recv	whole	-	string	try_recv of "zz_census_2509"
+try_recv	whole	-	number	try_recv of 0
+try_recv	whole	-	dict	try_recv of {"a": 1}
+try_recv	whole	-	list	try_recv of []
+type	whole	-	string	type of "zz_census_2509"
+type	whole	-	number	type of 0
+type	whole	-	dict	type of {"a": 1}
+type	whole	-	list	type of []
+u16_checked_add	whole	-	string	u16_checked_add of "zz_census_2509"
+u16_checked_add	whole	-	number	u16_checked_add of 0
+u16_checked_add	whole	-	dict	u16_checked_add of {"a": 1}
+u16_checked_add	whole	-	list	u16_checked_add of []
+u16_checked_mul	whole	-	string	u16_checked_mul of "zz_census_2509"
+u16_checked_mul	whole	-	number	u16_checked_mul of 0
+u16_checked_mul	whole	-	dict	u16_checked_mul of {"a": 1}
+u16_checked_mul	whole	-	list	u16_checked_mul of []
+u16_checked_sub	whole	-	string	u16_checked_sub of "zz_census_2509"
+u16_checked_sub	whole	-	number	u16_checked_sub of 0
+u16_checked_sub	whole	-	dict	u16_checked_sub of {"a": 1}
+u16_checked_sub	whole	-	list	u16_checked_sub of []
+u16_saturating_add	whole	-	string	u16_saturating_add of "zz_census_2509"
+u16_saturating_add	whole	-	number	u16_saturating_add of 0
+u16_saturating_add	whole	-	dict	u16_saturating_add of {"a": 1}
+u16_saturating_add	whole	-	list	u16_saturating_add of []
+u16_saturating_mul	whole	-	string	u16_saturating_mul of "zz_census_2509"
+u16_saturating_mul	whole	-	number	u16_saturating_mul of 0
+u16_saturating_mul	whole	-	dict	u16_saturating_mul of {"a": 1}
+u16_saturating_mul	whole	-	list	u16_saturating_mul of []
+u16_saturating_sub	whole	-	string	u16_saturating_sub of "zz_census_2509"
+u16_saturating_sub	whole	-	number	u16_saturating_sub of 0
+u16_saturating_sub	whole	-	dict	u16_saturating_sub of {"a": 1}
+u16_saturating_sub	whole	-	list	u16_saturating_sub of []
+u16_wrapping_add	whole	-	string	u16_wrapping_add of "zz_census_2509"
+u16_wrapping_add	whole	-	number	u16_wrapping_add of 0
+u16_wrapping_add	whole	-	dict	u16_wrapping_add of {"a": 1}
+u16_wrapping_add	whole	-	list	u16_wrapping_add of []
+u16_wrapping_mul	whole	-	string	u16_wrapping_mul of "zz_census_2509"
+u16_wrapping_mul	whole	-	number	u16_wrapping_mul of 0
+u16_wrapping_mul	whole	-	dict	u16_wrapping_mul of {"a": 1}
+u16_wrapping_mul	whole	-	list	u16_wrapping_mul of []
+u16_wrapping_sub	whole	-	string	u16_wrapping_sub of "zz_census_2509"
+u16_wrapping_sub	whole	-	number	u16_wrapping_sub of 0
+u16_wrapping_sub	whole	-	dict	u16_wrapping_sub of {"a": 1}
+u16_wrapping_sub	whole	-	list	u16_wrapping_sub of []
+u32_checked_add	whole	-	string	u32_checked_add of "zz_census_2509"
+u32_checked_add	whole	-	number	u32_checked_add of 0
+u32_checked_add	whole	-	dict	u32_checked_add of {"a": 1}
+u32_checked_add	whole	-	list	u32_checked_add of []
+u32_checked_mul	whole	-	string	u32_checked_mul of "zz_census_2509"
+u32_checked_mul	whole	-	number	u32_checked_mul of 0
+u32_checked_mul	whole	-	dict	u32_checked_mul of {"a": 1}
+u32_checked_mul	whole	-	list	u32_checked_mul of []
+u32_checked_sub	whole	-	string	u32_checked_sub of "zz_census_2509"
+u32_checked_sub	whole	-	number	u32_checked_sub of 0
+u32_checked_sub	whole	-	dict	u32_checked_sub of {"a": 1}
+u32_checked_sub	whole	-	list	u32_checked_sub of []
+u32_saturating_add	whole	-	string	u32_saturating_add of "zz_census_2509"
+u32_saturating_add	whole	-	number	u32_saturating_add of 0
+u32_saturating_add	whole	-	dict	u32_saturating_add of {"a": 1}
+u32_saturating_add	whole	-	list	u32_saturating_add of []
+u32_saturating_mul	whole	-	string	u32_saturating_mul of "zz_census_2509"
+u32_saturating_mul	whole	-	number	u32_saturating_mul of 0
+u32_saturating_mul	whole	-	dict	u32_saturating_mul of {"a": 1}
+u32_saturating_mul	whole	-	list	u32_saturating_mul of []
+u32_saturating_sub	whole	-	string	u32_saturating_sub of "zz_census_2509"
+u32_saturating_sub	whole	-	number	u32_saturating_sub of 0
+u32_saturating_sub	whole	-	dict	u32_saturating_sub of {"a": 1}
+u32_saturating_sub	whole	-	list	u32_saturating_sub of []
+u32_wrapping_add	whole	-	string	u32_wrapping_add of "zz_census_2509"
+u32_wrapping_add	whole	-	number	u32_wrapping_add of 0
+u32_wrapping_add	whole	-	dict	u32_wrapping_add of {"a": 1}
+u32_wrapping_add	whole	-	list	u32_wrapping_add of []
+u32_wrapping_mul	whole	-	string	u32_wrapping_mul of "zz_census_2509"
+u32_wrapping_mul	whole	-	number	u32_wrapping_mul of 0
+u32_wrapping_mul	whole	-	dict	u32_wrapping_mul of {"a": 1}
+u32_wrapping_mul	whole	-	list	u32_wrapping_mul of []
+u32_wrapping_sub	whole	-	string	u32_wrapping_sub of "zz_census_2509"
+u32_wrapping_sub	whole	-	number	u32_wrapping_sub of 0
+u32_wrapping_sub	whole	-	dict	u32_wrapping_sub of {"a": 1}
+u32_wrapping_sub	whole	-	list	u32_wrapping_sub of []
+u64_checked_add	whole	-	string	u64_checked_add of "zz_census_2509"
+u64_checked_add	whole	-	number	u64_checked_add of 0
+u64_checked_add	whole	-	dict	u64_checked_add of {"a": 1}
+u64_checked_add	whole	-	list	u64_checked_add of []
+u64_checked_mul	whole	-	string	u64_checked_mul of "zz_census_2509"
+u64_checked_mul	whole	-	number	u64_checked_mul of 0
+u64_checked_mul	whole	-	dict	u64_checked_mul of {"a": 1}
+u64_checked_mul	whole	-	list	u64_checked_mul of []
+u64_checked_sub	whole	-	string	u64_checked_sub of "zz_census_2509"
+u64_checked_sub	whole	-	number	u64_checked_sub of 0
+u64_checked_sub	whole	-	dict	u64_checked_sub of {"a": 1}
+u64_checked_sub	whole	-	list	u64_checked_sub of []
+u64_compare	whole	-	string	u64_compare of "zz_census_2509"
+u64_compare	whole	-	number	u64_compare of 0
+u64_compare	whole	-	dict	u64_compare of {"a": 1}
+u64_compare	whole	-	list	u64_compare of []
+u64_div	whole	-	string	u64_div of "zz_census_2509"
+u64_div	whole	-	number	u64_div of 0
+u64_div	whole	-	dict	u64_div of {"a": 1}
+u64_div	whole	-	list	u64_div of []
+u64_rem	whole	-	string	u64_rem of "zz_census_2509"
+u64_rem	whole	-	number	u64_rem of 0
+u64_rem	whole	-	dict	u64_rem of {"a": 1}
+u64_rem	whole	-	list	u64_rem of []
+u64_saturating_add	whole	-	string	u64_saturating_add of "zz_census_2509"
+u64_saturating_add	whole	-	number	u64_saturating_add of 0
+u64_saturating_add	whole	-	dict	u64_saturating_add of {"a": 1}
+u64_saturating_add	whole	-	list	u64_saturating_add of []
+u64_saturating_mul	whole	-	string	u64_saturating_mul of "zz_census_2509"
+u64_saturating_mul	whole	-	number	u64_saturating_mul of 0
+u64_saturating_mul	whole	-	dict	u64_saturating_mul of {"a": 1}
+u64_saturating_mul	whole	-	list	u64_saturating_mul of []
+u64_saturating_sub	whole	-	string	u64_saturating_sub of "zz_census_2509"
+u64_saturating_sub	whole	-	number	u64_saturating_sub of 0
+u64_saturating_sub	whole	-	dict	u64_saturating_sub of {"a": 1}
+u64_saturating_sub	whole	-	list	u64_saturating_sub of []
+u64_to_string	whole	-	string	u64_to_string of "zz_census_2509"
+u64_to_string	whole	-	number	u64_to_string of 0
+u64_to_string	whole	-	dict	u64_to_string of {"a": 1}
+u64_to_string	whole	-	list	u64_to_string of []
+u64_wrapping_add	whole	-	string	u64_wrapping_add of "zz_census_2509"
+u64_wrapping_add	whole	-	number	u64_wrapping_add of 0
+u64_wrapping_add	whole	-	dict	u64_wrapping_add of {"a": 1}
+u64_wrapping_add	whole	-	list	u64_wrapping_add of []
+u64_wrapping_mul	whole	-	string	u64_wrapping_mul of "zz_census_2509"
+u64_wrapping_mul	whole	-	number	u64_wrapping_mul of 0
+u64_wrapping_mul	whole	-	dict	u64_wrapping_mul of {"a": 1}
+u64_wrapping_mul	whole	-	list	u64_wrapping_mul of []
+u64_wrapping_sub	whole	-	string	u64_wrapping_sub of "zz_census_2509"
+u64_wrapping_sub	whole	-	number	u64_wrapping_sub of 0
+u64_wrapping_sub	whole	-	dict	u64_wrapping_sub of {"a": 1}
+u64_wrapping_sub	whole	-	list	u64_wrapping_sub of []
+u8_checked_add	whole	-	string	u8_checked_add of "zz_census_2509"
+u8_checked_add	whole	-	number	u8_checked_add of 0
+u8_checked_add	whole	-	dict	u8_checked_add of {"a": 1}
+u8_checked_add	whole	-	list	u8_checked_add of []
+u8_checked_mul	whole	-	string	u8_checked_mul of "zz_census_2509"
+u8_checked_mul	whole	-	number	u8_checked_mul of 0
+u8_checked_mul	whole	-	dict	u8_checked_mul of {"a": 1}
+u8_checked_mul	whole	-	list	u8_checked_mul of []
+u8_checked_sub	whole	-	string	u8_checked_sub of "zz_census_2509"
+u8_checked_sub	whole	-	number	u8_checked_sub of 0
+u8_checked_sub	whole	-	dict	u8_checked_sub of {"a": 1}
+u8_checked_sub	whole	-	list	u8_checked_sub of []
+u8_saturating_add	whole	-	string	u8_saturating_add of "zz_census_2509"
+u8_saturating_add	whole	-	number	u8_saturating_add of 0
+u8_saturating_add	whole	-	dict	u8_saturating_add of {"a": 1}
+u8_saturating_add	whole	-	list	u8_saturating_add of []
+u8_saturating_mul	whole	-	string	u8_saturating_mul of "zz_census_2509"
+u8_saturating_mul	whole	-	number	u8_saturating_mul of 0
+u8_saturating_mul	whole	-	dict	u8_saturating_mul of {"a": 1}
+u8_saturating_mul	whole	-	list	u8_saturating_mul of []
+u8_saturating_sub	whole	-	string	u8_saturating_sub of "zz_census_2509"
+u8_saturating_sub	whole	-	number	u8_saturating_sub of 0
+u8_saturating_sub	whole	-	dict	u8_saturating_sub of {"a": 1}
+u8_saturating_sub	whole	-	list	u8_saturating_sub of []
+u8_wrapping_add	whole	-	string	u8_wrapping_add of "zz_census_2509"
+u8_wrapping_add	whole	-	number	u8_wrapping_add of 0
+u8_wrapping_add	whole	-	dict	u8_wrapping_add of {"a": 1}
+u8_wrapping_add	whole	-	list	u8_wrapping_add of []
+u8_wrapping_mul	whole	-	string	u8_wrapping_mul of "zz_census_2509"
+u8_wrapping_mul	whole	-	number	u8_wrapping_mul of 0
+u8_wrapping_mul	whole	-	dict	u8_wrapping_mul of {"a": 1}
+u8_wrapping_mul	whole	-	list	u8_wrapping_mul of []
+u8_wrapping_sub	whole	-	string	u8_wrapping_sub of "zz_census_2509"
+u8_wrapping_sub	whole	-	number	u8_wrapping_sub of 0
+u8_wrapping_sub	whole	-	dict	u8_wrapping_sub of {"a": 1}
+u8_wrapping_sub	whole	-	list	u8_wrapping_sub of []
+usleep	whole	-	string	usleep of "zz_census_2509"
+usleep	whole	-	number	usleep of 0
+usleep	whole	-	dict	usleep of {"a": 1}
+usleep	whole	-	list	usleep of []
+values	whole	-	string	values of "zz_census_2509"
+values	whole	-	number	values of 0
+values	whole	-	dict	values of {"a": 1}
+values	whole	-	list	values of []
+vm_run_bytecode	whole	-	string	vm_run_bytecode of "zz_census_2509"
+vm_run_bytecode	whole	-	number	vm_run_bytecode of 0
+vm_run_bytecode	whole	-	dict	vm_run_bytecode of {"a": 1}
+vm_run_bytecode	whole	-	list	vm_run_bytecode of []
+write	whole	-	string	write of "zz_census_2509"
+write	whole	-	number	write of 0
+write	whole	-	dict	write of {"a": 1}
+write	whole	-	list	write of []
+write_bytes	whole	-	string	write_bytes of "zz_census_2509"
+write_bytes	whole	-	number	write_bytes of 0
+write_bytes	whole	-	dict	write_bytes of {"a": 1}
+write_bytes	whole	-	list	write_bytes of []
+write_text	whole	-	string	write_text of "zz_census_2509"
+write_text	whole	-	number	write_text of 0
+write_text	whole	-	dict	write_text of {"a": 1}
+write_text	whole	-	list	write_text of []
+zeros	whole	-	string	zeros of "zz_census_2509"
+zeros	whole	-	number	zeros of 0
+zeros	whole	-	dict	zeros of {"a": 1}
+zeros	whole	-	list	zeros of []
+zeros_like	whole	-	string	zeros_like of "zz_census_2509"
+zeros_like	whole	-	number	zeros_like of 0
+zeros_like	whole	-	dict	zeros_like of {"a": 1}
+zeros_like	whole	-	list	zeros_like of []
+add	pos	0	string	add of ["zz_census_2509", [3, 4]]
+add	pos	0	number	add of [0, [3, 4]]
+add	pos	0	dict	add of [{"a": 1}, [3, 4]]
+add	pos	1	string	add of [[1, 2], "zz_census_2509"]
+add	pos	1	number	add of [[1, 2], 0]
+add	pos	1	dict	add of [[1, 2], {"a": 1}]
+append	pos	0	string	append of ["zz_census_2509", 3]
+append	pos	0	number	append of [0, 3]
+append	pos	0	dict	append of [{"a": 1}, 3]
+append	pos	0	list	append of [[], 3]
+append	pos	1	string	append of [xs, "zz_census_2509"]
+append	pos	1	dict	append of [xs, {"a": 1}]
+append	pos	1	list	append of [xs, []]
+assert	pos	0	string	assert of ["zz_census_2509", "ordinary true assertion"]
+assert	pos	0	dict	assert of [{"a": 1}, "ordinary true assertion"]
+assert	pos	0	list	assert of [[], "ordinary true assertion"]
+assert	pos	1	number	assert of [1, 0]
+assert	pos	1	dict	assert of [1, {"a": 1}]
+assert	pos	1	list	assert of [1, []]
+atan2	pos	0	string	atan2 of ["zz_census_2509", 1]
+atan2	pos	0	dict	atan2 of [{"a": 1}, 1]
+atan2	pos	0	list	atan2 of [[], 1]
+atan2	pos	1	string	atan2 of [0, "zz_census_2509"]
+atan2	pos	1	dict	atan2 of [0, {"a": 1}]
+atan2	pos	1	list	atan2 of [0, []]
+audio_capture_open	pos	0	string	audio_capture_open of ["zz_census_2509", 1]
+audio_capture_open	pos	0	dict	audio_capture_open of [{"a": 1}, 1]
+audio_capture_open	pos	0	list	audio_capture_open of [[], 1]
+audio_capture_open	pos	1	string	audio_capture_open of [44100, "zz_census_2509"]
+audio_capture_open	pos	1	dict	audio_capture_open of [44100, {"a": 1}]
+audio_capture_open	pos	1	list	audio_capture_open of [44100, []]
+audio_envelope	pos	0	string	audio_envelope of ["zz_census_2509", 0, 0, 0.5, 0]
+audio_envelope	pos	0	number	audio_envelope of [0, 0, 0, 0.5, 0]
+audio_envelope	pos	0	dict	audio_envelope of [{"a": 1}, 0, 0, 0.5, 0]
+audio_envelope	pos	1	string	audio_envelope of [[0.5, 0.25, 0], "zz_census_2509", 0, 0.5, 0]
+audio_envelope	pos	1	dict	audio_envelope of [[0.5, 0.25, 0], {"a": 1}, 0, 0.5, 0]
+audio_envelope	pos	1	list	audio_envelope of [[0.5, 0.25, 0], [], 0, 0.5, 0]
+audio_envelope	pos	2	string	audio_envelope of [[0.5, 0.25, 0], 0, "zz_census_2509", 0.5, 0]
+audio_envelope	pos	2	dict	audio_envelope of [[0.5, 0.25, 0], 0, {"a": 1}, 0.5, 0]
+audio_envelope	pos	2	list	audio_envelope of [[0.5, 0.25, 0], 0, [], 0.5, 0]
+audio_envelope	pos	3	string	audio_envelope of [[0.5, 0.25, 0], 0, 0, "zz_census_2509", 0]
+audio_envelope	pos	3	dict	audio_envelope of [[0.5, 0.25, 0], 0, 0, {"a": 1}, 0]
+audio_envelope	pos	3	list	audio_envelope of [[0.5, 0.25, 0], 0, 0, [], 0]
+audio_envelope	pos	4	string	audio_envelope of [[0.5, 0.25, 0], 0, 0, 0.5, "zz_census_2509"]
+audio_envelope	pos	4	dict	audio_envelope of [[0.5, 0.25, 0], 0, 0, 0.5, {"a": 1}]
+audio_envelope	pos	4	list	audio_envelope of [[0.5, 0.25, 0], 0, 0, 0.5, []]
+audio_gain	pos	0	string	audio_gain of ["zz_census_2509", 0.5]
+audio_gain	pos	0	number	audio_gain of [0, 0.5]
+audio_gain	pos	0	dict	audio_gain of [{"a": 1}, 0.5]
+audio_gain	pos	1	string	audio_gain of [[0.25, 0 - 0.25], "zz_census_2509"]
+audio_gain	pos	1	dict	audio_gain of [[0.25, 0 - 0.25], {"a": 1}]
+audio_gain	pos	1	list	audio_gain of [[0.25, 0 - 0.25], []]
+audio_mix	pos	0	string	audio_mix of ["zz_census_2509", [0.125, 0.125]]
+audio_mix	pos	0	number	audio_mix of [0, [0.125, 0.125]]
+audio_mix	pos	0	dict	audio_mix of [{"a": 1}, [0.125, 0.125]]
+audio_mix	pos	1	string	audio_mix of [[0.25, 0 - 0.25], "zz_census_2509"]
+audio_mix	pos	1	number	audio_mix of [[0.25, 0 - 0.25], 0]
+audio_mix	pos	1	dict	audio_mix of [[0.25, 0 - 0.25], {"a": 1}]
+audio_music_play	pos	0	number	audio_music_play of [0, 0]
+audio_music_play	pos	0	dict	audio_music_play of [{"a": 1}, 0]
+audio_music_play	pos	0	list	audio_music_play of [[], 0]
+audio_music_play	pos	1	string	audio_music_play of ["@WAV@", "zz_census_2509"]
+audio_music_play	pos	1	dict	audio_music_play of ["@WAV@", {"a": 1}]
+audio_music_play	pos	1	list	audio_music_play of ["@WAV@", []]
+audio_noise	pos	0	string	audio_noise of ["zz_census_2509", 0]
+audio_noise	pos	0	dict	audio_noise of [{"a": 1}, 0]
+audio_noise	pos	0	list	audio_noise of [[], 0]
+audio_noise	pos	1	string	audio_noise of [0.001, "zz_census_2509"]
+audio_noise	pos	1	dict	audio_noise of [0.001, {"a": 1}]
+audio_noise	pos	1	list	audio_noise of [0.001, []]
+audio_open	pos	0	string	audio_open of ["zz_census_2509", 1]
+audio_open	pos	0	dict	audio_open of [{"a": 1}, 1]
+audio_open	pos	0	list	audio_open of [[], 1]
+audio_open	pos	1	string	audio_open of [44100, "zz_census_2509"]
+audio_open	pos	1	dict	audio_open of [44100, {"a": 1}]
+audio_open	pos	1	list	audio_open of [44100, []]
+audio_saw	pos	0	string	audio_saw of ["zz_census_2509", 0.001, 0.25]
+audio_saw	pos	0	dict	audio_saw of [{"a": 1}, 0.001, 0.25]
+audio_saw	pos	0	list	audio_saw of [[], 0.001, 0.25]
+audio_saw	pos	1	string	audio_saw of [440, "zz_census_2509", 0.25]
+audio_saw	pos	1	dict	audio_saw of [440, {"a": 1}, 0.25]
+audio_saw	pos	1	list	audio_saw of [440, [], 0.25]
+audio_saw	pos	2	string	audio_saw of [440, 0.001, "zz_census_2509"]
+audio_saw	pos	2	dict	audio_saw of [440, 0.001, {"a": 1}]
+audio_saw	pos	2	list	audio_saw of [440, 0.001, []]
+audio_sine	pos	0	string	audio_sine of ["zz_census_2509", 0.001, 0.25]
+audio_sine	pos	0	dict	audio_sine of [{"a": 1}, 0.001, 0.25]
+audio_sine	pos	0	list	audio_sine of [[], 0.001, 0.25]
+audio_sine	pos	1	string	audio_sine of [440, "zz_census_2509", 0.25]
+audio_sine	pos	1	dict	audio_sine of [440, {"a": 1}, 0.25]
+audio_sine	pos	1	list	audio_sine of [440, [], 0.25]
+audio_sine	pos	2	string	audio_sine of [440, 0.001, "zz_census_2509"]
+audio_sine	pos	2	dict	audio_sine of [440, 0.001, {"a": 1}]
+audio_sine	pos	2	list	audio_sine of [440, 0.001, []]
+audio_square	pos	0	string	audio_square of ["zz_census_2509", 0.001, 0.25]
+audio_square	pos	0	dict	audio_square of [{"a": 1}, 0.001, 0.25]
+audio_square	pos	0	list	audio_square of [[], 0.001, 0.25]
+audio_square	pos	1	string	audio_square of [440, "zz_census_2509", 0.25]
+audio_square	pos	1	dict	audio_square of [440, {"a": 1}, 0.25]
+audio_square	pos	1	list	audio_square of [440, [], 0.25]
+audio_square	pos	2	string	audio_square of [440, 0.001, "zz_census_2509"]
+audio_square	pos	2	dict	audio_square of [440, 0.001, {"a": 1}]
+audio_square	pos	2	list	audio_square of [440, 0.001, []]
+audio_stream_open	pos	0	string	audio_stream_open of ["zz_census_2509", 1]
+audio_stream_open	pos	0	dict	audio_stream_open of [{"a": 1}, 1]
+audio_stream_open	pos	0	list	audio_stream_open of [[], 1]
+audio_stream_open	pos	1	string	audio_stream_open of [44100, "zz_census_2509"]
+audio_stream_open	pos	1	dict	audio_stream_open of [44100, {"a": 1}]
+audio_stream_open	pos	1	list	audio_stream_open of [44100, []]
+audio_sweep	pos	0	string	audio_sweep of ["zz_census_2509", 880, 0.001, 0.25, 0]
+audio_sweep	pos	0	dict	audio_sweep of [{"a": 1}, 880, 0.001, 0.25, 0]
+audio_sweep	pos	0	list	audio_sweep of [[], 880, 0.001, 0.25, 0]
+audio_sweep	pos	1	string	audio_sweep of [440, "zz_census_2509", 0.001, 0.25, 0]
+audio_sweep	pos	1	dict	audio_sweep of [440, {"a": 1}, 0.001, 0.25, 0]
+audio_sweep	pos	1	list	audio_sweep of [440, [], 0.001, 0.25, 0]
+audio_sweep	pos	2	string	audio_sweep of [440, 880, "zz_census_2509", 0.25, 0]
+audio_sweep	pos	2	dict	audio_sweep of [440, 880, {"a": 1}, 0.25, 0]
+audio_sweep	pos	2	list	audio_sweep of [440, 880, [], 0.25, 0]
+audio_sweep	pos	3	string	audio_sweep of [440, 880, 0.001, "zz_census_2509", 0]
+audio_sweep	pos	3	dict	audio_sweep of [440, 880, 0.001, {"a": 1}, 0]
+audio_sweep	pos	3	list	audio_sweep of [440, 880, 0.001, [], 0]
+audio_sweep	pos	4	string	audio_sweep of [440, 880, 0.001, 0.25, "zz_census_2509"]
+audio_sweep	pos	4	dict	audio_sweep of [440, 880, 0.001, 0.25, {"a": 1}]
+audio_sweep	pos	4	list	audio_sweep of [440, 880, 0.001, 0.25, []]
+bit_and	pos	0	string	bit_and of ["zz_census_2509", 3]
+bit_and	pos	0	dict	bit_and of [{"a": 1}, 3]
+bit_and	pos	0	list	bit_and of [[], 3]
+bit_and	pos	1	string	bit_and of [6, "zz_census_2509"]
+bit_and	pos	1	dict	bit_and of [6, {"a": 1}]
+bit_and	pos	1	list	bit_and of [6, []]
+bit_or	pos	0	string	bit_or of ["zz_census_2509", 3]
+bit_or	pos	0	dict	bit_or of [{"a": 1}, 3]
+bit_or	pos	0	list	bit_or of [[], 3]
+bit_or	pos	1	string	bit_or of [6, "zz_census_2509"]
+bit_or	pos	1	dict	bit_or of [6, {"a": 1}]
+bit_or	pos	1	list	bit_or of [6, []]
+bit_shl	pos	0	string	bit_shl of ["zz_census_2509", 1]
+bit_shl	pos	0	dict	bit_shl of [{"a": 1}, 1]
+bit_shl	pos	0	list	bit_shl of [[], 1]
+bit_shl	pos	1	string	bit_shl of [6, "zz_census_2509"]
+bit_shl	pos	1	dict	bit_shl of [6, {"a": 1}]
+bit_shl	pos	1	list	bit_shl of [6, []]
+bit_shr	pos	0	string	bit_shr of ["zz_census_2509", 1]
+bit_shr	pos	0	dict	bit_shr of [{"a": 1}, 1]
+bit_shr	pos	0	list	bit_shr of [[], 1]
+bit_shr	pos	1	string	bit_shr of [6, "zz_census_2509"]
+bit_shr	pos	1	dict	bit_shr of [6, {"a": 1}]
+bit_shr	pos	1	list	bit_shr of [6, []]
+bit_xor	pos	0	string	bit_xor of ["zz_census_2509", 3]
+bit_xor	pos	0	dict	bit_xor of [{"a": 1}, 3]
+bit_xor	pos	0	list	bit_xor of [[], 3]
+bit_xor	pos	1	string	bit_xor of [6, "zz_census_2509"]
+bit_xor	pos	1	dict	bit_xor of [6, {"a": 1}]
+bit_xor	pos	1	list	bit_xor of [6, []]
+buf_copy	pos	0	string	buf_copy of ["zz_census_2509", 0, b, 1, 2]
+buf_copy	pos	0	number	buf_copy of [0, 0, b, 1, 2]
+buf_copy	pos	0	dict	buf_copy of [{"a": 1}, 0, b, 1, 2]
+buf_copy	pos	0	list	buf_copy of [[], 0, b, 1, 2]
+buf_copy	pos	1	string	buf_copy of [a, "zz_census_2509", b, 1, 2]
+buf_copy	pos	1	dict	buf_copy of [a, {"a": 1}, b, 1, 2]
+buf_copy	pos	1	list	buf_copy of [a, [], b, 1, 2]
+buf_copy	pos	2	string	buf_copy of [a, 0, "zz_census_2509", 1, 2]
+buf_copy	pos	2	number	buf_copy of [a, 0, 0, 1, 2]
+buf_copy	pos	2	dict	buf_copy of [a, 0, {"a": 1}, 1, 2]
+buf_copy	pos	2	list	buf_copy of [a, 0, [], 1, 2]
+buf_copy	pos	3	string	buf_copy of [a, 0, b, "zz_census_2509", 2]
+buf_copy	pos	3	dict	buf_copy of [a, 0, b, {"a": 1}, 2]
+buf_copy	pos	3	list	buf_copy of [a, 0, b, [], 2]
+buf_copy	pos	4	string	buf_copy of [a, 0, b, 1, "zz_census_2509"]
+buf_copy	pos	4	dict	buf_copy of [a, 0, b, 1, {"a": 1}]
+buf_copy	pos	4	list	buf_copy of [a, 0, b, 1, []]
+buf_deinterleave	pos	0	string	buf_deinterleave of ["zz_census_2509", 1, 2, 2]
+buf_deinterleave	pos	0	number	buf_deinterleave of [0, 1, 2, 2]
+buf_deinterleave	pos	0	dict	buf_deinterleave of [{"a": 1}, 1, 2, 2]
+buf_deinterleave	pos	0	list	buf_deinterleave of [[], 1, 2, 2]
+buf_deinterleave	pos	1	string	buf_deinterleave of [a, "zz_census_2509", 2, 2]
+buf_deinterleave	pos	1	dict	buf_deinterleave of [a, {"a": 1}, 2, 2]
+buf_deinterleave	pos	1	list	buf_deinterleave of [a, [], 2, 2]
+buf_deinterleave	pos	2	string	buf_deinterleave of [a, 1, "zz_census_2509", 2]
+buf_deinterleave	pos	2	dict	buf_deinterleave of [a, 1, {"a": 1}, 2]
+buf_deinterleave	pos	2	list	buf_deinterleave of [a, 1, [], 2]
+buf_deinterleave	pos	3	string	buf_deinterleave of [a, 1, 2, "zz_census_2509"]
+buf_deinterleave	pos	3	dict	buf_deinterleave of [a, 1, 2, {"a": 1}]
+buf_deinterleave	pos	3	list	buf_deinterleave of [a, 1, 2, []]
+buf_dot	pos	0	string	buf_dot of ["zz_census_2509", b, 0, 0, 2]
+buf_dot	pos	0	number	buf_dot of [0, b, 0, 0, 2]
+buf_dot	pos	0	dict	buf_dot of [{"a": 1}, b, 0, 0, 2]
+buf_dot	pos	0	list	buf_dot of [[], b, 0, 0, 2]
+buf_dot	pos	1	string	buf_dot of [a, "zz_census_2509", 0, 0, 2]
+buf_dot	pos	1	number	buf_dot of [a, 0, 0, 0, 2]
+buf_dot	pos	1	dict	buf_dot of [a, {"a": 1}, 0, 0, 2]
+buf_dot	pos	1	list	buf_dot of [a, [], 0, 0, 2]
+buf_dot	pos	2	string	buf_dot of [a, b, "zz_census_2509", 0, 2]
+buf_dot	pos	2	dict	buf_dot of [a, b, {"a": 1}, 0, 2]
+buf_dot	pos	2	list	buf_dot of [a, b, [], 0, 2]
+buf_dot	pos	3	string	buf_dot of [a, b, 0, "zz_census_2509", 2]
+buf_dot	pos	3	dict	buf_dot of [a, b, 0, {"a": 1}, 2]
+buf_dot	pos	3	list	buf_dot of [a, b, 0, [], 2]
+buf_dot	pos	4	string	buf_dot of [a, b, 0, 0, "zz_census_2509"]
+buf_dot	pos	4	dict	buf_dot of [a, b, 0, 0, {"a": 1}]
+buf_dot	pos	4	list	buf_dot of [a, b, 0, 0, []]
+buf_fill	pos	0	string	buf_fill of ["zz_census_2509", 1, 2, 9]
+buf_fill	pos	0	number	buf_fill of [0, 1, 2, 9]
+buf_fill	pos	0	dict	buf_fill of [{"a": 1}, 1, 2, 9]
+buf_fill	pos	0	list	buf_fill of [[], 1, 2, 9]
+buf_fill	pos	1	string	buf_fill of [a, "zz_census_2509", 2, 9]
+buf_fill	pos	1	dict	buf_fill of [a, {"a": 1}, 2, 9]
+buf_fill	pos	1	list	buf_fill of [a, [], 2, 9]
+buf_fill	pos	2	string	buf_fill of [a, 1, "zz_census_2509", 9]
+buf_fill	pos	2	dict	buf_fill of [a, 1, {"a": 1}, 9]
+buf_fill	pos	2	list	buf_fill of [a, 1, [], 9]
+buf_fill	pos	3	string	buf_fill of [a, 1, 2, "zz_census_2509"]
+buf_fill	pos	3	dict	buf_fill of [a, 1, 2, {"a": 1}]
+buf_fill	pos	3	list	buf_fill of [a, 1, 2, []]
+buf_from_pcm16le	pos	0	string	buf_from_pcm16le of ["zz_census_2509", 0, 2]
+buf_from_pcm16le	pos	0	number	buf_from_pcm16le of [0, 0, 2]
+buf_from_pcm16le	pos	0	dict	buf_from_pcm16le of [{"a": 1}, 0, 2]
+buf_from_pcm16le	pos	0	list	buf_from_pcm16le of [[], 0, 2]
+buf_from_pcm16le	pos	1	string	buf_from_pcm16le of [a, "zz_census_2509", 2]
+buf_from_pcm16le	pos	1	dict	buf_from_pcm16le of [a, {"a": 1}, 2]
+buf_from_pcm16le	pos	1	list	buf_from_pcm16le of [a, [], 2]
+buf_from_pcm16le	pos	2	string	buf_from_pcm16le of [a, 0, "zz_census_2509"]
+buf_from_pcm16le	pos	2	dict	buf_from_pcm16le of [a, 0, {"a": 1}]
+buf_from_pcm16le	pos	2	list	buf_from_pcm16le of [a, 0, []]
+buf_get	pos	0	string	buf_get of ["zz_census_2509", 1]
+buf_get	pos	0	number	buf_get of [0, 1]
+buf_get	pos	0	dict	buf_get of [{"a": 1}, 1]
+buf_get	pos	0	list	buf_get of [[], 1]
+buf_get	pos	1	string	buf_get of [a, "zz_census_2509"]
+buf_get	pos	1	dict	buf_get of [a, {"a": 1}]
+buf_get	pos	1	list	buf_get of [a, []]
+buf_get_bits	pos	0	string	buf_get_bits of ["zz_census_2509", 1]
+buf_get_bits	pos	0	number	buf_get_bits of [0, 1]
+buf_get_bits	pos	0	dict	buf_get_bits of [{"a": 1}, 1]
+buf_get_bits	pos	0	list	buf_get_bits of [[], 1]
+buf_get_bits	pos	1	string	buf_get_bits of [a, "zz_census_2509"]
+buf_get_bits	pos	1	dict	buf_get_bits of [a, {"a": 1}]
+buf_get_bits	pos	1	list	buf_get_bits of [a, []]
+buf_mix	pos	0	string	buf_mix of ["zz_census_2509", a, 0, 0, 2, 0.5]
+buf_mix	pos	0	number	buf_mix of [0, a, 0, 0, 2, 0.5]
+buf_mix	pos	0	dict	buf_mix of [{"a": 1}, a, 0, 0, 2, 0.5]
+buf_mix	pos	0	list	buf_mix of [[], a, 0, 0, 2, 0.5]
+buf_mix	pos	1	string	buf_mix of [b, "zz_census_2509", 0, 0, 2, 0.5]
+buf_mix	pos	1	number	buf_mix of [b, 0, 0, 0, 2, 0.5]
+buf_mix	pos	1	dict	buf_mix of [b, {"a": 1}, 0, 0, 2, 0.5]
+buf_mix	pos	1	list	buf_mix of [b, [], 0, 0, 2, 0.5]
+buf_mix	pos	2	string	buf_mix of [b, a, "zz_census_2509", 0, 2, 0.5]
+buf_mix	pos	2	dict	buf_mix of [b, a, {"a": 1}, 0, 2, 0.5]
+buf_mix	pos	2	list	buf_mix of [b, a, [], 0, 2, 0.5]
+buf_mix	pos	3	string	buf_mix of [b, a, 0, "zz_census_2509", 2, 0.5]
+buf_mix	pos	3	dict	buf_mix of [b, a, 0, {"a": 1}, 2, 0.5]
+buf_mix	pos	3	list	buf_mix of [b, a, 0, [], 2, 0.5]
+buf_mix	pos	4	string	buf_mix of [b, a, 0, 0, "zz_census_2509", 0.5]
+buf_mix	pos	4	dict	buf_mix of [b, a, 0, 0, {"a": 1}, 0.5]
+buf_mix	pos	4	list	buf_mix of [b, a, 0, 0, [], 0.5]
+buf_mix	pos	5	string	buf_mix of [b, a, 0, 0, 2, "zz_census_2509"]
+buf_mix	pos	5	dict	buf_mix of [b, a, 0, 0, 2, {"a": 1}]
+buf_mix	pos	5	list	buf_mix of [b, a, 0, 0, 2, []]
+buf_peak	pos	0	string	buf_peak of ["zz_census_2509", 0, 4]
+buf_peak	pos	0	number	buf_peak of [0, 0, 4]
+buf_peak	pos	0	dict	buf_peak of [{"a": 1}, 0, 4]
+buf_peak	pos	0	list	buf_peak of [[], 0, 4]
+buf_peak	pos	1	string	buf_peak of [a, "zz_census_2509", 4]
+buf_peak	pos	1	dict	buf_peak of [a, {"a": 1}, 4]
+buf_peak	pos	1	list	buf_peak of [a, [], 4]
+buf_peak	pos	2	string	buf_peak of [a, 0, "zz_census_2509"]
+buf_peak	pos	2	dict	buf_peak of [a, 0, {"a": 1}]
+buf_peak	pos	2	list	buf_peak of [a, 0, []]
+buf_resample_linear	pos	0	string	buf_resample_linear of ["zz_census_2509", 3]
+buf_resample_linear	pos	0	number	buf_resample_linear of [0, 3]
+buf_resample_linear	pos	0	dict	buf_resample_linear of [{"a": 1}, 3]
+buf_resample_linear	pos	0	list	buf_resample_linear of [[], 3]
+buf_resample_linear	pos	1	string	buf_resample_linear of [a, "zz_census_2509"]
+buf_resample_linear	pos	1	dict	buf_resample_linear of [a, {"a": 1}]
+buf_resample_linear	pos	1	list	buf_resample_linear of [a, []]
+buf_scale_range	pos	0	string	buf_scale_range of ["zz_census_2509", 1, 2, 2]
+buf_scale_range	pos	0	number	buf_scale_range of [0, 1, 2, 2]
+buf_scale_range	pos	0	dict	buf_scale_range of [{"a": 1}, 1, 2, 2]
+buf_scale_range	pos	0	list	buf_scale_range of [[], 1, 2, 2]
+buf_scale_range	pos	1	string	buf_scale_range of [a, "zz_census_2509", 2, 2]
+buf_scale_range	pos	1	dict	buf_scale_range of [a, {"a": 1}, 2, 2]
+buf_scale_range	pos	1	list	buf_scale_range of [a, [], 2, 2]
+buf_scale_range	pos	2	string	buf_scale_range of [a, 1, "zz_census_2509", 2]
+buf_scale_range	pos	2	dict	buf_scale_range of [a, 1, {"a": 1}, 2]
+buf_scale_range	pos	2	list	buf_scale_range of [a, 1, [], 2]
+buf_scale_range	pos	3	string	buf_scale_range of [a, 1, 2, "zz_census_2509"]
+buf_scale_range	pos	3	dict	buf_scale_range of [a, 1, 2, {"a": 1}]
+buf_scale_range	pos	3	list	buf_scale_range of [a, 1, 2, []]
+buf_set	pos	0	string	buf_set of ["zz_census_2509", 1, 9]
+buf_set	pos	0	number	buf_set of [0, 1, 9]
+buf_set	pos	0	dict	buf_set of [{"a": 1}, 1, 9]
+buf_set	pos	0	list	buf_set of [[], 1, 9]
+buf_set	pos	1	string	buf_set of [a, "zz_census_2509", 9]
+buf_set	pos	1	dict	buf_set of [a, {"a": 1}, 9]
+buf_set	pos	1	list	buf_set of [a, [], 9]
+buf_set	pos	2	string	buf_set of [a, 1, "zz_census_2509"]
+buf_set	pos	2	dict	buf_set of [a, 1, {"a": 1}]
+buf_set	pos	2	list	buf_set of [a, 1, []]
+buf_set_bits	pos	0	string	buf_set_bits of ["zz_census_2509", 1, 4609434218613702656]
+buf_set_bits	pos	0	number	buf_set_bits of [0, 1, 4609434218613702656]
+buf_set_bits	pos	0	dict	buf_set_bits of [{"a": 1}, 1, 4609434218613702656]
+buf_set_bits	pos	0	list	buf_set_bits of [[], 1, 4609434218613702656]
+buf_set_bits	pos	1	string	buf_set_bits of [a, "zz_census_2509", 4609434218613702656]
+buf_set_bits	pos	1	dict	buf_set_bits of [a, {"a": 1}, 4609434218613702656]
+buf_set_bits	pos	1	list	buf_set_bits of [a, [], 4609434218613702656]
+buf_set_bits	pos	2	string	buf_set_bits of [a, 1, "zz_census_2509"]
+buf_set_bits	pos	2	dict	buf_set_bits of [a, 1, {"a": 1}]
+buf_set_bits	pos	2	list	buf_set_bits of [a, 1, []]
+buf_to_pcm16le	pos	0	string	buf_to_pcm16le of ["zz_census_2509", 0, 2]
+buf_to_pcm16le	pos	0	number	buf_to_pcm16le of [0, 0, 2]
+buf_to_pcm16le	pos	0	dict	buf_to_pcm16le of [{"a": 1}, 0, 2]
+buf_to_pcm16le	pos	0	list	buf_to_pcm16le of [[], 0, 2]
+buf_to_pcm16le	pos	1	string	buf_to_pcm16le of [a, "zz_census_2509", 2]
+buf_to_pcm16le	pos	1	dict	buf_to_pcm16le of [a, {"a": 1}, 2]
+buf_to_pcm16le	pos	1	list	buf_to_pcm16le of [a, [], 2]
+buf_to_pcm16le	pos	2	string	buf_to_pcm16le of [a, 0, "zz_census_2509"]
+buf_to_pcm16le	pos	2	dict	buf_to_pcm16le of [a, 0, {"a": 1}]
+buf_to_pcm16le	pos	2	list	buf_to_pcm16le of [a, 0, []]
+char_at	pos	0	number	char_at of [0, 1]
+char_at	pos	0	dict	char_at of [{"a": 1}, 1]
+char_at	pos	0	list	char_at of [[], 1]
+char_at	pos	1	string	char_at of ["abc", "zz_census_2509"]
+char_at	pos	1	dict	char_at of ["abc", {"a": 1}]
+char_at	pos	1	list	char_at of ["abc", []]
+classify	pos	0	string	classify of ["zz_census_2509", "value"]
+classify	pos	0	number	classify of [0, "value"]
+classify	pos	0	dict	classify of [{"a": 1}, "value"]
+classify	pos	0	list	classify of [[], "value"]
+classify	pos	1	number	classify of [snap, 0]
+classify	pos	1	dict	classify of [snap, {"a": 1}]
+classify	pos	1	list	classify of [snap, []]
+coalesce	pos	0	string	coalesce of ["zz_census_2509", 4]
+coalesce	pos	0	number	coalesce of [0, 4]
+coalesce	pos	0	dict	coalesce of [{"a": 1}, 4]
+coalesce	pos	0	list	coalesce of [[], 4]
+coalesce	pos	1	string	coalesce of [null, "zz_census_2509"]
+coalesce	pos	1	dict	coalesce of [null, {"a": 1}]
+coalesce	pos	1	list	coalesce of [null, []]
+concat	pos	0	string	concat of ["zz_census_2509", [3]]
+concat	pos	0	number	concat of [0, [3]]
+concat	pos	0	dict	concat of [{"a": 1}, [3]]
+concat	pos	1	string	concat of [[1, 2], "zz_census_2509"]
+concat	pos	1	number	concat of [[1, 2], 0]
+concat	pos	1	dict	concat of [[1, 2], {"a": 1}]
+contains	pos	0	number	contains of [0, "b"]
+contains	pos	0	dict	contains of [{"a": 1}, "b"]
+contains	pos	0	list	contains of [[], "b"]
+contains	pos	1	number	contains of ["abc", 0]
+contains	pos	1	dict	contains of ["abc", {"a": 1}]
+contains	pos	1	list	contains of ["abc", []]
+copy_into	pos	0	string	copy_into of ["zz_census_2509", 1, [3]]
+copy_into	pos	0	number	copy_into of [0, 1, [3]]
+copy_into	pos	0	dict	copy_into of [{"a": 1}, 1, [3]]
+copy_into	pos	0	list	copy_into of [[], 1, [3]]
+copy_into	pos	1	string	copy_into of [xs, "zz_census_2509", [3]]
+copy_into	pos	1	dict	copy_into of [xs, {"a": 1}, [3]]
+copy_into	pos	1	list	copy_into of [xs, [], [3]]
+copy_into	pos	2	string	copy_into of [xs, 1, "zz_census_2509"]
+copy_into	pos	2	number	copy_into of [xs, 1, 0]
+copy_into	pos	2	dict	copy_into of [xs, 1, {"a": 1}]
+dict_remove	pos	0	string	dict_remove of ["zz_census_2509", "k"]
+dict_remove	pos	0	number	dict_remove of [0, "k"]
+dict_remove	pos	0	dict	dict_remove of [{"a": 1}, "k"]
+dict_remove	pos	0	list	dict_remove of [[], "k"]
+dict_remove	pos	1	number	dict_remove of [d, 0]
+dict_remove	pos	1	dict	dict_remove of [d, {"a": 1}]
+dict_remove	pos	1	list	dict_remove of [d, []]
+dict_set	pos	0	string	dict_set of ["zz_census_2509", "k", 3]
+dict_set	pos	0	number	dict_set of [0, "k", 3]
+dict_set	pos	0	dict	dict_set of [{"a": 1}, "k", 3]
+dict_set	pos	0	list	dict_set of [[], "k", 3]
+dict_set	pos	1	number	dict_set of [d, 0, 3]
+dict_set	pos	1	dict	dict_set of [d, {"a": 1}, 3]
+dict_set	pos	1	list	dict_set of [d, [], 3]
+dict_set	pos	2	string	dict_set of [d, "k", "zz_census_2509"]
+dict_set	pos	2	dict	dict_set of [d, "k", {"a": 1}]
+dict_set	pos	2	list	dict_set of [d, "k", []]
+dispatch	pos	0	string	dispatch of ["zz_census_2509", 0, 4]
+dispatch	pos	0	number	dispatch of [0, 0, 4]
+dispatch	pos	0	dict	dispatch of [{"a": 1}, 0, 4]
+dispatch	pos	1	string	dispatch of [[(v) => v + 1], "zz_census_2509", 4]
+dispatch	pos	1	dict	dispatch of [[(v) => v + 1], {"a": 1}, 4]
+dispatch	pos	1	list	dispatch of [[(v) => v + 1], [], 4]
+dispatch	pos	2	string	dispatch of [[(v) => v + 1], 0, "zz_census_2509"]
+dispatch	pos	2	dict	dispatch of [[(v) => v + 1], 0, {"a": 1}]
+dispatch	pos	2	list	dispatch of [[(v) => v + 1], 0, []]
+divide	pos	0	string	divide of ["zz_census_2509", [3, 4]]
+divide	pos	0	number	divide of [0, [3, 4]]
+divide	pos	0	dict	divide of [{"a": 1}, [3, 4]]
+divide	pos	1	string	divide of [[1, 2], "zz_census_2509"]
+divide	pos	1	number	divide of [[1, 2], 0]
+divide	pos	1	dict	divide of [[1, 2], {"a": 1}]
+dot	pos	0	string	dot of ["zz_census_2509", shape_dot_b]
+dot	pos	0	number	dot of [0, shape_dot_b]
+dot	pos	0	dict	dot of [{"a": 1}, shape_dot_b]
+dot	pos	0	list	dot of [[], shape_dot_b]
+dot	pos	1	string	dot of [shape_dot_a, "zz_census_2509"]
+dot	pos	1	number	dot of [shape_dot_a, 0]
+dot	pos	1	dict	dot of [shape_dot_a, {"a": 1}]
+dot	pos	1	list	dot of [shape_dot_a, []]
+ends_with	pos	0	number	ends_with of [0, "bc"]
+ends_with	pos	0	dict	ends_with of [{"a": 1}, "bc"]
+ends_with	pos	0	list	ends_with of [[], "bc"]
+ends_with	pos	1	number	ends_with of ["abc", 0]
+ends_with	pos	1	dict	ends_with of ["abc", {"a": 1}]
+ends_with	pos	1	list	ends_with of ["abc", []]
+exit	pos	0	string	exit of "zz_census_2509"
+exit	pos	0	dict	exit of {"a": 1}
+fill	pos	0	string	fill of ["zz_census_2509", "x"]
+fill	pos	0	dict	fill of [{"a": 1}, "x"]
+fill	pos	0	list	fill of [[], "x"]
+fill	pos	1	number	fill of [2, 0]
+fill	pos	1	dict	fill of [2, {"a": 1}]
+fill	pos	1	list	fill of [2, []]
+gather	pos	0	string	gather of ["zz_census_2509", [1]]
+gather	pos	0	number	gather of [0, [1]]
+gather	pos	0	dict	gather of [{"a": 1}, [1]]
+gather	pos	1	string	gather of [[[2, 3]], "zz_census_2509"]
+gather	pos	1	number	gather of [[[2, 3]], 0]
+gather	pos	1	dict	gather of [[[2, 3]], {"a": 1}]
+gfx_open	pos	0	string	gfx_open of ["zz_census_2509", 16, "shape"]
+gfx_open	pos	0	dict	gfx_open of [{"a": 1}, 16, "shape"]
+gfx_open	pos	0	list	gfx_open of [[], 16, "shape"]
+gfx_open	pos	1	string	gfx_open of [16, "zz_census_2509", "shape"]
+gfx_open	pos	1	dict	gfx_open of [16, {"a": 1}, "shape"]
+gfx_open	pos	1	list	gfx_open of [16, [], "shape"]
+gfx_open	pos	2	number	gfx_open of [16, 16, 0]
+gfx_open	pos	2	dict	gfx_open of [16, 16, {"a": 1}]
+gfx_open	pos	2	list	gfx_open of [16, 16, []]
+gfx_text_height	pos	0	string	gfx_text_height of "zz_census_2509"
+gfx_text_height	pos	0	dict	gfx_text_height of {"a": 1}
+gfx_text_height	pos	0	list	gfx_text_height of []
+gfx_text_width	pos	0	number	gfx_text_width of [0, 1]
+gfx_text_width	pos	0	dict	gfx_text_width of [{"a": 1}, 1]
+gfx_text_width	pos	0	list	gfx_text_width of [[], 1]
+gfx_text_width	pos	1	string	gfx_text_width of ["a", "zz_census_2509"]
+gfx_text_width	pos	1	dict	gfx_text_width of ["a", {"a": 1}]
+gfx_text_width	pos	1	list	gfx_text_width of ["a", []]
+has_key	pos	0	string	has_key of ["zz_census_2509", "k"]
+has_key	pos	0	number	has_key of [0, "k"]
+has_key	pos	0	list	has_key of [[], "k"]
+has_key	pos	1	number	has_key of [{"k": 2}, 0]
+has_key	pos	1	dict	has_key of [{"k": 2}, {"a": 1}]
+has_key	pos	1	list	has_key of [{"k": 2}, []]
+hex	pos	0	string	hex of ["zz_census_2509", 4]
+hex	pos	0	dict	hex of [{"a": 1}, 4]
+hex	pos	0	list	hex of [[], 4]
+hex	pos	1	string	hex of [26, "zz_census_2509"]
+hex	pos	1	dict	hex of [26, {"a": 1}]
+hex	pos	1	list	hex of [26, []]
+http_route	pos	0	number	http_route of [0, "/shape", "static", "ok"]
+http_route	pos	0	dict	http_route of [{"a": 1}, "/shape", "static", "ok"]
+http_route	pos	0	list	http_route of [[], "/shape", "static", "ok"]
+http_route	pos	1	number	http_route of ["GET", 0, "static", "ok"]
+http_route	pos	1	dict	http_route of ["GET", {"a": 1}, "static", "ok"]
+http_route	pos	1	list	http_route of ["GET", [], "static", "ok"]
+http_route	pos	2	number	http_route of ["GET", "/shape", 0, "ok"]
+http_route	pos	2	dict	http_route of ["GET", "/shape", {"a": 1}, "ok"]
+http_route	pos	2	list	http_route of ["GET", "/shape", [], "ok"]
+http_route	pos	3	number	http_route of ["GET", "/shape", "static", 0]
+http_route	pos	3	dict	http_route of ["GET", "/shape", "static", {"a": 1}]
+http_route	pos	3	list	http_route of ["GET", "/shape", "static", []]
+http_route_authed	pos	0	number	http_route_authed of [0, "/shape", "static", "ok"]
+http_route_authed	pos	0	dict	http_route_authed of [{"a": 1}, "/shape", "static", "ok"]
+http_route_authed	pos	0	list	http_route_authed of [[], "/shape", "static", "ok"]
+http_route_authed	pos	1	number	http_route_authed of ["GET", 0, "static", "ok"]
+http_route_authed	pos	1	dict	http_route_authed of ["GET", {"a": 1}, "static", "ok"]
+http_route_authed	pos	1	list	http_route_authed of ["GET", [], "static", "ok"]
+http_route_authed	pos	2	number	http_route_authed of ["GET", "/shape", 0, "ok"]
+http_route_authed	pos	2	dict	http_route_authed of ["GET", "/shape", {"a": 1}, "ok"]
+http_route_authed	pos	2	list	http_route_authed of ["GET", "/shape", [], "ok"]
+http_route_authed	pos	3	number	http_route_authed of ["GET", "/shape", "static", 0]
+http_route_authed	pos	3	dict	http_route_authed of ["GET", "/shape", "static", {"a": 1}]
+http_route_authed	pos	3	list	http_route_authed of ["GET", "/shape", "static", []]
+http_static	pos	0	number	http_static of [0, "@TMP@"]
+http_static	pos	0	dict	http_static of [{"a": 1}, "@TMP@"]
+http_static	pos	0	list	http_static of [[], "@TMP@"]
+http_static	pos	1	number	http_static of ["/shape", 0]
+http_static	pos	1	dict	http_static of ["/shape", {"a": 1}]
+http_static	pos	1	list	http_static of ["/shape", []]
+index_of	pos	0	number	index_of of [0, "b"]
+index_of	pos	0	dict	index_of of [{"a": 1}, "b"]
+index_of	pos	0	list	index_of of [[], "b"]
+index_of	pos	1	number	index_of of ["abc", 0]
+index_of	pos	1	dict	index_of of ["abc", {"a": 1}]
+index_of	pos	1	list	index_of of ["abc", []]
+join	pos	0	string	join of ["zz_census_2509", "-"]
+join	pos	0	number	join of [0, "-"]
+join	pos	0	dict	join of [{"a": 1}, "-"]
+join	pos	1	number	join of [["a", "b"], 0]
+join	pos	1	dict	join of [["a", "b"], {"a": 1}]
+join	pos	1	list	join of [["a", "b"], []]
+json_path	pos	0	number	json_path of [0, "k"]
+json_path	pos	0	dict	json_path of [{"a": 1}, "k"]
+json_path	pos	0	list	json_path of [[], "k"]
+json_path	pos	1	number	json_path of ["{\"k\":2}", 0]
+json_path	pos	1	dict	json_path of ["{\"k\":2}", {"a": 1}]
+json_path	pos	1	list	json_path of ["{\"k\":2}", []]
+list_contains	pos	0	string	list_contains of ["zz_census_2509", 2]
+list_contains	pos	0	number	list_contains of [0, 2]
+list_contains	pos	0	dict	list_contains of [{"a": 1}, 2]
+list_contains	pos	1	string	list_contains of [[1, 2], "zz_census_2509"]
+list_contains	pos	1	dict	list_contains of [[1, 2], {"a": 1}]
+list_contains	pos	1	list	list_contains of [[1, 2], []]
+list_index_of	pos	0	string	list_index_of of ["zz_census_2509", 2]
+list_index_of	pos	0	number	list_index_of of [0, 2]
+list_index_of	pos	0	dict	list_index_of of [{"a": 1}, 2]
+list_index_of	pos	1	string	list_index_of of [[1, 2], "zz_census_2509"]
+list_index_of	pos	1	dict	list_index_of of [[1, 2], {"a": 1}]
+list_index_of	pos	1	list	list_index_of of [[1, 2], []]
+list_insert_at	pos	0	string	list_insert_at of ["zz_census_2509", 1, 3]
+list_insert_at	pos	0	number	list_insert_at of [0, 1, 3]
+list_insert_at	pos	0	dict	list_insert_at of [{"a": 1}, 1, 3]
+list_insert_at	pos	0	list	list_insert_at of [[], 1, 3]
+list_insert_at	pos	1	string	list_insert_at of [xs, "zz_census_2509", 3]
+list_insert_at	pos	1	dict	list_insert_at of [xs, {"a": 1}, 3]
+list_insert_at	pos	1	list	list_insert_at of [xs, [], 3]
+list_insert_at	pos	2	string	list_insert_at of [xs, 1, "zz_census_2509"]
+list_insert_at	pos	2	dict	list_insert_at of [xs, 1, {"a": 1}]
+list_insert_at	pos	2	list	list_insert_at of [xs, 1, []]
+list_remove_at	pos	0	string	list_remove_at of ["zz_census_2509", 0]
+list_remove_at	pos	0	number	list_remove_at of [0, 0]
+list_remove_at	pos	0	dict	list_remove_at of [{"a": 1}, 0]
+list_remove_at	pos	0	list	list_remove_at of [[], 0]
+list_remove_at	pos	1	string	list_remove_at of [xs, "zz_census_2509"]
+list_remove_at	pos	1	dict	list_remove_at of [xs, {"a": 1}]
+list_remove_at	pos	1	list	list_remove_at of [xs, []]
+list_slice	pos	0	string	list_slice of ["zz_census_2509", 0, 2]
+list_slice	pos	0	number	list_slice of [0, 0, 2]
+list_slice	pos	0	dict	list_slice of [{"a": 1}, 0, 2]
+list_slice	pos	1	string	list_slice of [[1, 2, 3], "zz_census_2509", 2]
+list_slice	pos	1	dict	list_slice of [[1, 2, 3], {"a": 1}, 2]
+list_slice	pos	1	list	list_slice of [[1, 2, 3], [], 2]
+list_slice	pos	2	string	list_slice of [[1, 2, 3], 0, "zz_census_2509"]
+list_slice	pos	2	dict	list_slice of [[1, 2, 3], 0, {"a": 1}]
+list_slice	pos	2	list	list_slice of [[1, 2, 3], 0, []]
+list_truncate	pos	0	string	list_truncate of ["zz_census_2509", 1]
+list_truncate	pos	0	number	list_truncate of [0, 1]
+list_truncate	pos	0	dict	list_truncate of [{"a": 1}, 1]
+list_truncate	pos	0	list	list_truncate of [[], 1]
+list_truncate	pos	1	string	list_truncate of [xs, "zz_census_2509"]
+list_truncate	pos	1	dict	list_truncate of [xs, {"a": 1}]
+list_truncate	pos	1	list	list_truncate of [xs, []]
+matmul	pos	0	string	matmul of ["zz_census_2509", [[3]]]
+matmul	pos	0	number	matmul of [0, [[3]]]
+matmul	pos	0	dict	matmul of [{"a": 1}, [[3]]]
+matmul	pos	1	string	matmul of [[[2]], "zz_census_2509"]
+matmul	pos	1	number	matmul of [[[2]], 0]
+matmul	pos	1	dict	matmul of [[[2]], {"a": 1}]
+matmul_at	pos	0	string	matmul_at of ["zz_census_2509", [[3]]]
+matmul_at	pos	0	number	matmul_at of [0, [[3]]]
+matmul_at	pos	0	dict	matmul_at of [{"a": 1}, [[3]]]
+matmul_at	pos	1	string	matmul_at of [[[2]], "zz_census_2509"]
+matmul_at	pos	1	number	matmul_at of [[[2]], 0]
+matmul_at	pos	1	dict	matmul_at of [[[2]], {"a": 1}]
+matmul_bt	pos	0	string	matmul_bt of ["zz_census_2509", [[3]]]
+matmul_bt	pos	0	number	matmul_bt of [0, [[3]]]
+matmul_bt	pos	0	dict	matmul_bt of [{"a": 1}, [[3]]]
+matmul_bt	pos	1	string	matmul_bt of [[[2]], "zz_census_2509"]
+matmul_bt	pos	1	number	matmul_bt of [[[2]], 0]
+matmul_bt	pos	1	dict	matmul_bt of [[[2]], {"a": 1}]
+multiply	pos	0	string	multiply of ["zz_census_2509", [3, 4]]
+multiply	pos	0	number	multiply of [0, [3, 4]]
+multiply	pos	0	dict	multiply of [{"a": 1}, [3, 4]]
+multiply	pos	1	string	multiply of [[1, 2], "zz_census_2509"]
+multiply	pos	1	number	multiply of [[1, 2], 0]
+multiply	pos	1	dict	multiply of [[1, 2], {"a": 1}]
+nearest_in_range	pos	0	string	nearest_in_range of ["zz_census_2509", 0, 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	0	number	nearest_in_range of [0, 0, 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	0	dict	nearest_in_range of [{"a": 1}, 0, 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	1	string	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], "zz_census_2509", 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	1	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], {"a": 1}, 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	1	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], [], 0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	2	string	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, "zz_census_2509", 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	2	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, {"a": 1}, 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	2	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, [], 4, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	3	string	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, "zz_census_2509", 8, 8, "px", "py", "active"]
+nearest_in_range	pos	3	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, {"a": 1}, 8, 8, "px", "py", "active"]
+nearest_in_range	pos	3	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, [], 8, 8, "px", "py", "active"]
+nearest_in_range	pos	4	string	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, "zz_census_2509", 8, "px", "py", "active"]
+nearest_in_range	pos	4	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, {"a": 1}, 8, "px", "py", "active"]
+nearest_in_range	pos	4	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, [], 8, "px", "py", "active"]
+nearest_in_range	pos	5	string	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, "zz_census_2509", "px", "py", "active"]
+nearest_in_range	pos	5	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, {"a": 1}, "px", "py", "active"]
+nearest_in_range	pos	5	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, [], "px", "py", "active"]
+nearest_in_range	pos	6	number	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, 0, "py", "active"]
+nearest_in_range	pos	6	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, {"a": 1}, "py", "active"]
+nearest_in_range	pos	6	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, [], "py", "active"]
+nearest_in_range	pos	7	number	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", 0, "active"]
+nearest_in_range	pos	7	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", {"a": 1}, "active"]
+nearest_in_range	pos	7	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", [], "active"]
+nearest_in_range	pos	8	number	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", "py", 0]
+nearest_in_range	pos	8	dict	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", "py", {"a": 1}]
+nearest_in_range	pos	8	list	nearest_in_range of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 0, 0, 4, 8, 8, "px", "py", []]
+nearest_in_range_all	pos	0	string	nearest_in_range_all of ["zz_census_2509", 4, 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	0	number	nearest_in_range_all of [0, 4, 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	0	dict	nearest_in_range_all of [{"a": 1}, 4, 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	1	string	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], "zz_census_2509", 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	1	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], {"a": 1}, 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	1	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], [], 8, 8, "px", "py", "active"]
+nearest_in_range_all	pos	2	string	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, "zz_census_2509", 8, "px", "py", "active"]
+nearest_in_range_all	pos	2	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, {"a": 1}, 8, "px", "py", "active"]
+nearest_in_range_all	pos	2	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, [], 8, "px", "py", "active"]
+nearest_in_range_all	pos	3	string	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, "zz_census_2509", "px", "py", "active"]
+nearest_in_range_all	pos	3	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, {"a": 1}, "px", "py", "active"]
+nearest_in_range_all	pos	3	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, [], "px", "py", "active"]
+nearest_in_range_all	pos	4	number	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, 0, "py", "active"]
+nearest_in_range_all	pos	4	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, {"a": 1}, "py", "active"]
+nearest_in_range_all	pos	4	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, [], "py", "active"]
+nearest_in_range_all	pos	5	number	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", 0, "active"]
+nearest_in_range_all	pos	5	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", {"a": 1}, "active"]
+nearest_in_range_all	pos	5	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", [], "active"]
+nearest_in_range_all	pos	6	number	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", "py", 0]
+nearest_in_range_all	pos	6	dict	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", "py", {"a": 1}]
+nearest_in_range_all	pos	6	list	nearest_in_range_all of [[{"px": 1, "py": 0, "active": 1}, {"px": 2, "py": 0, "active": 1}], 4, 8, 8, "px", "py", []]
+numerical_grad	pos	0	string	numerical_grad of ["zz_census_2509", p, 0.001]
+numerical_grad	pos	0	number	numerical_grad of [0, p, 0.001]
+numerical_grad	pos	0	dict	numerical_grad of [{"a": 1}, p, 0.001]
+numerical_grad	pos	0	list	numerical_grad of [[], p, 0.001]
+numerical_grad	pos	1	string	numerical_grad of [loss, "zz_census_2509", 0.001]
+numerical_grad	pos	1	number	numerical_grad of [loss, 0, 0.001]
+numerical_grad	pos	1	dict	numerical_grad of [loss, {"a": 1}, 0.001]
+numerical_grad	pos	1	list	numerical_grad of [loss, [], 0.001]
+numerical_grad	pos	2	string	numerical_grad of [loss, p, "zz_census_2509"]
+numerical_grad	pos	2	dict	numerical_grad of [loss, p, {"a": 1}]
+numerical_grad	pos	2	list	numerical_grad of [loss, p, []]
+numerical_grad_cols	pos	0	string	numerical_grad_cols of ["zz_census_2509", p, [0], 0.001]
+numerical_grad_cols	pos	0	number	numerical_grad_cols of [0, p, [0], 0.001]
+numerical_grad_cols	pos	0	dict	numerical_grad_cols of [{"a": 1}, p, [0], 0.001]
+numerical_grad_cols	pos	0	list	numerical_grad_cols of [[], p, [0], 0.001]
+numerical_grad_cols	pos	1	string	numerical_grad_cols of [loss, "zz_census_2509", [0], 0.001]
+numerical_grad_cols	pos	1	number	numerical_grad_cols of [loss, 0, [0], 0.001]
+numerical_grad_cols	pos	1	dict	numerical_grad_cols of [loss, {"a": 1}, [0], 0.001]
+numerical_grad_cols	pos	1	list	numerical_grad_cols of [loss, [], [0], 0.001]
+numerical_grad_cols	pos	2	string	numerical_grad_cols of [loss, p, "zz_census_2509", 0.001]
+numerical_grad_cols	pos	2	number	numerical_grad_cols of [loss, p, 0, 0.001]
+numerical_grad_cols	pos	2	dict	numerical_grad_cols of [loss, p, {"a": 1}, 0.001]
+numerical_grad_cols	pos	3	string	numerical_grad_cols of [loss, p, [0], "zz_census_2509"]
+numerical_grad_cols	pos	3	dict	numerical_grad_cols of [loss, p, [0], {"a": 1}]
+numerical_grad_cols	pos	3	list	numerical_grad_cols of [loss, p, [0], []]
+numerical_grad_rows	pos	0	string	numerical_grad_rows of ["zz_census_2509", p, [0], 0.001]
+numerical_grad_rows	pos	0	number	numerical_grad_rows of [0, p, [0], 0.001]
+numerical_grad_rows	pos	0	dict	numerical_grad_rows of [{"a": 1}, p, [0], 0.001]
+numerical_grad_rows	pos	0	list	numerical_grad_rows of [[], p, [0], 0.001]
+numerical_grad_rows	pos	1	string	numerical_grad_rows of [loss, "zz_census_2509", [0], 0.001]
+numerical_grad_rows	pos	1	number	numerical_grad_rows of [loss, 0, [0], 0.001]
+numerical_grad_rows	pos	1	dict	numerical_grad_rows of [loss, {"a": 1}, [0], 0.001]
+numerical_grad_rows	pos	1	list	numerical_grad_rows of [loss, [], [0], 0.001]
+numerical_grad_rows	pos	2	string	numerical_grad_rows of [loss, p, "zz_census_2509", 0.001]
+numerical_grad_rows	pos	2	number	numerical_grad_rows of [loss, p, 0, 0.001]
+numerical_grad_rows	pos	2	dict	numerical_grad_rows of [loss, p, {"a": 1}, 0.001]
+numerical_grad_rows	pos	3	string	numerical_grad_rows of [loss, p, [0], "zz_census_2509"]
+numerical_grad_rows	pos	3	dict	numerical_grad_rows of [loss, p, [0], {"a": 1}]
+numerical_grad_rows	pos	3	list	numerical_grad_rows of [loss, p, [0], []]
+path_join	pos	0	number	path_join of [0, "b"]
+path_join	pos	0	dict	path_join of [{"a": 1}, "b"]
+path_join	pos	0	list	path_join of [[], "b"]
+path_join	pos	1	number	path_join of ["a", 0]
+path_join	pos	1	dict	path_join of ["a", {"a": 1}]
+path_join	pos	1	list	path_join of ["a", []]
+pow	pos	0	string	pow of ["zz_census_2509", [3, 4]]
+pow	pos	0	number	pow of [0, [3, 4]]
+pow	pos	0	dict	pow of [{"a": 1}, [3, 4]]
+pow	pos	1	string	pow of [[1, 2], "zz_census_2509"]
+pow	pos	1	number	pow of [[1, 2], 0]
+pow	pos	1	dict	pow of [[1, 2], {"a": 1}]
+ppu_render_frame	pos	0	string	ppu_render_frame of ["zz_census_2509", shape_fb]
+ppu_render_frame	pos	0	number	ppu_render_frame of [0, shape_fb]
+ppu_render_frame	pos	0	dict	ppu_render_frame of [{"a": 1}, shape_fb]
+ppu_render_frame	pos	0	list	ppu_render_frame of [[], shape_fb]
+ppu_render_frame	pos	1	string	ppu_render_frame of [shape_mem, "zz_census_2509"]
+ppu_render_frame	pos	1	number	ppu_render_frame of [shape_mem, 0]
+ppu_render_frame	pos	1	dict	ppu_render_frame of [shape_mem, {"a": 1}]
+ppu_render_frame	pos	1	list	ppu_render_frame of [shape_mem, []]
+random_int	pos	0	string	random_int of ["zz_census_2509", 2]
+random_int	pos	0	dict	random_int of [{"a": 1}, 2]
+random_int	pos	0	list	random_int of [[], 2]
+random_int	pos	1	string	random_int of [2, "zz_census_2509"]
+random_int	pos	1	dict	random_int of [2, {"a": 1}]
+random_int	pos	1	list	random_int of [2, []]
+random_normal	pos	0	string	random_normal of ["zz_census_2509", 2, 0.1]
+random_normal	pos	0	dict	random_normal of [{"a": 1}, 2, 0.1]
+random_normal	pos	0	list	random_normal of [[], 2, 0.1]
+random_normal	pos	1	string	random_normal of [1, "zz_census_2509", 0.1]
+random_normal	pos	1	dict	random_normal of [1, {"a": 1}, 0.1]
+random_normal	pos	1	list	random_normal of [1, [], 0.1]
+random_normal	pos	2	string	random_normal of [1, 2, "zz_census_2509"]
+random_normal	pos	2	dict	random_normal of [1, 2, {"a": 1}]
+random_normal	pos	2	list	random_normal of [1, 2, []]
+range	pos	0	string	range of ["zz_census_2509", 3, 1]
+range	pos	0	dict	range of [{"a": 1}, 3, 1]
+range	pos	0	list	range of [[], 3, 1]
+range	pos	1	string	range of [0, "zz_census_2509", 1]
+range	pos	1	dict	range of [0, {"a": 1}, 1]
+range	pos	1	list	range of [0, [], 1]
+range	pos	2	string	range of [0, 3, "zz_census_2509"]
+range	pos	2	dict	range of [0, 3, {"a": 1}]
+range	pos	2	list	range of [0, 3, []]
+read_bytes	pos	0	number	read_bytes of [0, 3]
+read_bytes	pos	0	dict	read_bytes of [{"a": 1}, 3]
+read_bytes	pos	0	list	read_bytes of [[], 3]
+read_bytes	pos	1	string	read_bytes of ["@TMP@/bytes", "zz_census_2509"]
+read_bytes	pos	1	dict	read_bytes of ["@TMP@/bytes", {"a": 1}]
+read_bytes	pos	1	list	read_bytes of ["@TMP@/bytes", []]
+read_text	pos	0	number	read_text of [0, 3]
+read_text	pos	0	dict	read_text of [{"a": 1}, 3]
+read_text	pos	0	list	read_text of [[], 3]
+read_text	pos	1	string	read_text of ["@TMP@/text", "zz_census_2509"]
+read_text	pos	1	dict	read_text of ["@TMP@/text", {"a": 1}]
+read_text	pos	1	list	read_text of ["@TMP@/text", []]
+read_bytes_buf	pos	0	number	read_bytes_buf of [0, 3]
+read_bytes_buf	pos	0	dict	read_bytes_buf of [{"a": 1}, 3]
+read_bytes_buf	pos	0	list	read_bytes_buf of [[], 3]
+read_bytes_buf	pos	1	string	read_bytes_buf of ["@TMP@/bytes", "zz_census_2509"]
+read_bytes_buf	pos	1	dict	read_bytes_buf of ["@TMP@/bytes", {"a": 1}]
+read_bytes_buf	pos	1	list	read_bytes_buf of ["@TMP@/bytes", []]
+recv_timeout	pos	0	string	recv_timeout of ["zz_census_2509", 1]
+recv_timeout	pos	0	number	recv_timeout of [0, 1]
+recv_timeout	pos	0	dict	recv_timeout of [{"a": 1}, 1]
+recv_timeout	pos	0	list	recv_timeout of [[], 1]
+recv_timeout	pos	1	string	recv_timeout of [ch, "zz_census_2509"]
+recv_timeout	pos	1	dict	recv_timeout of [ch, {"a": 1}]
+recv_timeout	pos	1	list	recv_timeout of [ch, []]
+regex_find	pos	0	number	regex_find of [0, "a"]
+regex_find	pos	0	dict	regex_find of [{"a": 1}, "a"]
+regex_find	pos	0	list	regex_find of [[], "a"]
+regex_find	pos	1	number	regex_find of ["aba", 0]
+regex_find	pos	1	dict	regex_find of ["aba", {"a": 1}]
+regex_find	pos	1	list	regex_find of ["aba", []]
+regex_match	pos	0	number	regex_match of [0, "a"]
+regex_match	pos	0	dict	regex_match of [{"a": 1}, "a"]
+regex_match	pos	0	list	regex_match of [[], "a"]
+regex_match	pos	1	number	regex_match of ["aba", 0]
+regex_match	pos	1	dict	regex_match of ["aba", {"a": 1}]
+regex_match	pos	1	list	regex_match of ["aba", []]
+regex_replace	pos	0	number	regex_replace of [0, "a", "x"]
+regex_replace	pos	0	dict	regex_replace of [{"a": 1}, "a", "x"]
+regex_replace	pos	0	list	regex_replace of [[], "a", "x"]
+regex_replace	pos	1	number	regex_replace of ["aba", 0, "x"]
+regex_replace	pos	1	dict	regex_replace of ["aba", {"a": 1}, "x"]
+regex_replace	pos	1	list	regex_replace of ["aba", [], "x"]
+regex_replace	pos	2	number	regex_replace of ["aba", "a", 0]
+regex_replace	pos	2	dict	regex_replace of ["aba", "a", {"a": 1}]
+regex_replace	pos	2	list	regex_replace of ["aba", "a", []]
+rename	pos	0	number	rename of [0, "@TMP@/to"]
+rename	pos	0	dict	rename of [{"a": 1}, "@TMP@/to"]
+rename	pos	0	list	rename of [[], "@TMP@/to"]
+rename	pos	1	number	rename of ["@TMP@/from", 0]
+rename	pos	1	dict	rename of ["@TMP@/from", {"a": 1}]
+rename	pos	1	list	rename of ["@TMP@/from", []]
+reshape	pos	0	string	reshape of ["zz_census_2509", 2, 2]
+reshape	pos	0	number	reshape of [0, 2, 2]
+reshape	pos	0	dict	reshape of [{"a": 1}, 2, 2]
+reshape	pos	0	list	reshape of [[], 2, 2]
+reshape	pos	1	string	reshape of [a, "zz_census_2509", 2]
+reshape	pos	1	dict	reshape of [a, {"a": 1}, 2]
+reshape	pos	1	list	reshape of [a, [], 2]
+reshape	pos	2	string	reshape of [a, 2, "zz_census_2509"]
+reshape	pos	2	dict	reshape of [a, 2, {"a": 1}]
+reshape	pos	2	list	reshape of [a, 2, []]
+scan_int_tokens	pos	0	number	scan_int_tokens of [0, "#"]
+scan_int_tokens	pos	0	dict	scan_int_tokens of [{"a": 1}, "#"]
+scan_int_tokens	pos	0	list	scan_int_tokens of [[], "#"]
+scan_int_tokens	pos	1	number	scan_int_tokens of ["2 3", 0]
+scan_int_tokens	pos	1	dict	scan_int_tokens of ["2 3", {"a": 1}]
+scan_int_tokens	pos	1	list	scan_int_tokens of ["2 3", []]
+scan_ints	pos	0	number	scan_ints of [0, "#"]
+scan_ints	pos	0	dict	scan_ints of [{"a": 1}, "#"]
+scan_ints	pos	0	list	scan_ints of [[], "#"]
+scan_ints	pos	1	number	scan_ints of ["2 3", 0]
+scan_ints	pos	1	dict	scan_ints of ["2 3", {"a": 1}]
+scan_ints	pos	1	list	scan_ints of ["2 3", []]
+scatter_add	pos	0	string	scatter_add of ["zz_census_2509", [1], [3]]
+scatter_add	pos	0	number	scatter_add of [0, [1], [3]]
+scatter_add	pos	0	dict	scatter_add of [{"a": 1}, [1], [3]]
+scatter_add	pos	0	list	scatter_add of [[], [1], [3]]
+scatter_add	pos	1	string	scatter_add of [a, "zz_census_2509", [3]]
+scatter_add	pos	1	number	scatter_add of [a, 0, [3]]
+scatter_add	pos	1	dict	scatter_add of [a, {"a": 1}, [3]]
+scatter_add	pos	2	string	scatter_add of [a, [1], "zz_census_2509"]
+scatter_add	pos	2	number	scatter_add of [a, [1], 0]
+scatter_add	pos	2	dict	scatter_add of [a, [1], {"a": 1}]
+secure_equals	pos	0	number	secure_equals of [0, "same"]
+secure_equals	pos	0	dict	secure_equals of [{"a": 1}, "same"]
+secure_equals	pos	0	list	secure_equals of [[], "same"]
+secure_equals	pos	1	number	secure_equals of ["same", 0]
+secure_equals	pos	1	dict	secure_equals of ["same", {"a": 1}]
+secure_equals	pos	1	list	secure_equals of ["same", []]
+send	pos	0	string	send of ["zz_census_2509", 7]
+send	pos	0	number	send of [0, 7]
+send	pos	0	dict	send of [{"a": 1}, 7]
+send	pos	0	list	send of [[], 7]
+send	pos	1	string	send of [ch, "zz_census_2509"]
+send	pos	1	dict	send of [ch, {"a": 1}]
+send	pos	1	list	send of [ch, []]
+sgd_update	pos	0	string	sgd_update of ["zz_census_2509", [2], 0.5]
+sgd_update	pos	0	number	sgd_update of [0, [2], 0.5]
+sgd_update	pos	0	dict	sgd_update of [{"a": 1}, [2], 0.5]
+sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]
+sgd_update	pos	1	string	sgd_update of [p, "zz_census_2509", 0.5]
+sgd_update	pos	1	number	sgd_update of [p, 0, 0.5]
+sgd_update	pos	1	dict	sgd_update of [p, {"a": 1}, 0.5]
+sgd_update	pos	2	string	sgd_update of [p, [2], "zz_census_2509"]
+sgd_update	pos	2	dict	sgd_update of [p, [2], {"a": 1}]
+sgd_update	pos	2	list	sgd_update of [p, [2], []]
+sgd_update_cols	pos	0	string	sgd_update_cols of ["zz_census_2509", [[2]], [0], 0.5]
+sgd_update_cols	pos	0	number	sgd_update_cols of [0, [[2]], [0], 0.5]
+sgd_update_cols	pos	0	dict	sgd_update_cols of [{"a": 1}, [[2]], [0], 0.5]
+sgd_update_cols	pos	0	list	sgd_update_cols of [[], [[2]], [0], 0.5]
+sgd_update_cols	pos	1	string	sgd_update_cols of [p, "zz_census_2509", [0], 0.5]
+sgd_update_cols	pos	1	number	sgd_update_cols of [p, 0, [0], 0.5]
+sgd_update_cols	pos	1	dict	sgd_update_cols of [p, {"a": 1}, [0], 0.5]
+sgd_update_cols	pos	2	string	sgd_update_cols of [p, [[2]], "zz_census_2509", 0.5]
+sgd_update_cols	pos	2	number	sgd_update_cols of [p, [[2]], 0, 0.5]
+sgd_update_cols	pos	2	dict	sgd_update_cols of [p, [[2]], {"a": 1}, 0.5]
+sgd_update_cols	pos	3	string	sgd_update_cols of [p, [[2]], [0], "zz_census_2509"]
+sgd_update_cols	pos	3	dict	sgd_update_cols of [p, [[2]], [0], {"a": 1}]
+sgd_update_cols	pos	3	list	sgd_update_cols of [p, [[2]], [0], []]
+sgd_update_rows	pos	0	string	sgd_update_rows of ["zz_census_2509", [[2]], [0], 0.5]
+sgd_update_rows	pos	0	number	sgd_update_rows of [0, [[2]], [0], 0.5]
+sgd_update_rows	pos	0	dict	sgd_update_rows of [{"a": 1}, [[2]], [0], 0.5]
+sgd_update_rows	pos	0	list	sgd_update_rows of [[], [[2]], [0], 0.5]
+sgd_update_rows	pos	1	string	sgd_update_rows of [p, "zz_census_2509", [0], 0.5]
+sgd_update_rows	pos	1	number	sgd_update_rows of [p, 0, [0], 0.5]
+sgd_update_rows	pos	1	dict	sgd_update_rows of [p, {"a": 1}, [0], 0.5]
+sgd_update_rows	pos	2	string	sgd_update_rows of [p, [[2]], "zz_census_2509", 0.5]
+sgd_update_rows	pos	2	number	sgd_update_rows of [p, [[2]], 0, 0.5]
+sgd_update_rows	pos	2	dict	sgd_update_rows of [p, [[2]], {"a": 1}, 0.5]
+sgd_update_rows	pos	3	string	sgd_update_rows of [p, [[2]], [0], "zz_census_2509"]
+sgd_update_rows	pos	3	dict	sgd_update_rows of [p, [[2]], [0], {"a": 1}]
+sgd_update_rows	pos	3	list	sgd_update_rows of [p, [[2]], [0], []]
+shared_set	pos	0	number	shared_set of [0, 3]
+shared_set	pos	0	dict	shared_set of [{"a": 1}, 3]
+shared_set	pos	0	list	shared_set of [[], 3]
+shared_set	pos	1	string	shared_set of ["shape-key", "zz_census_2509"]
+shared_set	pos	1	dict	shared_set of ["shape-key", {"a": 1}]
+shared_set	pos	1	list	shared_set of ["shape-key", []]
+sign_extend	pos	0	string	sign_extend of ["zz_census_2509", 8]
+sign_extend	pos	0	dict	sign_extend of [{"a": 1}, 8]
+sign_extend	pos	0	list	sign_extend of [[], 8]
+sign_extend	pos	1	string	sign_extend of [255, "zz_census_2509"]
+sign_extend	pos	1	dict	sign_extend of [255, {"a": 1}]
+sign_extend	pos	1	list	sign_extend of [255, []]
+sort_by	pos	0	string	sort_by of ["zz_census_2509", (v) => v]
+sort_by	pos	0	number	sort_by of [0, (v) => v]
+sort_by	pos	0	dict	sort_by of [{"a": 1}, (v) => v]
+sort_by	pos	1	string	sort_by of [[2, 1], "zz_census_2509"]
+sort_by	pos	1	number	sort_by of [[2, 1], 0]
+sort_by	pos	1	dict	sort_by of [[2, 1], {"a": 1}]
+sort_by	pos	1	list	sort_by of [[2, 1], []]
+split	pos	0	number	split of [0, ","]
+split	pos	0	dict	split of [{"a": 1}, ","]
+split	pos	0	list	split of [[], ","]
+split	pos	1	number	split of ["a,b", 0]
+split	pos	1	dict	split of ["a,b", {"a": 1}]
+split	pos	1	list	split of ["a,b", []]
+starts_with	pos	0	number	starts_with of [0, "ab"]
+starts_with	pos	0	dict	starts_with of [{"a": 1}, "ab"]
+starts_with	pos	0	list	starts_with of [[], "ab"]
+starts_with	pos	1	number	starts_with of ["abc", 0]
+starts_with	pos	1	dict	starts_with of ["abc", {"a": 1}]
+starts_with	pos	1	list	starts_with of ["abc", []]
+store_count	pos	0	string	store_count of ["zz_census_2509", "items"]
+store_count	pos	0	number	store_count of [0, "items"]
+store_count	pos	0	dict	store_count of [{"a": 1}, "items"]
+store_count	pos	0	list	store_count of [[], "items"]
+store_count	pos	1	number	store_count of [shape_store, 0]
+store_count	pos	1	dict	store_count of [shape_store, {"a": 1}]
+store_count	pos	1	list	store_count of [shape_store, []]
+store_delete	pos	0	string	store_delete of ["zz_census_2509", "items", shape_key]
+store_delete	pos	0	number	store_delete of [0, "items", shape_key]
+store_delete	pos	0	dict	store_delete of [{"a": 1}, "items", shape_key]
+store_delete	pos	0	list	store_delete of [[], "items", shape_key]
+store_delete	pos	1	number	store_delete of [shape_store, 0, shape_key]
+store_delete	pos	1	dict	store_delete of [shape_store, {"a": 1}, shape_key]
+store_delete	pos	1	list	store_delete of [shape_store, [], shape_key]
+store_delete	pos	2	string	store_delete of [shape_store, "items", "zz_census_2509"]
+store_delete	pos	2	number	store_delete of [shape_store, "items", 0]
+store_delete	pos	2	dict	store_delete of [shape_store, "items", {"a": 1}]
+store_delete	pos	2	list	store_delete of [shape_store, "items", []]
+store_drop	pos	0	string	store_drop of ["zz_census_2509", "items"]
+store_drop	pos	0	number	store_drop of [0, "items"]
+store_drop	pos	0	dict	store_drop of [{"a": 1}, "items"]
+store_drop	pos	0	list	store_drop of [[], "items"]
+store_drop	pos	1	number	store_drop of [shape_store, 0]
+store_drop	pos	1	dict	store_drop of [shape_store, {"a": 1}]
+store_drop	pos	1	list	store_drop of [shape_store, []]
+store_get	pos	0	string	store_get of ["zz_census_2509", "items", shape_key]
+store_get	pos	0	number	store_get of [0, "items", shape_key]
+store_get	pos	0	dict	store_get of [{"a": 1}, "items", shape_key]
+store_get	pos	0	list	store_get of [[], "items", shape_key]
+store_get	pos	1	number	store_get of [shape_store, 0, shape_key]
+store_get	pos	1	dict	store_get of [shape_store, {"a": 1}, shape_key]
+store_get	pos	1	list	store_get of [shape_store, [], shape_key]
+store_get	pos	2	string	store_get of [shape_store, "items", "zz_census_2509"]
+store_get	pos	2	number	store_get of [shape_store, "items", 0]
+store_get	pos	2	dict	store_get of [shape_store, "items", {"a": 1}]
+store_get	pos	2	list	store_get of [shape_store, "items", []]
+store_put	pos	0	string	store_put of ["zz_census_2509", "items", {"value": 2}]
+store_put	pos	0	number	store_put of [0, "items", {"value": 2}]
+store_put	pos	0	dict	store_put of [{"a": 1}, "items", {"value": 2}]
+store_put	pos	0	list	store_put of [[], "items", {"value": 2}]
+store_put	pos	1	number	store_put of [shape_store, 0, {"value": 2}]
+store_put	pos	1	dict	store_put of [shape_store, {"a": 1}, {"value": 2}]
+store_put	pos	1	list	store_put of [shape_store, [], {"value": 2}]
+store_put	pos	2	string	store_put of [shape_store, "items", "zz_census_2509"]
+store_put	pos	2	number	store_put of [shape_store, "items", 0]
+store_put	pos	2	list	store_put of [shape_store, "items", []]
+store_query	pos	0	string	store_query of ["zz_census_2509", "items"]
+store_query	pos	0	number	store_query of [0, "items"]
+store_query	pos	0	dict	store_query of [{"a": 1}, "items"]
+store_query	pos	0	list	store_query of [[], "items"]
+store_query	pos	1	number	store_query of [shape_store, 0]
+store_query	pos	1	dict	store_query of [shape_store, {"a": 1}]
+store_query	pos	1	list	store_query of [shape_store, []]
+store_update	pos	0	string	store_update of ["zz_census_2509", "items", shape_key, {"value": 2}]
+store_update	pos	0	number	store_update of [0, "items", shape_key, {"value": 2}]
+store_update	pos	0	dict	store_update of [{"a": 1}, "items", shape_key, {"value": 2}]
+store_update	pos	0	list	store_update of [[], "items", shape_key, {"value": 2}]
+store_update	pos	1	number	store_update of [shape_store, 0, shape_key, {"value": 2}]
+store_update	pos	1	dict	store_update of [shape_store, {"a": 1}, shape_key, {"value": 2}]
+store_update	pos	1	list	store_update of [shape_store, [], shape_key, {"value": 2}]
+store_update	pos	2	string	store_update of [shape_store, "items", "zz_census_2509", {"value": 2}]
+store_update	pos	2	number	store_update of [shape_store, "items", 0, {"value": 2}]
+store_update	pos	2	dict	store_update of [shape_store, "items", {"a": 1}, {"value": 2}]
+store_update	pos	2	list	store_update of [shape_store, "items", [], {"value": 2}]
+store_update	pos	3	string	store_update of [shape_store, "items", shape_key, "zz_census_2509"]
+store_update	pos	3	number	store_update of [shape_store, "items", shape_key, 0]
+store_update	pos	3	list	store_update of [shape_store, "items", shape_key, []]
+str_replace	pos	0	number	str_replace of [0, "a", "x"]
+str_replace	pos	0	dict	str_replace of [{"a": 1}, "a", "x"]
+str_replace	pos	0	list	str_replace of [[], "a", "x"]
+str_replace	pos	1	number	str_replace of ["aba", 0, "x"]
+str_replace	pos	1	dict	str_replace of ["aba", {"a": 1}, "x"]
+str_replace	pos	1	list	str_replace of ["aba", [], "x"]
+str_replace	pos	2	number	str_replace of ["aba", "a", 0]
+str_replace	pos	2	dict	str_replace of ["aba", "a", {"a": 1}]
+str_replace	pos	2	list	str_replace of ["aba", "a", []]
+stream_open	pos	0	number	stream_open of [0, 1]
+stream_open	pos	0	dict	stream_open of [{"a": 1}, 1]
+stream_open	pos	0	list	stream_open of [[], 1]
+stream_open	pos	1	string	stream_open of ["@TMP@/stream", "zz_census_2509"]
+stream_open	pos	1	dict	stream_open of ["@TMP@/stream", {"a": 1}]
+stream_open	pos	1	list	stream_open of ["@TMP@/stream", []]
+substr	pos	0	number	substr of [0, 1, 2]
+substr	pos	0	dict	substr of [{"a": 1}, 1, 2]
+substr	pos	0	list	substr of [[], 1, 2]
+substr	pos	1	string	substr of ["abcd", "zz_census_2509", 2]
+substr	pos	1	dict	substr of ["abcd", {"a": 1}, 2]
+substr	pos	1	list	substr of ["abcd", [], 2]
+substr	pos	2	string	substr of ["abcd", 1, "zz_census_2509"]
+substr	pos	2	dict	substr of ["abcd", 1, {"a": 1}]
+substr	pos	2	list	substr of ["abcd", 1, []]
+subtract	pos	0	string	subtract of ["zz_census_2509", [3, 4]]
+subtract	pos	0	number	subtract of [0, [3, 4]]
+subtract	pos	0	dict	subtract of [{"a": 1}, [3, 4]]
+subtract	pos	1	string	subtract of [[1, 2], "zz_census_2509"]
+subtract	pos	1	number	subtract of [[1, 2], 0]
+subtract	pos	1	dict	subtract of [[1, 2], {"a": 1}]
+task_send	pos	0	string	task_send of ["zz_census_2509", 7]
+task_send	pos	0	dict	task_send of [{"a": 1}, 7]
+task_send	pos	0	list	task_send of [[], 7]
+task_send	pos	1	string	task_send of [0, "zz_census_2509"]
+task_send	pos	1	dict	task_send of [0, {"a": 1}]
+task_send	pos	1	list	task_send of [0, []]
+tensor_save	pos	0	string	tensor_save of ["zz_census_2509", "@TMP@/tensor"]
+tensor_save	pos	0	number	tensor_save of [0, "@TMP@/tensor"]
+tensor_save	pos	0	dict	tensor_save of [{"a": 1}, "@TMP@/tensor"]
+tensor_save	pos	1	number	tensor_save of [[[2, 3]], 0]
+tensor_save	pos	1	dict	tensor_save of [[[2, 3]], {"a": 1}]
+tensor_save	pos	1	list	tensor_save of [[[2, 3]], []]
+text_builder_append	pos	0	string	text_builder_append of ["zz_census_2509", "b"]
+text_builder_append	pos	0	number	text_builder_append of [0, "b"]
+text_builder_append	pos	0	dict	text_builder_append of [{"a": 1}, "b"]
+text_builder_append	pos	0	list	text_builder_append of [[], "b"]
+text_builder_append	pos	1	number	text_builder_append of [tb, 0]
+text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]
+text_builder_append	pos	1	list	text_builder_append of [tb, []]
+text_builder_append_line	pos	0	string	text_builder_append_line of ["zz_census_2509", "b"]
+text_builder_append_line	pos	0	number	text_builder_append_line of [0, "b"]
+text_builder_append_line	pos	0	dict	text_builder_append_line of [{"a": 1}, "b"]
+text_builder_append_line	pos	0	list	text_builder_append_line of [[], "b"]
+text_builder_append_line	pos	1	number	text_builder_append_line of [tb, 0]
+text_builder_append_line	pos	1	dict	text_builder_append_line of [tb, {"a": 1}]
+text_builder_append_line	pos	1	list	text_builder_append_line of [tb, []]
+write_bytes	pos	0	number	write_bytes of [0, [65, 66], 0]
+write_bytes	pos	0	dict	write_bytes of [{"a": 1}, [65, 66], 0]
+write_bytes	pos	0	list	write_bytes of [[], [65, 66], 0]
+write_bytes	pos	1	string	write_bytes of ["@TMP@/bytes", "zz_census_2509", 0]
+write_bytes	pos	1	number	write_bytes of ["@TMP@/bytes", 0, 0]
+write_bytes	pos	1	dict	write_bytes of ["@TMP@/bytes", {"a": 1}, 0]
+write_bytes	pos	2	string	write_bytes of ["@TMP@/bytes", [65, 66], "zz_census_2509"]
+write_bytes	pos	2	dict	write_bytes of ["@TMP@/bytes", [65, 66], {"a": 1}]
+write_bytes	pos	2	list	write_bytes of ["@TMP@/bytes", [65, 66], []]
+write_text	pos	0	number	write_text of [0, "abc"]
+write_text	pos	0	dict	write_text of [{"a": 1}, "abc"]
+write_text	pos	0	list	write_text of [[], "abc"]
+write_text	pos	1	number	write_text of ["@TMP@/text", 0]
+write_text	pos	1	dict	write_text of ["@TMP@/text", {"a": 1}]
+write_text	pos	1	list	write_text of ["@TMP@/text", []]
+zeros	pos	0	string	zeros of ["zz_census_2509", 2]
+zeros	pos	0	dict	zeros of [{"a": 1}, 2]
+zeros	pos	0	list	zeros of [[], 2]
+zeros	pos	1	string	zeros of [1, "zz_census_2509"]
+zeros	pos	1	dict	zeros of [1, {"a": 1}]
+zeros	pos	1	list	zeros of [1, []]
