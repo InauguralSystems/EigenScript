@@ -1,0 +1,1 @@
+- Export the VM's generic unary and binary operator semantics for native runtimes (#2512).

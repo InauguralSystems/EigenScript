@@ -1038,6 +1038,116 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
     return 0;
 }
 
+static const char *slot_type_name(EigsSlot s);
+static int op_line(void) { return eigs_current ? vm_current_line() : 0; }
+
+EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
+    int line = op_line();
+    int64_t ai = 0, bi = 0, ir;
+    double ad = 0.0, bd = 0.0, r;
+    int ia = slot_int_value(a, &ai), ib = slot_int_value(b, &bi);
+    int na = ia || slot_f64_value(a, &ad), nb = ib || slot_f64_value(b, &bd);
+    const char *name = "?";
+    if (ia) ad = (double)ai;
+    if (ib) bd = (double)bi;
+    if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
+        Value *av = slot_to_value(a), *bv = slot_to_value(b);
+        int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
+        val_decref(av); val_decref(bv);
+        return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
+    }
+    if (op >= EIGS_OP_LT && op <= EIGS_OP_GE) {
+        static const char *names[] = {"<", "<=", ">", ">="};
+        int cmp = 0, ok = vm_number_compare(a, b, &cmp);
+        if (!ok && na && nb) { cmp = (ad > bd) - (ad < bd); if (isnan(ad) || isnan(bd)) cmp = 2; ok = 1; }
+        if (!ok && slot_is_ptr(a) && slot_is_ptr(b) &&
+            slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
+            cmp = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
+                         slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
+            ok = 1;
+        }
+        if (!ok) {
+            rt_error(EK_TYPE, line, "cannot compare %s and %s with '%s'",
+                     slot_type_name(a), slot_type_name(b), names[op - EIGS_OP_LT]);
+            return slot_false();
+        }
+        if (cmp == 2) return slot_false();
+        if (op == EIGS_OP_LT) return slot_from_bool(cmp < 0);
+        if (op == EIGS_OP_LE) return slot_from_bool(cmp <= 0);
+        if (op == EIGS_OP_GT) return slot_from_bool(cmp > 0);
+        return slot_from_bool(cmp >= 0);
+    }
+    if (op == EIGS_OP_ADD && !na && !nb && slot_is_ptr(a) && slot_is_ptr(b) &&
+        slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
+        Value *av = slot_as_ptr(a), *bv = slot_as_ptr(b);
+        int la = val_str_len(av), lb = val_str_len(bv);
+        if (!sandbox_charge((size_t)la + lb + 1)) return slot_from_value(make_null());
+        char *s = xmalloc((size_t)la + lb + 1);
+        memcpy(s, av->data.str, la); memcpy(s + la, bv->data.str, lb); s[la + lb] = 0;
+        return slot_from_value(make_str_owned_len(s, (size_t)la + lb));
+    }
+    if (!na || !nb) {
+        static const char *names[] = {"+", "-", "*", "/", "//", "%"};
+        name = names[op];
+        if (op == EIGS_OP_ADD && ((slot_is_ptr(a) && slot_as_ptr(a)->type == VAL_STR) !=
+                                  (slot_is_ptr(b) && slot_as_ptr(b)->type == VAL_STR)))
+            rt_error(EK_TYPE, line, "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)", slot_type_name(a), slot_type_name(b));
+        else if (op == EIGS_OP_ADD && ((slot_is_ptr(a) && slot_as_ptr(a)->type == VAL_LIST) ||
+                                       (slot_is_ptr(b) && slot_as_ptr(b)->type == VAL_LIST)))
+            rt_error(EK_TYPE, line, "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)", slot_type_name(a), slot_type_name(b));
+        else rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name, slot_type_name(a), slot_type_name(b));
+        return (op == EIGS_OP_ADD || op == EIGS_OP_IDIV) ? slot_null() : slot_from_f64(0.0);
+    }
+    if ((op == EIGS_OP_ADD || op == EIGS_OP_SUB || op == EIGS_OP_MUL) && ia && ib) {
+        char ch = op == EIGS_OP_ADD ? '+' : op == EIGS_OP_SUB ? '-' : '*';
+        return vm_int_arith(ai, bi, ch, line);
+    }
+    if (op == EIGS_OP_DIV) {
+        r = eigs_math_result(ad / bd);
+        if (r == 0.0 && ad != 0.0 && isfinite(ad) && isfinite(bd)) g_math_flags |= EIGS_MATH_UNDERFLOW;
+        return slot_from_f64(r);
+    }
+    if (op == EIGS_OP_IDIV && ia && ib) {
+        if (bi == 0) { rt_error(EK_VALUE, line, "division by zero"); return slot_from_int(0); }
+        if (ai == INT64_MIN && bi == -1) { rt_error(EK_VALUE, line, "integer overflow in '//'"); return slot_from_int(0); }
+        ir = ai / bi; int64_t rem = ai % bi;
+        if (rem != 0 && ((rem < 0) != (bi < 0))) ir--;
+        return slot_from_int(ir);
+    }
+    if (op == EIGS_OP_IDIV) {
+        double q;
+        if (bd == 0.0 || !isfinite(ad) || !isfinite(bd)) q = floor(ad / bd);
+        else { double rem = fmod(ad, bd), div = (ad - rem) / bd;
+            if (rem != 0.0 && ((rem < 0.0) != (bd < 0.0))) div -= 1.0;
+            if (div != 0.0) { q = floor(div); if (div - q > 0.5) q += 1.0; }
+            else q = signbit(ad / bd) ? -0.0 : 0.0; }
+        return slot_from_f64(eigs_math_result(q));
+    }
+    if (op == EIGS_OP_MOD && ia && ib) {
+        if (bi == 0) { rt_error(EK_VALUE, line, "modulo by zero"); return slot_from_int(0); }
+        ir = bi == -1 ? 0 : ai % bi;
+        if (ir != 0 && ((ir < 0) != (bi < 0))) ir += bi;
+        return slot_from_int(ir);
+    }
+    if (op == EIGS_OP_MOD) return slot_from_f64(eigs_math_result(vm_floor_mod(ad, bd)));
+    r = op == EIGS_OP_ADD ? ad + bd : op == EIGS_OP_SUB ? ad - bd : ad * bd;
+    r = eigs_math_result(r);
+    if (op == EIGS_OP_MUL && r == 0.0 && ad != 0.0 && bd != 0.0) g_math_flags |= EIGS_MATH_UNDERFLOW;
+    return slot_from_f64(r);
+}
+
+EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a) {
+    if (op == EIGS_OP_NOT) return slot_from_bool(!slot_truthy(a));
+    int64_t i; double d;
+    if (slot_f64_value(a, &d)) return slot_from_f64(eigs_math_result(-d));
+    if (slot_int_value(a, &i)) {
+        if (i == INT64_MIN) { rt_error(EK_VALUE, op_line(), "integer overflow in unary '-'"); return slot_null(); }
+        return slot_from_int(-i);
+    }
+    rt_error(EK_TYPE, op_line(), "cannot negate %s", slot_type_name(a));
+    return slot_from_f64(0.0);
+}
+
 /* Iterator state is exact int metadata made by make_iter_state (S9-K1).
  * Raw bytecode may supply floats too. Check the C range BEFORE conversion. */
 static int vm_iter_index(EigsSlot s, int *out) {
@@ -3721,87 +3831,17 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 } while (0)
 
     CASE(ADD): {
-        ARITH_FAST(+, 0);
-        INT_ARITH("+");
-        /* Slow path: handles string concat etc */
-        Value *b = vm_pop(); Value *a = vm_pop();
-        if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) {
-            double r = eigs_math_result(VAL_F64_RAW(a) + VAL_F64_RAW(b));
-            if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
-            if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
-            vm_push(make_float(r));
-        } else if (val_is_number(a) && val_is_number(b)) {
-            vm_push(make_float(eigs_math_result(vm_number_f64(a, "addition") + vm_number_f64(b, "addition"))));
-        } else if (a->type == VAL_STR && b->type == VAL_STR) {
-            int la = val_str_len(a), lb = val_str_len(b);
-            /* #292's byte budget charged only the size-controlled builtins;
-             * `s is s + s` in a sandboxed loop doubled straight past
-             * max_bytes to an uncatchable x_oom abort() — the grader died
-             * instead of grading (iLambdaAi break-it round, 2026-08-17).
-             * Charge the concat result like any other sandbox allocation;
-             * sandbox_charge raises a catchable EK_SANDBOX on refusal and
-             * is a no-op outside an armed sandbox. The JIT bails to this
-             * interpreter path on non-num ADD, so one site covers both. */
-            if (!sandbox_charge((size_t)la + lb + 1)) {
-                vm_push(make_null());
-                val_decref(a); val_decref(b);
-                DISPATCH();
-            }
-            char *s = xmalloc((size_t)la + lb + 1);
-            memcpy(s, a->data.str, la);
-            memcpy(s + la, b->data.str, lb);
-            s[la + lb] = 0;
-            /* #1183: the length is already known — don't re-scan the result. */
-            vm_push(make_str_owned_len(s, (size_t)la + lb));
-        } else {
-            /* Strict: + adds two numbers or concatenates two strings; it does
-             * not coerce across types ("3" + 4 was a footgun). For mixed
-             * concatenation use an f-string — f"{a}{b}" — or str of. */
-            const char *ta = val_type_name(a->type), *tb = val_type_name(b->type);
-            if ((a->type == VAL_STR) != (b->type == VAL_STR))
-                rt_error(EK_TYPE, current_line,
-                    "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)",
-                    ta, tb);
-            else if (a->type == VAL_LIST || b->type == VAL_LIST)
-                /* #680: name the fix, don't just diagnose. '+' never joins lists
-                 * (it is numbers-or-strings only); a Python/JS prior lands here. */
-                rt_error(EK_TYPE, current_line,
-                    "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)",
-                    ta, tb);
-            else
-                rt_error(EK_TYPE, current_line, "cannot apply '+' to %s and %s", ta, tb);
-            vm_push(make_null());
-        }
-        val_decref(a); val_decref(b);
-        DISPATCH();
+        ARITH_FAST(+, 0); INT_ARITH("+");
+        EigsSlot b = g_vm.stack[g_vm.sp - 1], a = g_vm.stack[g_vm.sp - 2];
+        EigsSlot r = eigs_op_binary(EIGS_OP_ADD, a, b);
+        slot_decref(a); slot_decref(b); g_vm.stack[g_vm.sp - 2] = r; g_vm.sp--; DISPATCH();
     }
 
-#define NUM_BINOP(NAME, OP, OPNAME, UF) \
-    CASE(NAME): { \
-        ARITH_FAST(OP, UF); \
-        INT_ARITH(OPNAME); \
-        Value *b = vm_pop(); Value *a = vm_pop(); \
-        if (a->type == VAL_FLOAT && b->type == VAL_FLOAT) { \
-            double r = eigs_math_result(VAL_F64_RAW(a) OP VAL_F64_RAW(b)); \
-            if ((UF) && r == 0.0 && VAL_F64_RAW(a) != 0.0 && VAL_F64_RAW(b) != 0.0) \
-                g_math_flags |= EIGS_MATH_UNDERFLOW; \
-            if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); } \
-            if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); } \
-            vm_push(make_float(r)); \
-        } else if (val_is_number(a) && val_is_number(b)) { \
-            double ad = vm_number_f64(a, OPNAME), bd = vm_number_f64(b, OPNAME); \
-            double r = eigs_math_result(ad OP bd); \
-            if ((UF) && r == 0.0 && ad != 0.0 && bd != 0.0) \
-                g_math_flags |= EIGS_MATH_UNDERFLOW; \
-            vm_push(make_float(r)); \
-        } else { \
-            rt_error(EK_TYPE, current_line, "cannot apply '%s' to %s and %s", \
-                OPNAME, val_type_name(a->type), val_type_name(b->type)); \
-            vm_push(make_float(0)); \
-        } \
-        val_decref(a); val_decref(b); \
-        DISPATCH(); \
-    }
+#define NUM_BINOP(NAME, OP, OPNAME, UF, PUBLIC_OP) \
+    CASE(NAME): { ARITH_FAST(OP, UF); INT_ARITH(OPNAME); \
+        EigsSlot _b = g_vm.stack[g_vm.sp - 1], _a = g_vm.stack[g_vm.sp - 2]; \
+        EigsSlot _r = eigs_op_binary((PUBLIC_OP), _a, _b); \
+        slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
 
     /* UF selector: only * and / can reach zero from nonzero operands.
      * `5 - 5 == 0` is exact cancellation, so SUB/ADD pass 0 and the
@@ -3810,111 +3850,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
      * expansion drifts from ARITH_FAST the first time anyone edits it,
      * and the perf measurement that might have justified the copy could
      * not resolve an effect this small on this hardware (see PR). */
-    NUM_BINOP(SUB, -, "-", 0)
-    NUM_BINOP(MUL, *, "*", 1)
+    NUM_BINOP(SUB, -, "-", 0, EIGS_OP_SUB)
+    NUM_BINOP(MUL, *, "*", 1, EIGS_OP_MUL)
 
     CASE(DIV): {
-        Value *b = vm_pop(); Value *a = vm_pop();
-        if (val_is_number(a) && val_is_number(b)) {
-            double ad = vm_number_f64(a, "division"), bd = vm_number_f64(b, "division");
-            double r = eigs_math_result(ad / bd);
-            /* A finite nonzero quotient rounded to zero is underflow;
-             * dividing by infinity instead produces an exact zero. */
-            if (r == 0.0 && ad != 0.0 && isfinite(ad) && isfinite(bd))
-                g_math_flags |= EIGS_MATH_UNDERFLOW;
-            if (NUM_REUSE(a)) { VAL_F64_RAW(a) = r; vm_push(a); val_decref(b); DISPATCH(); }
-            if (NUM_REUSE(b)) { VAL_F64_RAW(b) = r; vm_push(b); val_decref(a); DISPATCH(); }
-            vm_push(make_float(r));
-        } else {
-            rt_error(EK_TYPE, current_line, "cannot apply '/' to %s and %s",
-                val_type_name(a->type), val_type_name(b->type));
-            vm_push(make_float(0));
-        }
-        val_decref(a); val_decref(b);
-        DISPATCH();
+        EigsSlot b = g_vm.stack[g_vm.sp - 1], a = g_vm.stack[g_vm.sp - 2];
+        EigsSlot r = eigs_op_binary(EIGS_OP_DIV, a, b);
+        slot_decref(a); slot_decref(b); g_vm.stack[g_vm.sp - 2] = r; g_vm.sp--; DISPATCH();
     }
 
     CASE(IDIV): {
-        Value *b = vm_pop(); Value *a = vm_pop();
-        if (val_is_number(a) && val_is_number(b)) {
-            if (a->type == VAL_INT && b->type == VAL_INT) {
-                int64_t ai = VAL_I64_RAW(a), bi = VAL_I64_RAW(b);
-                if (bi == 0) {
-                    rt_error(EK_VALUE, current_line, "division by zero");
-                    vm_push(make_int(0));
-                } else if (ai == INT64_MIN && bi == -1) {
-                    rt_error(EK_VALUE, current_line, "integer overflow in '//'");
-                    vm_push(make_int(0));
-                } else {
-                    int64_t q = ai / bi, rem = ai % bi;
-                    /* C truncates. A nonzero remainder with the opposite sign
-                     * to the divisor moves the quotient down by one (N4). */
-                    if (rem != 0 && ((rem < 0) != (bi < 0))) q--;
-                    vm_push(make_int(q));
-                }
-            } else {
-                double divisor = vm_number_f64(b, "floor division");
-                double dividend = vm_number_f64(a, "floor division");
-                double floordiv;
-                if (divisor == 0.0 || !isfinite(dividend) || !isfinite(divisor)) {
-                    /* R2.2: float // zero and non-finite operands retain
-                     * the IEEE quotient; integer // zero still raises. */
-                    floordiv = floor(dividend / divisor);
-                } else {
-                    /* #1882: Python float_divmod's quotient, not floor(a/b).
-                     * Derive it from fmod so decimal boundaries and an
-                     * underflowed opposite-sign ratio agree with floor %. */
-                    double rem = fmod(dividend, divisor);
-                    double div = (dividend - rem) / divisor;
-                    if (rem != 0.0 && ((rem < 0.0) != (divisor < 0.0)))
-                        div -= 1.0;
-                    if (div != 0.0) {
-                        floordiv = floor(div);
-                        if (div - floordiv > 0.5) floordiv += 1.0;
-                    } else {
-                        floordiv = signbit(dividend / divisor) ? -0.0 : 0.0;
-                    }
-                }
-                vm_push(make_float(eigs_math_result(floordiv)));
-            }
-        } else {
-            rt_error(EK_TYPE, current_line, "cannot apply '//' to %s and %s",
-                     val_type_name(a->type), val_type_name(b->type));
-            vm_push(make_int(0));
-        }
-        /* vm_pop owns both boxes, including INT64_MIN and a boxed divisor;
-         * every result and raise path releases both references. */
-        val_decref(a); val_decref(b);
-        DISPATCH();
+        EigsSlot b = g_vm.stack[g_vm.sp - 1], a = g_vm.stack[g_vm.sp - 2];
+        EigsSlot r = eigs_op_binary(EIGS_OP_IDIV, a, b);
+        slot_decref(a); slot_decref(b); g_vm.stack[g_vm.sp - 2] = r; g_vm.sp--; DISPATCH();
     }
 
     CASE(MOD): {
-        Value *b = vm_pop(); Value *a = vm_pop();
-        if (val_is_number(a) && val_is_number(b)) {
-            if (a->type == VAL_INT && b->type == VAL_INT) {
-                int64_t ai = VAL_I64_RAW(a), bi = VAL_I64_RAW(b);
-                if (bi == 0) {
-                    rt_error(EK_VALUE, current_line, "modulo by zero");
-                    vm_push(make_int(0));
-                } else {
-                    /* N4b: x86 idiv faults for INT64_MIN / -1 even when only
-                     * the remainder is needed. Handle it before C's %. */
-                    int64_t rem = bi == -1 ? 0 : ai % bi;
-                    if (rem != 0 && ((rem < 0) != (bi < 0))) rem += bi;
-                    vm_push(make_int(rem));
-                }
-            } else {
-                double divisor = vm_number_f64(b, "modulo");
-                double dividend = vm_number_f64(a, "modulo");
-                vm_push(make_float(eigs_math_result(vm_floor_mod(dividend, divisor))));
-            }
-        } else {
-            rt_error(EK_TYPE, current_line, "cannot apply '%%' to %s and %s",
-                     val_type_name(a->type), val_type_name(b->type));
-            vm_push(make_float(0));
-        }
-        val_decref(a); val_decref(b);
-        DISPATCH();
+        EigsSlot b = g_vm.stack[g_vm.sp - 1], a = g_vm.stack[g_vm.sp - 2];
+        EigsSlot r = eigs_op_binary(EIGS_OP_MOD, a, b);
+        slot_decref(a); slot_decref(b); g_vm.stack[g_vm.sp - 2] = r; g_vm.sp--; DISPATCH();
     }
 
 /* #1758 N8: exact int64 operands (#1740), integer results, Lua shifts.
@@ -3950,41 +3904,11 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     /* ---- Unary ---- */
 
-    CASE(NEG): {
-        EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        double d;
-        if (__builtin_expect(slot_f64_value(s, &d), 1)) {
-            d = eigs_math_result(-d);
-            if (slot_is_ptr(s)) {
-                Value *v = slot_as_ptr(s);
-                if (NUM_REUSE(v)) { VAL_F64_RAW(v) = d; DISPATCH(); }
-            }
-            slot_decref(s);
-            g_vm.stack[g_vm.sp - 1] = slot_from_f64(d);
-            DISPATCH();
-        }
-        int64_t i;
-        if (slot_int_value(s, &i)) {
-            slot_decref(s);
-            if (i == INT64_MIN) {
-                rt_error(EK_VALUE, current_line, "integer overflow in unary '-'");
-                g_vm.stack[g_vm.sp - 1] = slot_null();
-            } else g_vm.stack[g_vm.sp - 1] = slot_from_int(-i);
-            DISPATCH();
-        }
-        rt_error(EK_TYPE, current_line, "cannot negate %s", slot_type_name(s));   /* #1637: names bool */
-        slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_f64(0.0);
-        DISPATCH();
-    }
+    CASE(NEG): { EigsSlot a = g_vm.stack[g_vm.sp - 1];
+        EigsSlot r = eigs_op_unary(EIGS_OP_NEG, a); slot_decref(a); g_vm.stack[g_vm.sp - 1] = r; DISPATCH(); }
 
-    CASE(NOT): {
-        EigsSlot s = g_vm.stack[g_vm.sp - 1];
-        int t = slot_truthy(s);
-        slot_decref(s);
-        g_vm.stack[g_vm.sp - 1] = slot_from_bool(!t);   /* #1637 */
-        DISPATCH();
-    }
+    CASE(NOT): { EigsSlot a = g_vm.stack[g_vm.sp - 1];
+        EigsSlot r = eigs_op_unary(EIGS_OP_NOT, a); slot_decref(a); g_vm.stack[g_vm.sp - 1] = r; DISPATCH(); }
 
     CASE(BNOT): {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
@@ -4006,109 +3930,16 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     /* ---- Comparison ---- */
 
-    CASE(EQ): {
-        EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
-        EigsSlot _as = g_vm.stack[g_vm.sp - 2];
-        if (slot_is_smi(_as) && slot_is_smi(_bs)) {
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_as.u == _bs.u);
-            g_vm.sp--;
-            DISPATCH();
-        }
-        double _ad, _bd;
-        if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
-            /* #1637: the result is a bool immediate. The old NUM_REUSE
-             * branches wrote a 0/1 result INTO a heap-number operand; a bool
-             * cannot live there, so they are gone, not retagged. */
-            int _r = (_ad == _bd);
-            slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r);
-            g_vm.sp--;
-            DISPATCH();
-        }
-        Value *b = vm_pop(); Value *a = vm_pop();
-        int eq = values_equal_op(a, b, "==");   /* raises on bool vs num */
-        vm_push_slot(slot_from_bool(eq));
-        val_decref(a); val_decref(b);
-        DISPATCH();
-    }
-
-    CASE(NE): {
-        EigsSlot _bs = g_vm.stack[g_vm.sp - 1];
-        EigsSlot _as = g_vm.stack[g_vm.sp - 2];
-        if (slot_is_smi(_as) && slot_is_smi(_bs)) {
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_as.u != _bs.u);
-            g_vm.sp--;
-            DISPATCH();
-        }
-        double _ad, _bd;
-        if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) {
-            /* #1637: the result is a bool immediate. The old NUM_REUSE
-             * branches wrote a 0/1 result INTO a heap-number operand; a bool
-             * cannot live there, so they are gone, not retagged. */
-            int _r = (_ad != _bd);
-            slot_decref(_as); slot_decref(_bs);
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r);
-            g_vm.sp--;
-            DISPATCH();
-        }
-        Value *b = vm_pop(); Value *a = vm_pop();
-        int eq = values_equal_op(a, b, "!=");   /* raises on bool vs num */
-        vm_push_slot(slot_from_bool(!eq));
-        val_decref(a); val_decref(b);
-        DISPATCH();
-    }
-
-#define NUM_CMP(NAME, OP, OPNAME) \
-    CASE(NAME): { \
-        EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
-        EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        double _ad, _bd; \
-        if (__builtin_expect(slot_f64_value(_as, &_ad) & slot_f64_value(_bs, &_bd), 1)) { \
-            /* #1637: a bool immediate; no NUM_REUSE (see CASE(EQ)). */ \
-            int _r = (_ad OP _bd); \
-            slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
-            g_vm.sp--; \
-            DISPATCH(); \
-        } \
-        /* String lex-compare slow path: both operands VAL_STR → byte-wise strcmp. */ \
-        if (slot_is_ptr(_as) && slot_is_ptr(_bs)) { \
-            Value *_a = slot_as_ptr(_as), *_b = slot_as_ptr(_bs); \
-            if (_a->type == VAL_STR && _b->type == VAL_STR) { \
-                int _cmp = strcmp(_a->data.str ? _a->data.str : "", _b->data.str ? _b->data.str : ""); \
-                int _r = (_cmp OP 0); \
-                slot_decref(_as); slot_decref(_bs); \
-                g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
-                g_vm.sp--; \
-                DISPATCH(); \
-            } \
-        } \
-        int _cmp; \
-        if (vm_number_compare(_as, _bs, &_cmp)) { \
-            int _r = _cmp != 2 && (_cmp OP 0); \
-            slot_decref(_as); slot_decref(_bs); \
-            g_vm.stack[g_vm.sp - 2] = slot_from_bool(_r); \
-            g_vm.sp--; \
-            DISPATCH(); \
-        } \
-        /* Mixed/uncomparable types: error rather than silently returning \
-         * false (e.g. "3" < 4 used to be 0). Capture type names before \
-         * decref. ==/!= keep cross-type "not equal"; only ordering errors. */ \
-        { \
-            const char *_tna = slot_type_name(_as), *_tnb = slot_type_name(_bs); \
-            slot_decref(_as); slot_decref(_bs); \
-            rt_error(EK_TYPE, current_line, "cannot compare %s and %s with '%s'", \
-                _tna, _tnb, OPNAME); \
-        } \
-        g_vm.stack[g_vm.sp - 2] = slot_from_bool(0); \
-        g_vm.sp--; \
-        DISPATCH(); \
-    }
-
-    NUM_CMP(LT, <, "<")
-    NUM_CMP(GT, >, ">")
-    NUM_CMP(LE, <=, "<=")
-    NUM_CMP(GE, >=, ">=")
+#define GENERIC_CMP(NAME, PUBLIC_OP) \
+    CASE(NAME): { EigsSlot _b = g_vm.stack[g_vm.sp - 1], _a = g_vm.stack[g_vm.sp - 2]; \
+        EigsSlot _r = eigs_op_binary((PUBLIC_OP), _a, _b); slot_decref(_a); slot_decref(_b); \
+        g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
+    GENERIC_CMP(EQ, EIGS_OP_EQ)
+    GENERIC_CMP(NE, EIGS_OP_NE)
+    GENERIC_CMP(LT, EIGS_OP_LT)
+    GENERIC_CMP(GT, EIGS_OP_GT)
+    GENERIC_CMP(LE, EIGS_OP_LE)
+    GENERIC_CMP(GE, EIGS_OP_GE)
 
     /* ---- Variables ---- */
 

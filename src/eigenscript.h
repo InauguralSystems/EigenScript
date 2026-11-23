@@ -1976,6 +1976,21 @@ static inline void val_decref(Value *v) {
 }
 
 #include "value_slot.h"
+
+/* Number model 2: exact signed int64 integers beside IEEE 754 doubles.
+ * See docs/design/phase2-numbers.md. */
+#define EIGS_NUMBER_MODEL 2
+
+/* Generic opcode operations. Arguments are BORROWED slots; the returned
+ * slot is a NEW reference (the caller must slot_decref it). Errors use the
+ * active VM line, or line zero when called outside execution. */
+typedef enum {
+    EIGS_OP_ADD, EIGS_OP_SUB, EIGS_OP_MUL, EIGS_OP_DIV, EIGS_OP_IDIV,
+    EIGS_OP_MOD, EIGS_OP_EQ, EIGS_OP_NE, EIGS_OP_LT, EIGS_OP_LE,
+    EIGS_OP_GT, EIGS_OP_GE, EIGS_OP_NEG, EIGS_OP_NOT
+} EigsOperator;
+EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
+EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a);
 #include "container.h"
 
 static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {

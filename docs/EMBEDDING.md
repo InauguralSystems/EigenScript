@@ -729,3 +729,21 @@ Wrong-type and out-of-range reports and their sentinels keep the API contract
 above. Pure representation transport does not opt into strict arithmetic
 trapping. The canonicalization policy is the same single double writer used
 for variables and container slots (R2.4/N12; design §5 and §8).
+
+### Generic operator exports
+
+`EIGS_NUMBER_MODEL` is `2`: exact signed 64-bit integers beside IEEE 754
+doubles, as specified by [the number-model design](design/phase2-numbers.md).
+Native runtimes can invoke the VM's complete generic operator behavior through
+`eigs_op_binary` and `eigs_op_unary`, using the `EigsOperator` members declared
+in `eigenscript.h`. Inputs are borrowed; the returned `EigsSlot` is a new
+reference and must be released with `slot_decref`. A rejected operation leaves
+the same error kind, message, and active source line as the corresponding VM
+opcode; inspect it with the embedding error API.
+
+```c
+EigsSlot answer = eigs_op_binary(EIGS_OP_ADD, slot_from_int(20),
+                                 slot_from_int(22));
+/* use answer */
+slot_decref(answer);
+```
