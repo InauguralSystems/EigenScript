@@ -4,7 +4,7 @@
 All other objects come from the candidate release build; the candidate source
 and binary stay byte-identical. The Makefile supplies compile and link flags.
 """
-import hashlib,json,os,re,shlex,subprocess,tempfile
+import hashlib,re,shlex,subprocess,tempfile
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 
