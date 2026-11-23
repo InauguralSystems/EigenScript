@@ -65,7 +65,9 @@ def write_tsv(path, header, rows):
         if path: f.close()
 
 def summary(rows, runner, extra=""):
-    counts = collections.Counter(cell.split("(",1)[0] for r in rows[1:] for cell in r[-3:])
+    counts = collections.Counter(cell.split("(",1)[0] for r in rows[1:] if r[4] != "control" for cell in r[-3:])
+    control_errors=sum(1 for r in rows[1:] if r[4] == "control" and any(x.startswith("CONTROL_ERR(") for x in r[-3:]))
+    if control_errors: counts["CONTROL_ERR"] = control_errors
     counts["TIMEOUT"] = runner.timed_out
     fields = [f"examined={len(rows)-1}"] + [f"{k}={counts[k]}" for k in sorted(counts)]
     print("summary " + " ".join(fields) + " excluded=" + ",".join(EXCLUDED) + (" " + extra if extra else ""))
@@ -99,17 +101,17 @@ def list_forms(ns, root, run):
 # Candidate store paths are deliberately executable data: only candidates whose bit snapshot
 # proves the requested payload are reported as producers.
 PRODUCER_CANDIDATES = {
- "f64_from_bits_store": "b is buffer of 1\nbuf_set_bits of [b, 0, f64_bits of nf]",
- "buf_set": "b is buffer of 1\nbuf_set of [b, 0, nf]",
- "copy_into": "b is buffer of 1\ncopy_into of [b, 0, [nf]]",
- "buf_scale_range": "b is buffer of 1\nbuf_set of [b, 0, f64_from_bits of 9214364837600034816]\nbuf_scale_range of [b, 0, 1, 2]",
- "tensor_add_into": "b is buffer of 1\nx is buffer of 1\nbuf_set of [x, 0, nf]\nadd_into of [b, x]",
+ "f64_from_bits_store": "buf_set_bits of [{buffer}, {index}, f64_bits of nf]",
+ "buf_set": "buf_set of [{buffer}, {index}, nf]",
+ "copy_into": "copy_into of [{buffer}, {index}, [nf]]",
+ "buf_scale_range": "buf_set_bits of [{buffer}, {index}, 9214364837600034816]\nbuf_scale_range of [{buffer}, {index}, 1, 2]",
 }
 BITS={"inf":"9218868437227405312","ninf":"-4503599627370496","nan":"9221120237041090560"}
 
 def buffer_forms(ns, root, run):
     api=subprocess.run([run.binary,"--api","--json"],capture_output=True,text=True,check=True).stdout.lower()
     cs=cases(root); rows=[("builtin","arg","kind","value","producer","unset","s0","s1")]
+    controls, clean_controls = {}, set()
     # Cases determine callable shapes; API JSON must independently mention buffer for the name.
     for c in cs:
         n=c["name"]
@@ -119,21 +121,32 @@ def buffer_forms(ns, root, run):
         for i,a in enumerate(c["args"]):
             var=a.strip()
             if var not in bufvars: continue
+            control_prog=setup+f"\nprint of ({call(n,c['args'])})\n"
+            control=tuple(run.run(control_prog,m) for _,m in MODES)
+            control_error=any(not x.startswith("val(") for x in control)
+            controls[(n,i)]=not control_error
+            if not control_error: clean_controls.add((n,i))
+            recorded=tuple("CONTROL_ERR("+x+")" if control_error else x for x in control)
+            rows.append((n,i,"buffer","control","control",*recorded))
+            if control_error: continue
             for vn,ve in VALUES.items():
-                good=[]
                 for pn,body in PRODUCER_CANDIDATES.items():
-                    probe=f"nf is {ve}\n{body}\nprint of ((buf_get_bits of [b, 0]) == {BITS[vn]})\n"
-                    if run.run(probe).startswith("val(true"): good.append((pn,body))
-                if not good:
-                    rows.append((n,i,"buffer",vn,"NO_PRODUCER","NO_PRODUCER","NO_PRODUCER","NO_PRODUCER")); continue
-                for pn,body in good:
-                    replacement=body.replace("b is",var+" is").replace("[b,",f"[{var},")
-                    newsetup=re.sub(rf"^{re.escape(var)} is (?:shape_set of )?(?:buffer of|buf_from_list of).*$",replacement,setup,count=1,flags=re.M)
-                    prog=f"nf is {ve}\n{newsetup}\nprint of ({call(n,c['args'])})\n"
+                    step=body.format(buffer=var,index=0)
+                    probe=f"{setup}\nnf is {ve}\n{step}\nprint of ((buf_get_bits of [{var}, 0]) == {BITS[vn]})\n"
+                    if not run.run(probe).startswith("val(true"):
+                        rows.append((n,i,"buffer",vn,pn,"NO_PRODUCER","NO_PRODUCER","NO_PRODUCER"))
+                        continue
+                    prog=f"{setup}\nnf is {ve}\n{step}\nprint of ({call(n,c['args'])})\n"
                     rows.append((n,i,"buffer",vn,pn,*[run.run(prog,m) for _,m in MODES]))
-    producers=sorted({r[4] for r in rows[1:] if r[4] != "NO_PRODUCER"})
+    producers=sorted(PRODUCER_CANDIDATES)
     write_tsv(ns.out,["population: buffer-taking names are the intersection of --api --json and buffer variables in tests/strict_shape_cases.json", "producers: "+",".join(producers)],rows)
-    return summary(rows,run,"producers="+",".join(producers))
+    probed_builtins={n for n,_ in controls}; clean_builtins={n for n,_ in clean_controls}
+    bad=sorted(probed_builtins-clean_builtins)
+    extra=(f"producers={','.join(producers)} clean_controls={len(clean_controls)}/{len(controls)} "
+           f"clean_builtins={len(clean_builtins)}/{len(probed_builtins)} control_errors={','.join(bad) or '-'}")
+    rc=summary(rows,run,extra)
+    if probed_builtins and len(clean_builtins)*5 < len(probed_builtins)*4: rc=1
+    return rc
 
 def diff(a,b):
     def load(p):

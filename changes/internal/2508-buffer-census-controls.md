@@ -1,0 +1,1 @@
+- Fixed non-finite census buffer probes to preserve case shapes and require clean controls (#2508).
