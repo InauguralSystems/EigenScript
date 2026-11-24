@@ -1869,7 +1869,7 @@ eigenscript.h:1905 num_to_i64_exact num_to_i64_exact READ b
 eigenscript.h:1924 <file scope> buffer_read_f64 READ b
 eigenscript.h:1925 <file scope> buffer_byte_at READ b
 eigenscript.h:1926 <file scope> buffer_index_at READ b
-eigenscript.h:2257 <file scope> eigs_num_text FORMAT e
+eigenscript.h:2261 <file scope> eigs_num_text FORMAT e
 eigs_embed.c:387 embed_f64 number RAW j
 eigs_embed.c:388 embed_f64 number RAW j
 eigs_embed.c:388 embed_f64 slot_from_f64 PRODUCE j

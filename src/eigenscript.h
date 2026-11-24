@@ -1982,9 +1982,13 @@ static inline void val_decref(Value *v) {
 #define EIGS_NUMBER_MODEL 2
 
 /* Generic opcode operations. Arguments are BORROWED slots; the returned
- * slot is a NEW reference (the caller must slot_decref it). Errors use the
- * active VM line (including the current trace stamp for an open state), or
- * line zero when no state is current. */
+ * slot is a NEW reference (the caller must slot_decref it). The calling
+ * thread must have a state attached: an error is recorded on that state, at
+ * the active VM line (including the current trace stamp). These are the VM's
+ * own operations, called by compiled code that is already running as
+ * EigenScript: unlike the embedding entry points they do not save or install
+ * the floating-point environment, so the caller must be in the IEEE 754
+ * default environment (docs/EMBEDDING.md). */
 typedef enum {
     EIGS_OP_ADD, EIGS_OP_SUB, EIGS_OP_MUL, EIGS_OP_DIV, EIGS_OP_IDIV,
     EIGS_OP_MOD, EIGS_OP_EQ, EIGS_OP_NE, EIGS_OP_LT, EIGS_OP_LE,

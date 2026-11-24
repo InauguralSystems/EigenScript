@@ -741,6 +741,11 @@ reference and must be released with `slot_decref`. A rejected operation leaves
 the same error kind, message, and active source line as the corresponding VM
 opcode; inspect it with the embedding error API.
 
+These two calls are for compiled code that is already running as EigenScript.
+The calling thread must be attached to a state, and must be in the IEEE 754
+default floating-point environment: unlike the embedding entry points, they do
+not save or install it.
+
 ```c
 EigsSlot answer = eigs_op_binary(EIGS_OP_ADD, slot_from_int(20),
                                  slot_from_int(22));

@@ -1066,7 +1066,7 @@ static __attribute__((noinline)) EigsSlot vm_cmp_rest(EigsOperator op, EigsSlot 
 }
 
 static const char *slot_type_name(EigsSlot s);
-static int op_line(void) { return eigs_current ? vm_current_line() : 0; }
+static int op_line(void) { return vm_current_line(); }
 
 EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     /* The line is looked up only on a raise: computing it on every call
