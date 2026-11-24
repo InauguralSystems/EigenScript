@@ -43,13 +43,13 @@ The error-prone parts of the language. Most are not surfaced when working in a c
 
 ## Observer & temporal idioms
 - Bare predicates read the **last-observed** binding; an intervening assignment repoints that alias, so `report`/a bare predicate after unrelated work may read the wrong variable — prefer the named form (`converged of x`). Observer state belongs to the **binding** (its env slot), not the value: a temp-built iterate (`t is f of x` then `x is t`) keeps its trajectory, but one binding rebound across several entities in a loop interleaves their trajectories and manufactures verdicts (lint W024). Give each tracked entity its own binding — a closure per entity is the recommended form (docs/PREDICATES.md, "What carries a trajectory").
-- Wrap hot loops in `unobserved:` to suppress per-assignment observer bookkeeping when you don't need convergence tracking — it's a large speedup and avoids cross-talk halting.
+- `unobserved:` skips only the non-numeric entropy/comparison bookkeeping. Numeric bookkeeping stays complete, so it does not remove numeric sampling cost, and a predicate asked under it raises.
 - Temporal reads: `prev of x` (value before the most recent assignment), `what is x at L` / `state_at of L` (past-line state; **bare `x at L` is a parse error** — `at` only qualifies an interrogative or `prev of`), interrogatives `what/who/when/where/why/how is x`. An interrogative used as a *statement* prints nothing — it's an expression like any other; `print of (what is x)` to see it.
 - Predicates classify a binding's recent relative steps over a window (default 10 samples): `converged` means every step in a full window is under the deadband — a stopping criterion, not a proof, and a held constant converges at any magnitude. Below the characteristic scale the deadband turns absolute. Pick the predicate from docs/PREDICATES.md's band table at the checked-out revision, not from intuition.
 
 ## Values
 - `+` concatenates **strings only** — list concat is `append of [xs, v]` (in place) or a comprehension; `xs + ys` is a runtime error.
-- Numbers are finite by construction: overflow saturates at ±1e308. Strict mode is the DEFAULT (#1361): the domain clamps (`sqrt of -1`), a NaN result, wrong-typed builtin arguments (`abs of "x"`) and a malformed `json_path` document raise catchable errors. `EIGS_STRICT=0` is the per-run opt-out that restores the finite stand-ins (NaN collapses to `0`, `sqrt of -1` is `0`).
+- Numbers are exact 64-bit integers beside IEEE 754 doubles. A wrong-typed builtin argument raises a catchable `type_mismatch` in every mode, and int overflow raises. By default non-finite float arithmetic yields the IEEE value (`sqrt of -1` is `nan`, `1e308 * 10` is `inf`); `EIGS_STRICT=1` makes it raise instead. Where indices, counts, bytes and stored cells are involved, non-finite values are refused in every mode (docs/SPEC.md, "Argument guards and arithmetic traps").
 - **Hex integer literals** (`0xFF`, `0X10`; digits only, ends at the first non-hex char) are a real lexed form; hex-FLOAT forms (`0x1p4`, `0xA.8`) are loud parse errors. No modulo keyword — the operator is `%` (`mod` is a parse error).
 
 ## Python/JS habits that fail
@@ -84,7 +84,7 @@ zero-padding (twice), and **median/mean** (a consumer's piano-roll UI, while
 `date` (host-only); the civil-math half runs on every profile.
 
 ## Before trusting generated .eigs
-Run it: `eigenscript prog.eigs`. The common failure signatures are **"undefined variable"** (a `local` you forgot, or a soft-keyword/scope surprise), **"unexpected X after statement"** (two statements landed on one line — check generated joins), and **silently wrong numbers** (on a pin before #1361, run with `EIGS_STRICT=1` to turn the numeric clamps into errors; strict is the default after it). For library code, parse-check with `--lint`.
+Run it: `eigenscript prog.eigs`. The common failure signatures are **"undefined variable"** (a `local` you forgot, or a soft-keyword/scope surprise), **"unexpected X after statement"** (two statements landed on one line — check generated joins), and **silently wrong numbers** (run with `EIGS_STRICT=1` to make non-finite arithmetic raise). For library code, parse-check with `--lint`.
 
 ## Old pins
 Every ecosystem consumer pins a current release. These apply only to a checkout pinned at or before the named version:
