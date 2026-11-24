@@ -8,17 +8,23 @@ else
     if ! make -s -C .. GENERIC_OPS_VARIANT="$variant" generic-ops-test; then
         TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1)); echo "  FAIL: build generic operator differential"
     else
-        for strict in unset 0 1; do
-                case "$strict" in unset) strict_env="env -u EIGS_STRICT" ;; *) strict_env="EIGS_STRICT=$strict" ;; esac
+        # The C differential runs in the default tier and under forced OSR: its
+        # eigs_eval_string side goes through the JIT, and the round-4 SIGSEGV
+        # showed first under EIGS_JIT_OSR_THRESHOLD=1.
+        for ctier in default osr; do
+            case "$ctier" in default) ctier_env="" ;; osr) ctier_env="EIGS_JIT_OSR_THRESHOLD=1" ;; esac
+            for strict in unset 0 1; do
+                case "$strict" in unset) strict_env="-u EIGS_STRICT" ;; *) strict_env="EIGS_STRICT=$strict" ;; esac
                 TOTAL=$((TOTAL + 1))
-                out=$(env $strict_env ../build/$variant/test_generic_ops 2>&1); rc=$?
+                out=$(env $strict_env $ctier_env ../build/$variant/test_generic_ops 2>&1); rc=$?
                 expected="PASS: generic operator exports strict=$strict examined="
-                case "$strict" in unset) expected="PASS: generic operator exports strict=unset examined=" ;; esac
-                if rc_ok "$rc" "$out" && grep -q "^$expected" <<< "$out"; then
-                    PASS=$((PASS + 1)); echo "  PASS: strict=$strict ${out#PASS: }"
+                line=$(grep "^$expected" <<< "$out")
+                if rc_ok "$rc" "$out" && [ -n "$line" ]; then
+                    PASS=$((PASS + 1)); echo "  PASS: tier=$ctier strict=$strict ${line#PASS: }"
                 else
-                    FAIL=$((FAIL + 1)); echo "  FAIL: strict=$strict tier=$tier generic operator differential (rc=$rc)"; printf '    %s\n' "$out"
+                    FAIL=$((FAIL + 1)); echo "  FAIL: tier=$ctier strict=$strict generic operator differential (rc=$rc)"; printf '    %s\n' "$out"
                 fi
+            done
         done
         for tier in interpreter default hot osr; do
             case "$tier" in
