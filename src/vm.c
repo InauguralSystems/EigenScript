@@ -1045,15 +1045,12 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     int line = op_line();
     int64_t ai = 0, bi = 0, ir;
     double ad = 0.0, bd = 0.0, r;
-    int ia = slot_int_value(a, &ai), ib = slot_int_value(b, &bi);
-    int na = ia || slot_f64_value(a, &ad), nb = ib || slot_f64_value(b, &bd);
+    int ia, ib, na, nb;
     const char *name = "?";
     if (op < EIGS_OP_ADD || op > EIGS_OP_SHR) {
         rt_error(EK_VALUE, line, "eigs_op_binary: invalid binary operator %d", (int)op);
         return slot_null();
     }
-    if (ia) ad = (double)ai;
-    if (ib) bd = (double)bi;
     /* &, |, ^, << and >> accept exact integer representations (phase2 N8). */
     if (op >= EIGS_OP_BAND && op <= EIGS_OP_SHR) {
         static const char *names[] = {"&", "|", "^", "<<", ">>"};
@@ -1076,11 +1073,51 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         }
         return slot_null();
     }
+    /* Keep the overwhelmingly common non-number comparison and string-add
+     * paths ahead of numeric decoding.  Besides avoiding needless boxed
+     * conversions, this preserves the pre-export opcode cost for strings
+     * and null/bool equality (#2512). */
+    if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
+        int a_nonnum = slot_is_null(a) || slot_is_bool(a) ||
+            (slot_is_ptr(a) && slot_as_ptr(a)->type != VAL_INT && slot_as_ptr(a)->type != VAL_FLOAT);
+        int b_nonnum = slot_is_null(b) || slot_is_bool(b) ||
+            (slot_is_ptr(b) && slot_as_ptr(b)->type != VAL_INT && slot_as_ptr(b)->type != VAL_FLOAT);
+        if (a_nonnum || b_nonnum) {
+            Value *av = slot_to_value(a), *bv = slot_to_value(b);
+            int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
+            val_decref(av); val_decref(bv);
+            return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
+        }
+    }
+    if (op >= EIGS_OP_LT && op <= EIGS_OP_GE && slot_is_ptr(a) && slot_is_ptr(b) &&
+        slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
+        int raw = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
+                         slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
+        int cmp = (raw > 0) - (raw < 0);
+        if (op == EIGS_OP_LT) return slot_from_bool(cmp < 0);
+        if (op == EIGS_OP_LE) return slot_from_bool(cmp <= 0);
+        if (op == EIGS_OP_GT) return slot_from_bool(cmp > 0);
+        return slot_from_bool(cmp >= 0);
+    }
+    if (op == EIGS_OP_ADD && slot_is_ptr(a) && slot_is_ptr(b) &&
+        slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
+        Value *av = slot_as_ptr(a), *bv = slot_as_ptr(b);
+        int la = val_str_len(av), lb = val_str_len(bv);
+        if (!sandbox_charge((size_t)la + lb + 1)) return slot_from_value(make_null());
+        char *s = xmalloc((size_t)la + lb + 1);
+        memcpy(s, av->data.str, la); memcpy(s + la, bv->data.str, lb); s[la + lb] = 0;
+        return slot_from_value(make_str_owned_len(s, (size_t)la + lb));
+    }
+    ia = slot_int_value(a, &ai); ib = slot_int_value(b, &bi);
+    na = ia || slot_f64_value(a, &ad); nb = ib || slot_f64_value(b, &bd);
+    if (ia) ad = (double)ai;
+    if (ib) bd = (double)bi;
     /* == and != serve every kind using phase2 equality (including mixed numbers). */
     if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
         int cmp;
-        if (vm_number_compare(a, b, &cmp) || (na && nb)) {
-            if (!(vm_number_compare(a, b, &cmp))) {
+        int exact = vm_number_compare(a, b, &cmp);
+        if (exact || (na && nb)) {
+            if (!exact) {
                 cmp = (ad > bd) - (ad < bd);
                 if (isnan(ad) || isnan(bd)) cmp = 2;
             }
@@ -1116,15 +1153,6 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         return slot_from_bool(cmp >= 0);
     }
     /* + concatenates two strings; the phase2 non-number rule rejects other kinds. */
-    if (op == EIGS_OP_ADD && !na && !nb && slot_is_ptr(a) && slot_is_ptr(b) &&
-        slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
-        Value *av = slot_as_ptr(a), *bv = slot_as_ptr(b);
-        int la = val_str_len(av), lb = val_str_len(bv);
-        if (!sandbox_charge((size_t)la + lb + 1)) return slot_from_value(make_null());
-        char *s = xmalloc((size_t)la + lb + 1);
-        memcpy(s, av->data.str, la); memcpy(s + la, bv->data.str, lb); s[la + lb] = 0;
-        return slot_from_value(make_str_owned_len(s, (size_t)la + lb));
-    }
     /* Arithmetic on non-numbers reports the operator-specific phase2 type error. */
     if (!na || !nb) {
         static const char *names[] = {"+", "-", "*", "/", "//", "%"};
@@ -1136,7 +1164,9 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
                                        (slot_is_ptr(b) && slot_as_ptr(b)->type == VAL_LIST)))
             rt_error(EK_TYPE, line, "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)", slot_type_name(a), slot_type_name(b));
         else rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name, slot_type_name(a), slot_type_name(b));
-        return (op == EIGS_OP_ADD || op == EIGS_OP_IDIV) ? slot_null() : slot_from_f64(0.0);
+        if (op == EIGS_OP_ADD) return slot_null();
+        if (op == EIGS_OP_IDIV) return slot_from_int(0);
+        return slot_from_f64(0.0);
     }
     /* Integer +, - and * preserve int64 and raise on phase2 int64 overflow. */
     if ((op == EIGS_OP_ADD || op == EIGS_OP_SUB || op == EIGS_OP_MUL) && ia && ib) {
@@ -3938,22 +3968,25 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
 /* #1758 N8: exact int64 operands (#1740), integer results, Lua shifts.
  * Both popped operands are owned, including boxed ints on raise paths. */
-#define INT_BINOP_R(NAME, PUBLIC_OP) \
+#define INT_BINOP_R(NAME, PUBLIC_OP, EXPR) \
     CASE(NAME): { \
         EigsSlot _bs = g_vm.stack[g_vm.sp - 1]; \
         EigsSlot _as = g_vm.stack[g_vm.sp - 2]; \
-        EigsSlot _r = eigs_op_binary((PUBLIC_OP), _as, _bs); \
+        int64_t _ai, _bi; EigsSlot _r; \
+        if (slot_int_value(_as, &_ai) && slot_int_value(_bs, &_bi)) \
+            _r = slot_from_int(EXPR); \
+        else _r = eigs_op_binary((PUBLIC_OP), _as, _bs); \
         slot_decref(_as); slot_decref(_bs); \
         g_vm.stack[g_vm.sp - 2] = _r; \
         g_vm.sp--; \
         DISPATCH(); \
     }
 
-    INT_BINOP_R(BAND, EIGS_OP_BAND)
-    INT_BINOP_R(BOR, EIGS_OP_BOR)
-    INT_BINOP_R(BXOR, EIGS_OP_BXOR)
-    INT_BINOP_R(SHL, EIGS_OP_SHL)
-    INT_BINOP_R(SHR, EIGS_OP_SHR)
+    INT_BINOP_R(BAND, EIGS_OP_BAND, _ai & _bi)
+    INT_BINOP_R(BOR, EIGS_OP_BOR, _ai | _bi)
+    INT_BINOP_R(BXOR, EIGS_OP_BXOR, _ai ^ _bi)
+    INT_BINOP_R(SHL, EIGS_OP_SHL, eigs_bit_shift(_ai, _bi, 0))
+    INT_BINOP_R(SHR, EIGS_OP_SHR, eigs_bit_shift(_ai, _bi, 1))
 
     /* ---- Unary ---- */
 
@@ -4010,6 +4043,24 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (slot_is_smi(_a) && slot_is_smi(_b)) { \
             g_vm.stack[g_vm.sp - 2] = slot_from_bool((RAW_BITS) ? (_a.u TEST _b.u) : \
                                                      (slot_smi_val(_a) TEST slot_smi_val(_b))); \
+            g_vm.sp--; DISPATCH(); } \
+        int64_t _ai, _bi; \
+        if (slot_int_value(_a, &_ai) && slot_int_value(_b, &_bi)) { \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ai TEST _bi); \
+            g_vm.sp--; DISPATCH(); } \
+        if (slot_is_ptr(_a) && slot_is_ptr(_b) && slot_as_ptr(_a)->type == VAL_STR && slot_as_ptr(_b)->type == VAL_STR) { \
+            int _c = strcmp(slot_as_ptr(_a)->data.str, slot_as_ptr(_b)->data.str); \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_c TEST 0); \
+            g_vm.sp--; DISPATCH(); } \
+        if (((PUBLIC_OP) == EIGS_OP_EQ || (PUBLIC_OP) == EIGS_OP_NE) && \
+            (slot_is_null(_a) || slot_is_null(_b))) { \
+            int _eq = slot_is_null(_a) && slot_is_null(_b); \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool((PUBLIC_OP) == EIGS_OP_EQ ? _eq : !_eq); \
+            g_vm.sp--; DISPATCH(); } \
+        int _cmp; \
+        if (vm_number_compare(_a, _b, &_cmp)) { \
+            int _yes = _cmp == 2 ? ((PUBLIC_OP) == EIGS_OP_NE) : (_cmp TEST 0); \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_yes); \
             g_vm.sp--; DISPATCH(); } \
         double _ad, _bd; \
         if (__builtin_expect(slot_f64_value(_a, &_ad) & slot_f64_value(_b, &_bd), 1)) { \

@@ -22,13 +22,13 @@ static int examined,declared,failed;
 static void fail(const char*s,const char*w){fprintf(stderr,"FAIL: %s: %s\n",s,w);failed++;}
 
 static const char *detail(const char *s);
-typedef struct Expected { char state[8], expr[128], result[8], kind[32], text[256]; int seen; } Expected;
+typedef struct Expected { char state[8], expr[128], result[8], kind[32], text[256]; int line, seen; } Expected;
 static Expected expected[512]; static int expected_count;
 static const char *state_name(void){const char*s=getenv("EIGS_STRICT");return s?s:"unset";}
 static void load_expected(void){
  FILE*f=fopen("tests/generic_ops_expected.tsv","r"); if(!f)f=fopen("../tests/generic_ops_expected.tsv","r");
  if(!f){perror("generic_ops_expected.tsv");exit(2);} char line[768];
- while(fgets(line,sizeof line,f)){if(line[0]=='#')continue;char*cols[7],*p=line;int n=0;while(n<7&&(cols[n]=strsep(&p,"\t")))n++;if(n!=7)continue;cols[6][strcspn(cols[6],"\r\n")]=0;if(strcmp(cols[0],state_name()))continue;Expected*e=&expected[expected_count++];snprintf(e->state,sizeof e->state,"%s",cols[0]);snprintf(e->expr,sizeof e->expr,"%s",cols[3]);snprintf(e->result,sizeof e->result,"%s",cols[4]);snprintf(e->kind,sizeof e->kind,"%s",cols[5]);snprintf(e->text,sizeof e->text,"%s",cols[6]);}
+ while(fgets(line,sizeof line,f)){if(line[0]=='#')continue;char*cols[8],*p=line;int n=0;while(n<8&&(cols[n]=strsep(&p,"\t")))n++;if(n!=8)continue;cols[7][strcspn(cols[7],"\r\n")]=0;if(strcmp(cols[0],state_name()))continue;Expected*e=&expected[expected_count++];snprintf(e->state,sizeof e->state,"%s",cols[0]);snprintf(e->expr,sizeof e->expr,"%s",cols[3]);snprintf(e->result,sizeof e->result,"%s",cols[4]);snprintf(e->kind,sizeof e->kind,"%s",cols[5]);e->line=!strcmp(cols[6],"-")?0:atoi(cols[6]);snprintf(e->text,sizeof e->text,"%s",cols[7]);}
  fclose(f);declared=expected_count;if(!expected_count){fprintf(stderr,"FAIL: oracle has no rows for state %s\n",state_name());exit(2);}
 }
 static Expected*oracle(const char*expr){for(int i=0;i<expected_count;i++)if(!strcmp(expected[i].expr,expr)){if(expected[i].seen)fail(expr,"oracle row reached twice");expected[i].seen=1;return &expected[i];}fail(expr,"missing oracle row");return NULL;}
@@ -55,9 +55,16 @@ int main(void){load_expected();EigsState*st=eigs_open();if(!st)return 2;EigsValu
 #define FOUR(OP,TOK) B(OP,i2,i3,"2 " TOK " 3");B(OP,f25,f05,"2.5 " TOK " 0.5");B(OP,i2,f05,"2 " TOK " 0.5");B(OP,f05,i2,"0.5 " TOK " 2");B(OP,str,i1,"\"a\" " TOK " 1")
  FOUR(ADD,"+");FOUR(SUB,"-");FOUR(MUL,"*");FOUR(DIV,"/");FOUR(IDIV,"//");FOUR(MOD,"%");FOUR(BAND,"&");FOUR(BOR,"|");FOUR(BXOR,"^");FOUR(SHL,"<<");FOUR(SHR,">>");FOUR(EQ,"==");FOUR(NE,"!=");FOUR(LT,"<");FOUR(GT,">");FOUR(LE,"<=");FOUR(GE,">=");
  B(IDIV,slot_from_int(-5),i2,"-5 // 2");B(LT,i2,i2,"2 < 2");B(ADD,imax,i1,"9223372036854775807 + 1");B(SUB,imin,i1,"(-9223372036854775807 - 1) - 1");B(MUL,imax,i2,"9223372036854775807 * 2");B(IDIV,imin,slot_from_int(-1),"(-9223372036854775807 - 1) // -1");B(MOD,imin,slot_from_int(-1),"(-9223372036854775807 - 1) % -1");
+ const char*fa[]={"-7.5","7.5","-7.5","7.5"},*fb[]={"2","-2","-2","2"};
+ for(int j=0;j<4;j++){binary_eval(EIGS_OP_IDIV,fa[j],fb[j],"//");binary_eval(EIGS_OP_MOD,fa[j],fb[j],"%");}
 #define Z(OP,TOK) B(OP,i2,slot_from_int(0),"2 " TOK " 0");B(OP,i2,slot_from_f64(0),"2 " TOK " 0.0")
  Z(DIV,"/");Z(IDIV,"//");Z(MOD,"%");B(SHL,i2,slot_from_int(-1),"2 << -1");B(SHL,i2,slot_from_int(64),"2 << 64");B(SHR,i2,slot_from_int(-1),"2 >> -1");B(SHR,i2,slot_from_int(64),"2 >> 64");
  EigsOperator cops[]={EIGS_OP_EQ,EIGS_OP_NE,EIGS_OP_LT,EIGS_OP_GT,EIGS_OP_LE,EIGS_OP_GE};const char*ctoks[]={"==","!=","<",">","<=",">="};
+ const char*ixa[]={"9007199254740993","140737488355328","-140737488355329"};
+ const char*ixb[]={"9007199254740992","140737488355327","-140737488355328"};
+ for(int j=0;j<6;j++)for(int k=0;k<3;k++)binary_eval(cops[j],ixa[k],ixb[k],ctoks[j]);
+ const char*nia[]={"1","generic_nan","9007199254740993","generic_nan"},*nib[]={"generic_nan","1","generic_nan","9007199254740993"};
+ for(int j=0;j<6;j++)for(int k=0;k<4;k++)binary_eval(cops[j],nia[k],nib[k],ctoks[j]);
  for(int j=0;j<6;j++){binary_eval(cops[j],"\"a\"","\"a\"",ctoks[j]);binary_eval(cops[j],"\"a\"","\"b\"",ctoks[j]);binary_eval(cops[j],"\"c\"","\"a\"",ctoks[j]);binary_eval(cops[j],"\"d\"","\"a\"",ctoks[j]);}
  binary_eval(EIGS_OP_BAND,"6","3.0","&");binary_eval(EIGS_OP_BOR,"6","1.0","|");binary_eval(EIGS_OP_BXOR,"5","1.0","^");binary_eval(EIGS_OP_SHL,"1","2.0","<<");binary_eval(EIGS_OP_BAND,"6","2.5","&");
  for(int j=0;j<4;j++){binary_eval(cops[j],"9007199254740993","9007199254740992.0",ctoks[j]);binary_eval(cops[j],"9007199254740992.0","9007199254740993",ctoks[j]);}

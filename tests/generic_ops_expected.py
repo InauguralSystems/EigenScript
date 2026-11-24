@@ -22,6 +22,16 @@ def specs():
   for a,b in (("generic_nan","1.0"),("-0.0","0.0"),("generic_inf","1.0"),("generic_ninf","1.0")):
    r.append(("b",op,f"{a} {tok} {b}"))
  r += [("b","IDIV","-5 // 2"),("b","LT","2 < 2"),("b","ADD","9223372036854775807 + 1"),("b","SUB","(-9223372036854775807 - 1) - 1"),("b","MUL","9223372036854775807 * 2"),("b","IDIV","(-9223372036854775807 - 1) // -1"),("b","MOD","(-9223372036854775807 - 1) % -1")]
+ # Plant oracle: float floor division/modulo in every sign combination, exact
+ # int comparisons beyond double precision, and both sides of the boxed-int
+ # boundary.  These are deliberately source expressions, not hand answers.
+ for op,tok in (("IDIV","//"),("MOD","%")):
+  for a,b in (("-7.5","2"),("7.5","-2"),("-7.5","-2"),("7.5","2")): r.append(("b",op,f"{a} {tok} {b}"))
+ for op,tok in [(x,y) for x,y in OPS if x in ("EQ","NE","LT","GT","LE","GE")]:
+  for a,b in (("9007199254740993","9007199254740992"),("140737488355328","140737488355327"),("-140737488355329","-140737488355328")): r.append(("b",op,f"{a} {tok} {b}"))
+ # An int (immediate or boxed) against a NaN is unordered: only != is true.
+ for op,tok in [(x,y) for x,y in OPS if x in ("EQ","NE","LT","GT","LE","GE")]:
+  for a,b in (("1","generic_nan"),("generic_nan","1"),("9007199254740993","generic_nan"),("generic_nan","9007199254740993")): r.append(("b",op,f"{a} {tok} {b}"))
  for op,tok in [("DIV","/"),("IDIV","//"),("MOD","%")]: r += [("b",op,f"2 {tok} 0"),("b",op,f"2 {tok} 0.0")]
  for op,tok in [("SHL","<<"),("SHR",">>")]: r += [("b",op,f"2 {tok} -1"),("b",op,f"2 {tok} 64")]
  r += [("u","NEG","-2"),("u","NEG","-2.5"),("u","NEG",'-"a"'),("u","NEG","-(-9223372036854775807 - 1)"),("u","NOT","not 2"),("u","NOT","not 2.5"),("u","NOT",'not "a"'),("u","BNOT","~2"),("u","BNOT","~2.0"),("u","BNOT",'~"a"')]
@@ -36,7 +46,7 @@ def run(binary, strict, expr, loop=False):
  if "generic_inf" in expr or "generic_ninf" in expr: body = "generic_inf is f64_from_bits of 9218868437227405312\ngeneric_ninf is f64_from_bits of -4503599627370496\n" + body
  if loop: body += "for oracle_i in range of 5001:\n    oracle_value is oracle_expr of []\n"
  else: body += "oracle_value is oracle_expr of []\n"
- src = "try:\n" + "".join("    "+line+"\n" for line in body.splitlines()) + "    print of ((type of oracle_value) + \"\\t\" + (str of oracle_value))\ncatch oracle_error:\n    print of (\"error\\t\" + oracle_error.kind + \"\\t\" + oracle_error.message)\n"
+ src = "try:\n" + "".join("    "+line+"\n" for line in body.splitlines()) + "    print of (\"value\\t\" + (type of oracle_value) + \"\\t-\\t\" + (str of oracle_value))\ncatch oracle_error:\n    print of (\"error\\t\" + oracle_error.kind + \"\\t\" + (str of oracle_error.line) + \"\\t\" + oracle_error.message)\n"
  with tempfile.NamedTemporaryFile("w",suffix=".eigs",delete=False) as f: f.write(src); name=f.name
  env=os.environ.copy(); env.pop("EIGS_STRICT",None)
  if strict != "unset": env["EIGS_STRICT"]=strict
@@ -44,12 +54,12 @@ def run(binary, strict, expr, loop=False):
  finally: os.unlink(name)
  if p.returncode: raise SystemExit(f"{expr}: rc={p.returncode}: {p.stderr}{p.stdout}")
  out=p.stdout.rstrip("\n")
- parts=out.split("\t",2)
- if parts[0] == "error": return "error",parts[1],parts[2]
- if len(parts) != 2: raise SystemExit(f"{expr}: malformed oracle output: {out!r}")
- return "value",parts[0],parts[1]
+ parts=out.split("\t",3)
+ if len(parts) != 4: raise SystemExit(f"{expr}: malformed oracle output: {out!r}")
+ if parts[0] == "error": return "error",parts[1],parts[2],parts[3]
+ return "value",parts[1],parts[2],parts[3]
 def generate(binary, loop=False):
- rows=["# state\tform\top\texpression\tresult\tkind\tprinted-or-message"]
+ rows=["# state\tform\top\texpression\tresult\tkind\tline\tprinted-or-message"]
  for strict in ("unset","0","1"):
   for form,op,expr in specs(): rows.append("\t".join((strict,form,op,expr,*run(binary,strict,expr,loop))))
  return "\n".join(rows)+"\n"

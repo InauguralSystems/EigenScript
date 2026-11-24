@@ -1,0 +1,1 @@
+- Keep generic operators exact while restoring comparison and bitwise dispatch performance (#2512).
