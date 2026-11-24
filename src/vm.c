@@ -1047,14 +1047,18 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
  * values_equal_op, the function main's EQ/NE called. A number test or a null
  * test in front of it cost bool == 61 and dict == 148 instructions per
  * operation (#2512 round 6). */
+/* Consumes a and b (the stack's references). */
 static __attribute__((noinline)) EigsSlot vm_cmp_rest(EigsOperator op, EigsSlot a, EigsSlot b) {
     int eq;
     if (slot_is_ptr(a) && slot_is_ptr(b) && slot_as_ptr(a)->type == VAL_STR &&
         slot_as_ptr(b)->type == VAL_STR) {
         eq = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
                     slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "") == 0;
+        slot_decref(a); slot_decref(b);
     } else {
-        Value *av = slot_to_value(a), *bv = slot_to_value(b);
+        /* Adopt the stack's references, as main's vm_pop did: a converted
+         * copy plus a release of each slot cost bool == +23 a trip. */
+        Value *av = slot_bridge_unwrap(a), *bv = slot_bridge_unwrap(b);
         eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
         val_decref(av); val_decref(bv);
     }
@@ -4091,8 +4095,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_yes); \
                 g_vm.sp--; DISPATCH(); } \
         } \
-        EigsSlot _r = (ORDERED) ? eigs_op_binary((PUBLIC_OP), _a, _b) : vm_cmp_rest((PUBLIC_OP), _a, _b); \
-        slot_decref(_a); slot_decref(_b); \
+        EigsSlot _r; \
+        if (ORDERED) { _r = eigs_op_binary((PUBLIC_OP), _a, _b); slot_decref(_a); slot_decref(_b); } \
+        else _r = vm_cmp_rest((PUBLIC_OP), _a, _b); /* consumes both */ \
         g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
 /* An SMI's encoding is canonical, so == and != compare the raw bits (as on
  * main, RAW_BITS 1); an ordering needs the sign-extended value. */
