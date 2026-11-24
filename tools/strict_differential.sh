@@ -932,6 +932,9 @@ guard|nearest_in_range_all|print of (nearest_in_range_all of [42, 1, 8, 8])|near
 guard|num_copy|print of (num_copy of "x")|num_copy: expected a number
 guard|random_normal|print of (random_normal of 42)|random_normal: expected [length, scale] or [rows, columns, scale]
 guard|reshape|print of (reshape of 42)|reshape: expected [buffer, rows, columns]
+guard|sgd_update|print of (sgd_update of 42)|sgd_update: expected [parameter tensor, gradient tensor, learning rate]
+guard|sgd_update_cols|print of (sgd_update_cols of 42)|sgd_update_cols: expected a 4-argument list
+guard|sgd_update_rows|print of (sgd_update_rows of 42)|sgd_update_rows: expected a 4-argument list
 guard|shape|print of (shape of "x")|shape: expected a number, buffer, or list tensor
 guard|sort_by|print of (sort_by of 42)|sort_by: expected [list, key function]
 guard|state_at|print of (state_at of "x")|state_at: expected a line number
@@ -943,9 +946,6 @@ guard|values|print of (values of 42)|values: expected a dict
 guard|zeros|print of (zeros of "x")|zeros: expected a number or [rows, columns]
 guard|http_static|print of (http_static of 42)|http_static: expected [prefix string, directory string]
 guard|sandbox_run|print of (sandbox_run of ["return 1", "x"])|sandbox_run: expected number limits
-guard|sgd_update|print of (sgd_update of 42)|sgd_update: expected [parameter tensor, gradient tensor, learning rate]
-guard|sgd_update_cols|print of (sgd_update_cols of 42)|sgd_update_cols: expected a 4-argument list
-guard|sgd_update_rows|print of (sgd_update_rows of 42)|sgd_update_rows: expected a 4-argument list
 EOF
 )
 PROBES="${PROBES//@TMP@/$TMP}"
