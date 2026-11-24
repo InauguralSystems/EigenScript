@@ -81,6 +81,8 @@ with tempfile.TemporaryDirectory() as tmp:
   ("nested22","[[1.0,2.0],[3.0,4.0]]",("list",[["number","number"],["number","number"]])),
   ("mixed_scalar_list","[1.0,[2.0,3.0]]",("list",["number",["number","number"]])),
   ("mixed_list_scalar","[[1.0,2.0],3.0]",("list",[["number","number"],"number"])),
+  ("mixed_three_scalar_list_scalar","[1.0,[2.0],3.0]",("list",["number",["number"],"number"])),
+  ("mixed_three_list_scalar_list","[[1.0],2.0,[3.0]]",("list",[["number"],"number",["number"]])),
   ("null_row","[null]",("list",["null"])), ("string_row",'["x"]',("list",["str"])),
   ("bool_row","[true]",("list",["bool"])), ("null_cell","[[1.0,null]]",("list",[["number","null"]])),
   ("string_cell",'[[1.0,"x"]]',("list",[["number","str"]])),
@@ -111,14 +113,15 @@ with tempfile.TemporaryDirectory() as tmp:
    if pm[1]!=gm[1]: return ("value",f"sgd_update: params shape count {pm[1]} does not match grad shape count {gm[1]}")
    return None
   ps,gs=shape_text(pm[1]),shape_text(gm[1])
+  if any(isinstance(x,list) for x in pm[1]) and any(not isinstance(x,list) for x in pm[1]):
+   return ("type_mismatch",f"sgd_update: params shape {ps} mixes list and number rows")
+  if any(isinstance(x,list) for x in gm[1]) and any(not isinstance(x,list) for x in gm[1]):
+   return ("type_mismatch",f"sgd_update: grad shape {gs} mixes list and number rows")
   if len(pm[1])!=len(gm[1]): return ("value",f"sgd_update: params shape {ps} does not match grad shape {gs}")
   for i,(p,g) in enumerate(zip(pm[1],gm[1])):
    pl,gl=isinstance(p,list),isinstance(g,list)
    if pl!=gl: return ("type_mismatch",f"sgd_update: params shape {ps} and grad shape {gs} differ at row {i}: {'list' if pl else p} against {'list' if gl else g}")
    if pl and len(p)!=len(g): return ("value",f"sgd_update: params shape {ps} and grad shape {gs} differ at row {i}: {len(p)} against {len(g)}")
-  # Matching mixed nesting is not a tensor accepted by the arithmetic pass.
-  if pm[1] and not isinstance(pm[1][0],list) and any(isinstance(x,list) for x in pm[1]):
-   return ("type_mismatch","sgd_update: expected a number, got list")
   return None
  sgd_rows=0
  for pn,params,pm in shape_cases:

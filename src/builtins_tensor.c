@@ -2247,6 +2247,19 @@ static void sgd_list_shape(Value *v, char *out, size_t cap) {
     if (k < cap) snprintf(out + k, cap - k, "]");
 }
 
+/* A numeric list is either a vector (all number rows) or a matrix (all list
+ * rows).  Mixing the two is not a tensor.  Keep this separate from
+ * tensor_cells_numeric so its long-standing leaf-kind error still wins. */
+static int sgd_list_mixes_row_kinds(Value *v) {
+    int has_list = 0, has_number = 0;
+    for (int r = 0; r < v->data.list.count; r++) {
+        ValType type = list_elem_type(v, r);
+        has_list |= type == VAL_LIST;
+        has_number |= type == VAL_INT || type == VAL_FLOAT;
+    }
+    return has_list && has_number;
+}
+
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
@@ -2272,6 +2285,14 @@ Value* builtin_sgd_update(Value *arg) {
         char ps[160], gs[160];
         sgd_list_shape(param, ps, sizeof ps);
         sgd_list_shape(grad, gs, sizeof gs);
+        if (sgd_list_mixes_row_kinds(param)) {
+            rt_error(EK_TYPE, 0, "sgd_update: params shape %s mixes list and number rows", ps);
+            return make_null();
+        }
+        if (sgd_list_mixes_row_kinds(grad)) {
+            rt_error(EK_TYPE, 0, "sgd_update: grad shape %s mixes list and number rows", gs);
+            return make_null();
+        }
         if (pn != gn) {
             rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
             return make_null();
