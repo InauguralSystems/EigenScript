@@ -21,7 +21,7 @@ else
                 out=$(env $strict_env $tier_env ../build/$variant/test_generic_ops 2>&1); rc=$?
                 expected="PASS: generic operator exports strict=$strict examined="
                 case "$strict" in unset) expected="PASS: generic operator exports strict=unset examined=" ;; esac
-                if [ "$rc" -eq 0 ] && printf '%s\n' "$out" | grep -q "^$expected"; then
+                if [ "$rc" -eq 0 ] && grep -q "^$expected" <<< "$out"; then
                     PASS=$((PASS + 1)); echo "  PASS: strict=$strict tier=$tier ${out#PASS: }"
                 else
                     FAIL=$((FAIL + 1)); echo "  FAIL: strict=$strict tier=$tier generic operator differential (rc=$rc)"; printf '    %s\n' "$out"
