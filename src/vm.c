@@ -1038,17 +1038,47 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
     return 0;
 }
 
+EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
+
+/* The comparison opcodes' slow path, out of line (#2512 round 5). Inline
+ * in GENERIC_CMP these paths made vm_run_ex spill on every opcode (+21
+ * instructions per trip of an empty loop) and put four tests in front of
+ * the float pair. Same answers as the export: an int pair, a string pair,
+ * null equality and the exact mixed-number order are decided here; every
+ * other pair, and every error, goes to eigs_op_binary. cmp 2 = unordered. */
+static __attribute__((noinline)) EigsSlot vm_cmp_rest(EigsOperator op, EigsSlot a, EigsSlot b) {
+    int c;
+    if (slot_is_ptr(a) && slot_is_ptr(b) && slot_as_ptr(a)->type == VAL_STR &&
+        slot_as_ptr(b)->type == VAL_STR) {
+        int r = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
+                       slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
+        c = (r > 0) - (r < 0);
+    } else if (vm_number_compare(a, b, &c)) {
+        /* an int pair, or an int with a float: exact order, 2 = unordered */
+    } else if ((op == EIGS_OP_EQ || op == EIGS_OP_NE) && (slot_is_null(a) || slot_is_null(b))) {
+        int eq = slot_is_null(a) && slot_is_null(b);
+        return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
+    } else return eigs_op_binary(op, a, b);
+    if (op == EIGS_OP_EQ) return slot_from_bool(c == 0);
+    if (op == EIGS_OP_NE) return slot_from_bool(c != 0);
+    if (op == EIGS_OP_LT) return slot_from_bool(c == -1);
+    if (op == EIGS_OP_GT) return slot_from_bool(c == 1);
+    if (op == EIGS_OP_LE) return slot_from_bool(c == -1 || c == 0);
+    return slot_from_bool(c == 0 || c == 1);   /* EIGS_OP_GE: the only caller is GENERIC_CMP */
+}
+
 static const char *slot_type_name(EigsSlot s);
 static int op_line(void) { return eigs_current ? vm_current_line() : 0; }
 
 EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
-    int line = op_line();
+    /* The line is looked up only on a raise: computing it on every call
+     * cost string + about 30 instructions a trip (#2512 round 5). */
     int64_t ai = 0, bi = 0, ir;
     double ad = 0.0, bd = 0.0, r;
     int ia, ib, na, nb;
     const char *name = "?";
     if (op < EIGS_OP_ADD || op > EIGS_OP_SHR) {
-        rt_error(EK_VALUE, line, "eigs_op_binary: invalid binary operator %d", (int)op);
+        rt_error(EK_VALUE, op_line(), "eigs_op_binary: invalid binary operator %d", (int)op);
         return slot_null();
     }
     /* &, |, ^, << and >> accept exact integer representations (phase2 N8). */
@@ -1064,12 +1094,12 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         }
         name = names[op - EIGS_OP_BAND];
         if (ak < 0 || bk < 0)
-            rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name,
+            rt_error(EK_TYPE, op_line(), "cannot apply '%s' to %s and %s", name,
                      slot_type_name(a), slot_type_name(b));
         else {
             double bad = 0.0;
             slot_f64_value(ak == 0 ? a : b, &bad);
-            rt_error(EK_VALUE, line, EIGS_NO_INT_REP_FMT, name, bad);
+            rt_error(EK_VALUE, op_line(), EIGS_NO_INT_REP_FMT, name, bad);
         }
         return slot_null();
     }
@@ -1102,11 +1132,13 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     if (op == EIGS_OP_ADD && slot_is_ptr(a) && slot_is_ptr(b) &&
         slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
         Value *av = slot_as_ptr(a), *bv = slot_as_ptr(b);
-        int la = val_str_len(av), lb = val_str_len(bv);
-        if (!sandbox_charge((size_t)la + lb + 1)) return slot_from_value(make_null());
-        char *s = xmalloc((size_t)la + lb + 1);
+        /* size_t, not int: an int length truncates past INT_MAX and memcpy
+         * then copies a wrong length (main's ADD had the int form). */
+        size_t la = val_str_len(av), lb = val_str_len(bv);
+        if (!sandbox_charge(la + lb + 1)) return slot_from_value(make_null());
+        char *s = xmalloc(la + lb + 1);
         memcpy(s, av->data.str, la); memcpy(s + la, bv->data.str, lb); s[la + lb] = 0;
-        return slot_from_value(make_str_owned_len(s, (size_t)la + lb));
+        return slot_from_value(make_str_owned_len(s, la + lb));
     }
     ia = slot_int_value(a, &ai); ib = slot_int_value(b, &bi);
     na = ia || slot_f64_value(a, &ad); nb = ib || slot_f64_value(b, &bd);
@@ -1142,7 +1174,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
             ok = 1;
         }
         if (!ok) {
-            rt_error(EK_TYPE, line, "cannot compare %s and %s with '%s'",
+            rt_error(EK_TYPE, op_line(), "cannot compare %s and %s with '%s'",
                      slot_type_name(a), slot_type_name(b), names[op - EIGS_OP_LT]);
             return slot_false();
         }
@@ -1159,11 +1191,11 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         name = names[op];
         if (op == EIGS_OP_ADD && ((slot_is_ptr(a) && slot_as_ptr(a)->type == VAL_STR) !=
                                   (slot_is_ptr(b) && slot_as_ptr(b)->type == VAL_STR)))
-            rt_error(EK_TYPE, line, "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)", slot_type_name(a), slot_type_name(b));
+            rt_error(EK_TYPE, op_line(), "cannot apply '+' to %s and %s (use an f-string or 'str of' to concatenate)", slot_type_name(a), slot_type_name(b));
         else if (op == EIGS_OP_ADD && ((slot_is_ptr(a) && slot_as_ptr(a)->type == VAL_LIST) ||
                                        (slot_is_ptr(b) && slot_as_ptr(b)->type == VAL_LIST)))
-            rt_error(EK_TYPE, line, "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)", slot_type_name(a), slot_type_name(b));
-        else rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name, slot_type_name(a), slot_type_name(b));
+            rt_error(EK_TYPE, op_line(), "cannot apply '+' to %s and %s (use 'append of [xs, v]' to add an element, or 'concat of [a, b]' to join two lists)", slot_type_name(a), slot_type_name(b));
+        else rt_error(EK_TYPE, op_line(), "cannot apply '%s' to %s and %s", name, slot_type_name(a), slot_type_name(b));
         if (op == EIGS_OP_ADD) return slot_null();
         if (op == EIGS_OP_IDIV) return slot_from_int(0);
         return slot_from_f64(0.0);
@@ -1171,7 +1203,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     /* Integer +, - and * preserve int64 and raise on phase2 int64 overflow. */
     if ((op == EIGS_OP_ADD || op == EIGS_OP_SUB || op == EIGS_OP_MUL) && ia && ib) {
         char ch = op == EIGS_OP_ADD ? '+' : op == EIGS_OP_SUB ? '-' : '*';
-        return vm_int_arith(ai, bi, ch, line);
+        return vm_int_arith(ai, bi, ch, op_line());
     }
     /* / always promotes to float and uses the phase2 IEEE result writer. */
     if (op == EIGS_OP_DIV) {
@@ -1181,8 +1213,8 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     }
     /* Integer // implements phase2 floor division with int64 overflow checking. */
     if (op == EIGS_OP_IDIV && ia && ib) {
-        if (bi == 0) { rt_error(EK_VALUE, line, "division by zero"); return slot_from_int(0); }
-        if (ai == INT64_MIN && bi == -1) { rt_error(EK_VALUE, line, "integer overflow in '//'"); return slot_from_int(0); }
+        if (bi == 0) { rt_error(EK_VALUE, op_line(), "division by zero"); return slot_from_int(0); }
+        if (ai == INT64_MIN && bi == -1) { rt_error(EK_VALUE, op_line(), "integer overflow in '//'"); return slot_from_int(0); }
         ir = ai / bi; int64_t rem = ai % bi;
         if (rem != 0 && ((rem < 0) != (bi < 0))) ir--;
         return slot_from_int(ir);
@@ -1199,7 +1231,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     }
     /* Integer % follows the divisor sign, paired with phase2 floor //. */
     if (op == EIGS_OP_MOD && ia && ib) {
-        if (bi == 0) { rt_error(EK_VALUE, line, "modulo by zero"); return slot_from_int(0); }
+        if (bi == 0) { rt_error(EK_VALUE, op_line(), "modulo by zero"); return slot_from_int(0); }
         ir = bi == -1 ? 0 : ai % bi;
         if (ir != 0 && ((ir < 0) != (bi < 0))) ir += bi;
         return slot_from_int(ir);
@@ -4038,44 +4070,40 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
  * The double test is false for an int, so a mixed or boxed-int pair, a string
  * pair and every error go to the export. Equality was 10-12% slower with the
  * generic int test (which also reads a heap box) plus two releases here. */
-#define GENERIC_CMP(NAME, PUBLIC_OP, TEST, RAW_BITS) \
+#define GENERIC_CMP(NAME, PUBLIC_OP, TEST, RAW_BITS, ORDERED) \
     CASE(NAME): { EigsSlot _b = g_vm.stack[g_vm.sp - 1], _a = g_vm.stack[g_vm.sp - 2]; \
         if (slot_is_smi(_a) && slot_is_smi(_b)) { \
             g_vm.stack[g_vm.sp - 2] = slot_from_bool((RAW_BITS) ? (_a.u TEST _b.u) : \
                                                      (slot_smi_val(_a) TEST slot_smi_val(_b))); \
             g_vm.sp--; DISPATCH(); } \
-        int64_t _ai, _bi; \
-        if (slot_int_value(_a, &_ai) && slot_int_value(_b, &_bi)) { \
-            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ai TEST _bi); \
-            g_vm.sp--; DISPATCH(); } \
-        if (slot_is_ptr(_a) && slot_is_ptr(_b) && slot_as_ptr(_a)->type == VAL_STR && slot_as_ptr(_b)->type == VAL_STR) { \
-            int _c = strcmp(slot_as_ptr(_a)->data.str, slot_as_ptr(_b)->data.str); \
-            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_c TEST 0); \
-            g_vm.sp--; DISPATCH(); } \
-        if (((PUBLIC_OP) == EIGS_OP_EQ || (PUBLIC_OP) == EIGS_OP_NE) && \
-            (slot_is_null(_a) || slot_is_null(_b))) { \
-            int _eq = slot_is_null(_a) && slot_is_null(_b); \
-            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool((PUBLIC_OP) == EIGS_OP_EQ ? _eq : !_eq); \
-            g_vm.sp--; DISPATCH(); } \
-        int _cmp; \
-        if (vm_number_compare(_a, _b, &_cmp)) { \
-            int _yes = _cmp == 2 ? ((PUBLIC_OP) == EIGS_OP_NE) : (_cmp TEST 0); \
-            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_yes); \
-            g_vm.sp--; DISPATCH(); } \
         double _ad, _bd; \
         if (__builtin_expect(slot_f64_value(_a, &_ad) & slot_f64_value(_b, &_bd), 1)) { \
             slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ad TEST _bd); \
             g_vm.sp--; DISPATCH(); } \
-        EigsSlot _r = eigs_op_binary((PUBLIC_OP), _a, _b); slot_decref(_a); slot_decref(_b); \
+        if (ORDERED) { /* main's NUM_CMP order: strings, then exact mixed numbers, inline */ \
+            if (slot_is_ptr(_a) && slot_is_ptr(_b) && slot_as_ptr(_a)->type == VAL_STR && \
+                slot_as_ptr(_b)->type == VAL_STR) { \
+                int _c = strcmp(slot_as_ptr(_a)->data.str ? slot_as_ptr(_a)->data.str : "", \
+                                slot_as_ptr(_b)->data.str ? slot_as_ptr(_b)->data.str : ""); \
+                slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_c TEST 0); \
+                g_vm.sp--; DISPATCH(); } \
+            int _cmp; \
+            if (vm_number_compare(_a, _b, &_cmp)) { \
+                int _yes = _cmp != 2 && (_cmp TEST 0); \
+                slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_yes); \
+                g_vm.sp--; DISPATCH(); } \
+        } \
+        EigsSlot _r = (ORDERED) ? eigs_op_binary((PUBLIC_OP), _a, _b) : vm_cmp_rest((PUBLIC_OP), _a, _b); \
+        slot_decref(_a); slot_decref(_b); \
         g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
 /* An SMI's encoding is canonical, so == and != compare the raw bits (as on
  * main, RAW_BITS 1); an ordering needs the sign-extended value. */
-    GENERIC_CMP(EQ, EIGS_OP_EQ, ==, 1)
-    GENERIC_CMP(NE, EIGS_OP_NE, !=, 1)
-    GENERIC_CMP(LT, EIGS_OP_LT, <, 0)
-    GENERIC_CMP(GT, EIGS_OP_GT, >, 0)
-    GENERIC_CMP(LE, EIGS_OP_LE, <=, 0)
-    GENERIC_CMP(GE, EIGS_OP_GE, >=, 0)
+    GENERIC_CMP(EQ, EIGS_OP_EQ, ==, 1, 0)
+    GENERIC_CMP(NE, EIGS_OP_NE, !=, 1, 0)
+    GENERIC_CMP(LT, EIGS_OP_LT, <, 0, 1)
+    GENERIC_CMP(GT, EIGS_OP_GT, >, 0, 1)
+    GENERIC_CMP(LE, EIGS_OP_LE, <=, 0, 1)
+    GENERIC_CMP(GE, EIGS_OP_GE, >=, 0, 1)
 
     /* ---- Variables ---- */
 
