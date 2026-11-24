@@ -797,6 +797,7 @@ result).**
 | `vm.c:vm_run_ex/CASE(LOCAL_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_GET)` | guarded | exact null test of a field (D3) |
 | `vm.c:vm_run_ex/CASE(LOCAL_IDX_DOT_SET)` | guarded | an int value: `vm_slot_lift` boxes it (D1) |
+| `vm.c:vm_run_ex/CASE(NEG)` | smi-arm | a float or an int other than INT64_MIN is negated inline; INT64_MIN and non-numbers go to `eigs_op_unary`, where INT64_MIN raises value (R1.3) (D1) |
 | `vm.c:vm_run_ex/CASE(SLICE_GET)` | guarded | as DESTRUCTURE_UNPACK (D2) |
 | `vm.c:vm_slot_lift` | smi-arm | an SMI is boxed through `slot_to_value`; a reserved tag refuses (R1.3) (D1) |
 | `vm.c:vm_slot_value_opaque` | guarded | only a pointer can be a fn or builtin; an SMI answers "not opaque", which is right (D2) |

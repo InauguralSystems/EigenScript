@@ -3957,11 +3957,38 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     /* ---- Unary ---- */
 
-    CASE(NEG): { EigsSlot a = g_vm.stack[g_vm.sp - 1];
-        EigsSlot r = eigs_op_unary(EIGS_OP_NEG, a); slot_decref(a); g_vm.stack[g_vm.sp - 1] = r; DISPATCH(); }
+    CASE(NEG): {
+        /* Fast paths as on main: a double, or an int other than INT64_MIN.
+         * Every other operand (INT64_MIN, a non-number) is the export's. */
+        EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        double d;
+        if (__builtin_expect(slot_f64_value(s, &d), 1)) {
+            d = eigs_math_result(-d);
+            if (slot_is_ptr(s)) {
+                Value *v = slot_as_ptr(s);
+                if (NUM_REUSE(v)) { VAL_F64_RAW(v) = d; DISPATCH(); }
+            }
+            slot_decref(s);
+            g_vm.stack[g_vm.sp - 1] = slot_from_f64(d);
+            DISPATCH();
+        }
+        int64_t i;
+        if (slot_int_value(s, &i) && i != INT64_MIN) {
+            slot_decref(s);
+            g_vm.stack[g_vm.sp - 1] = slot_from_int(-i);
+            DISPATCH();
+        }
+        EigsSlot r = eigs_op_unary(EIGS_OP_NEG, s); slot_decref(s); g_vm.stack[g_vm.sp - 1] = r; DISPATCH();
+    }
 
-    CASE(NOT): { EigsSlot a = g_vm.stack[g_vm.sp - 1];
-        EigsSlot r = eigs_op_unary(EIGS_OP_NOT, a); slot_decref(a); g_vm.stack[g_vm.sp - 1] = r; DISPATCH(); }
+    CASE(NOT): {
+        /* As on main: truthiness inline; it has no slow path. */
+        EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        int t = slot_truthy(s);
+        slot_decref(s);
+        g_vm.stack[g_vm.sp - 1] = slot_from_bool(!t);   /* #1637 */
+        DISPATCH();
+    }
 
     CASE(BNOT): {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
