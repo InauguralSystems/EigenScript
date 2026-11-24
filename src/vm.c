@@ -1058,6 +1058,14 @@ static __attribute__((noinline)) EigsSlot vm_cmp_rest(EigsOperator op, EigsSlot 
     } else if ((op == EIGS_OP_EQ || op == EIGS_OP_NE) && (slot_is_null(a) || slot_is_null(b))) {
         int eq = slot_is_null(a) && slot_is_null(b);
         return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
+    } else if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
+        /* Keep main's direct equality route.  Sending bools and containers
+         * through the public operator's classification first is measurable
+         * overhead on every opcode despite producing the same answer. */
+        Value *av = slot_to_value(a), *bv = slot_to_value(b);
+        int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
+        val_decref(av); val_decref(bv);
+        return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
     } else return eigs_op_binary(op, a, b);
     if (op == EIGS_OP_EQ) return slot_from_bool(c == 0);
     if (op == EIGS_OP_NE) return slot_from_bool(c != 0);

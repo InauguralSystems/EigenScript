@@ -34,9 +34,9 @@ else
                 osr) tier_env="EIGS_JIT_HOT=1 EIGS_JIT_OSR_THRESHOLD=1" ;;
             esac
             TOTAL=$((TOTAL + 1))
-            out=$(env $tier_env python3 ../tests/generic_ops_expected.py --program-check "$EIGS" 2>&1); rc=$?
-            if rc_ok "$rc" "$out" && grep -q '^PASS: generic operator program oracle rows=' <<< "$out"; then
-                PASS=$((PASS + 1)); echo "  PASS: program tier=$tier ${out#PASS: }"
+            out=$(env $tier_env python3 ../tests/generic_ops_gen.py --check "$EIGS" 2>&1); rc=$?
+            if rc_ok "$rc" "$out" && [ "$(grep -c '^PASS: generic operator cross-product' <<< "$out")" -eq 9 ]; then
+                PASS=$((PASS + 1)); echo "  PASS: program tier=$tier $(printf '%s\n' "$out" | tail -1)"
             else
                 FAIL=$((FAIL + 1)); echo "  FAIL: tier=$tier generic operator program oracle (rc=$rc)"; printf '    %s\n' "$out"
             fi
