@@ -1434,9 +1434,9 @@ builtins_tensor.c:2616 builtin_numerical_grad_cols list_set_f64 PRODUCE c
 builtins_tensor.c:2650 builtin_sgd_update_cols eigs_slot_opt_float READ b
 builtins_tensor.c:2861 tensor_load_record_verdict make_int PRODUCE c
 builtins_tensor.c:2862 tensor_load_record_verdict make_int PRODUCE c
-builtins_tensor.c:2881 builtin_tensor_load VAL_INT TEST a
-builtins_tensor.c:2882 builtin_tensor_load VAL_INT TEST a
-builtins_tensor.c:2959 builtin_tensor_load eigs_math_result_named GUARD c
+builtins_tensor.c:2886 builtin_tensor_load VAL_INT TEST a
+builtins_tensor.c:2887 builtin_tensor_load VAL_INT TEST a
+builtins_tensor.c:2963 builtin_tensor_load eigs_math_result_named GUARD c
 chunk.c:196 const_hash_value VAL_FLOAT TEST f
 chunk.c:197 const_hash_value VAL_F64_RAW RAW f
 chunk.c:205 const_hash_value VAL_INT TEST f
