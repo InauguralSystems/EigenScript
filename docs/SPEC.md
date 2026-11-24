@@ -2912,10 +2912,7 @@ element `i`, a number. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 `tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
-`tensor_load` raises the same kind of named `io` error when its path cannot be
-opened. The `sgd_update` family does not mix representations: its parameter
-and gradient tensors must both be lists or both be buffers; a mismatch raises
-`type_mismatch` before any update.
+`tensor_load` raises catchable `io` naming the path and defect for missing, directory, short-header, and short-payload inputs; malformed dimensions raise `value`, while an over-cap header or failed payload allocation raises `limit` naming the path and size. `sgd_update` validates the complete shape before mutation: every list row's kind and length must match (ragged matching rows are allowed), and buffer mismatches report each 1-D count or 2-D rows x columns. Mixed representations or row kinds raise `type_mismatch`; different extents raise `value`.
 
 `read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
 model: a missing or unreadable path, or a directory in place of a file, raises

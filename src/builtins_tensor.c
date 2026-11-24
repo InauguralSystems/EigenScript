@@ -2247,6 +2247,8 @@ Value* builtin_sgd_update(Value *arg) {
             return make_null();
         }
         int mismatch = pn != gn;
+        int mismatch_row = -1, mismatch_p_count = -1, mismatch_g_count = -1;
+        int mismatch_kind = 0;
         if (!p_nested) {
             snprintf(ps, sizeof ps, "[%d]", pn); snprintf(gs, sizeof gs, "[%d]", gn);
         } else {
@@ -2256,21 +2258,45 @@ Value* builtin_sgd_update(Value *arg) {
             for (int r = 0; r < pn && r < gn; r++) {
                 Value *row = list_get_ref(param, r);
                 Value *grow = list_get_ref(grad, r);
-                /* Preserve the established treatment of null/non-list later
-                 * rows: the update loop skips them.  Actual row pairs are
-                 * compared to each other, not to row zero. */
-                if (row && row->type == VAL_LIST && grow && grow->type == VAL_LIST &&
-                    row->data.list.count != grow->data.list.count) mismatch = 1;
+                int row_list = row && row->type == VAL_LIST;
+                int grow_list = grow && grow->type == VAL_LIST;
+                if (row_list != grow_list) {
+                    mismatch = mismatch_kind = 1; mismatch_row = r; break;
+                }
+                if (row_list && row->data.list.count != grow->data.list.count) {
+                    mismatch = 1; mismatch_row = r;
+                    mismatch_p_count = row->data.list.count;
+                    mismatch_g_count = grow->data.list.count;
+                    break;
+                }
             }
         }
         if (mismatch) {
+            if (mismatch_row >= 0 && mismatch_kind) {
+                Value *pr = list_get_ref(param, mismatch_row);
+                Value *gr = list_get_ref(grad, mismatch_row);
+                rt_error(EK_TYPE, 0, "sgd_update: params and grad shapes differ at row %d: %s against %s",
+                         mismatch_row, pr && pr->type == VAL_LIST ? "list" : "number",
+                         gr && gr->type == VAL_LIST ? "list" : "number");
+                return make_null();
+            }
+            if (mismatch_row >= 0) {
+                rt_error(EK_VALUE, 0, "sgd_update: params and grad shapes differ at row %d: %d against %d",
+                         mismatch_row, mismatch_p_count, mismatch_g_count);
+                return make_null();
+            }
             rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
             return make_null();
         }
     } else if (param->data.buffer.count != grad->data.buffer.count) {
-        rt_error(EK_VALUE, 0, "sgd_update: params shape [%d,%d] does not match grad shape [%d,%d]",
-                 param->data.buffer.rows, param->data.buffer.cols,
-                 grad->data.buffer.rows, grad->data.buffer.cols);
+        char ps[64], gs[64];
+        if (param->data.buffer.rows > 0)
+            snprintf(ps, sizeof ps, "%d x %d", param->data.buffer.rows, param->data.buffer.cols);
+        else snprintf(ps, sizeof ps, "count %d", param->data.buffer.count);
+        if (grad->data.buffer.rows > 0)
+            snprintf(gs, sizeof gs, "%d x %d", grad->data.buffer.rows, grad->data.buffer.cols);
+        else snprintf(gs, sizeof gs, "count %d", grad->data.buffer.count);
+        rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
         return make_null();
     }
     /* #1637: the optional lr: null keeps the default, a number sets it,
@@ -3011,9 +3037,14 @@ Value* builtin_tensor_load(Value *arg) {
     int total = (int)total64;
 
     /* Read numeric data */
-    double *data = xmalloc_array((size_t)total, sizeof(double));
+    /* The header is untrusted.  Unlike xmalloc_array, malloc lets this
+     * boundary turn address-space exhaustion into the documented error. */
+    double *data = malloc((size_t)total * sizeof(double));
     if (!data) {
-        fclose(f); return file_recorded_error(EK_LIMIT, "tensor_load", arg->data.str, "payload allocation failed");
+        char detail[96];
+        snprintf(detail, sizeof detail, "payload allocation of %zu bytes failed",
+                 (size_t)total * sizeof(double));
+        fclose(f); return file_recorded_error(EK_LIMIT, "tensor_load", arg->data.str, detail);
     }
     if ((int)fread(data, sizeof(double), total, f) != total) {
         free(data); fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short tensor payload");

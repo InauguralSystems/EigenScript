@@ -1881,8 +1881,9 @@ Value* builtin_audio_stream_close(Value *arg) {
 
 /* audio_music_play of [path, loops] — stream a music file (mp3/ogg/wav) via
  * SDL_mixer. loops: -1 = loop forever, 0 = play once, N = N+1 plays. Replaces
- * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
- * unreadable/undecodable file, no audio device). */
+ * any current track. A missing/unreadable/directory path raises io before
+ * SDL setup; a readable but undecodable file raises io after setup. Returns
+ * false when SDL/mixer/device setup or playback itself fails. */
 Value* builtin_audio_music_play(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_music_play");
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */

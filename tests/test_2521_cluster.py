@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Regression rows for #2518/#2521/#2522/#2523; every row is its own program."""
-import os, pathlib, struct, subprocess, sys, tempfile
+import os, pathlib, resource, struct, subprocess, sys, tempfile
 EIGS = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else os.environ.get("EIGS","src/eigenscript")).resolve()
+CLASSIFIER = pathlib.Path(__file__).with_name("lsan_classify.sh")
+def hard_diagnostic(output):
+ return subprocess.run(["sh","-c",'. "$1"; lsan_classify "$(cat)"; [ "$?" -eq 1 ]',"classify",str(CLASSIFIER)],input=output).returncode==0
 def caught(expr): return f"try:\n    {expr}\ncatch e:\n    print of [e.kind, e.message]\n"
 with tempfile.TemporaryDirectory() as tmp:
  root=pathlib.Path(tmp); failures=0; serial=0
@@ -10,17 +13,20 @@ with tempfile.TemporaryDirectory() as tmp:
   serial+=1; program=root/f"{serial:02d}-{name}.eigs"; program.write_text(source)
   env=os.environ.copy(); env.pop("EIGS_TRACE",None); env.pop("EIGS_REPLAY",None)
   if env_extra: env.update(env_extra)
-  return subprocess.run([str(EIGS),str(program)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  q=subprocess.run([str(EIGS),str(program)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  if hard_diagnostic(q.stdout+q.stderr): q.returncode=125
+  return q
  def check(name,condition,detail=""):
   global failures
   if condition: print(f"PASS: {name}")
   else: failures+=1; print(f"FAIL: {name}: {detail}")
+ def clean(q): return not hard_diagnostic(q.stdout+q.stderr)
  def strict_error(name,expression,kind,message_part=None):
   good=True; details=[]
   for strict in (None,"0","1"):
    q=execute(f"{name}-{strict or 'unset'}",caught(expression),{} if strict is None else {"EIGS_STRICT":strict})
    output=q.stdout.decode(errors="replace")
-   if q.returncode or f'["{kind}"' not in output or (message_part and message_part not in output):
+   if q.returncode or not clean(q) or f'["{kind}"' not in output or (message_part and message_part not in output):
     good=False; details.append(f"strict={strict!r} rc={q.returncode} stdout={output!r} stderr={q.stderr!r}")
   check(name,good,"; ".join(details))
  fixtures={
@@ -37,6 +43,11 @@ with tempfile.TemporaryDirectory() as tmp:
    f'["{kind}"' in recorded.stdout.decode(errors="replace") and tape_text.count("tensor_load=")==1,
    f"record={recorded.returncode,recorded.stdout,recorded.stderr} replay={replayed.returncode,replayed.stdout,replayed.stderr} tape={tape_text!r}")
  strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",str(root))
+ alloc=root/"allocation.tensor"; alloc.write_bytes(struct.pack("IIII",2,1,10000000,0))
+ def memory_cap(): resource.setrlimit(resource.RLIMIT_AS,(70000000,70000000))
+ alloc_program=root/"allocation.eigs"; alloc_program.write_text(caught(f'tensor_load of "{alloc}"'))
+ alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,preexec_fn=memory_cap)
+ check("tensor_load payload allocation raises limit naming path and size",alloc_q.returncode==0 and clean(alloc_q) and b'["limit"' in alloc_q.stdout and str(alloc).encode() in alloc_q.stdout and b"80000000" in alloc_q.stdout,repr((alloc_q.returncode,alloc_q.stdout,alloc_q.stderr)))
  listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
  ls_source=f'print of ls of "{listing}"\n'; ls_tape=root/"ls.tape"
  ls_record=execute("ls-two-trace",ls_source,{"EIGS_TRACE":str(ls_tape)})
@@ -47,12 +58,17 @@ with tempfile.TemporaryDirectory() as tmp:
  shapes=[("nested_flat","[[1.0,2.0]]","[1.0,2.0]","type_mismatch"),("flat_nested","[1.0,2.0]","[[1.0,2.0]]","type_mismatch"),
   ("flat_lengths","[1.0,2.0]","[1.0]","value"),("row_counts","[[1.0],[2.0]]","[[1.0]]","value"),("row_lengths","[[1.0,2.0]]","[[1.0]]","value")]
  for name,params,grad,kind in shapes: strict_error("sgd_update "+name,f"sgd_update of [{params}, {grad}, 0.5]",kind)
+ strict_error("sgd_update later grad scalar","sgd_update of [[[1.0,2.0],[3.0,4.0]], [[1.0,2.0],5.0], 0.5]","type_mismatch","row 1: list against number")
+ strict_error("sgd_update later params scalar","sgd_update of [[[1.0,2.0],3.0], [[1.0,2.0],[3.0,4.0]], 0.5]","type_mismatch","row 1: number against list")
+ strict_error("sgd_update ragged message","sgd_update of [[[1.0,2.0],[3.0]], [[1.0,2.0],[3.0,4.0]], 0.5]","value","sgd_update: params and grad shapes differ at row 1: 1 against 2")
  strict_error("sgd_update buffer shapes", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value")
+ strict_error("sgd_update buffer shape message", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value", "params shape 2 x 2 does not match grad shape count 3")
  ragged=execute("sgd-ragged-matching","p is [[1.0, 2.0], [3.0]]\nsgd_update of [p, [[0.1, 0.2], [0.3]], 0.5]\nprint of p\n")
  check("sgd_update matching ragged shapes update row by row",ragged.returncode==0 and b"[[0.95, 1.9], [2.85]]" in ragged.stdout,f"rc={ragged.returncode} stdout={ragged.stdout!r} stderr={ragged.stderr!r}")
  sandbox=execute("sandbox-value",'r is sandbox_run of [1, "code", []]\nprint of r.error.kind\n')
  check("sandbox_run descriptor validation kind is value",sandbox.returncode==0 and b"value" in sandbox.stdout,f"rc={sandbox.returncode} stdout={sandbox.stdout!r} stderr={sandbox.stderr!r}")
  api=subprocess.run([str(EIGS),"--api"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ check("api probe has no sanitizer diagnostic",clean(api),repr((api.returncode,api.stdout,api.stderr)))
  if b"audio_music_play" in api.stdout:
   undecodable=root/"undecodable.mp3"; undecodable.write_text("not an audio stream\n")
   # The undecodable row needs a working mixer and device. Probe that with a
@@ -64,11 +80,11 @@ with tempfile.TemporaryDirectory() as tmp:
   mixer_ok=probe.stdout.decode(errors="replace").strip()=="true"
   for name,path in [("missing",root/"missing.mp3"),("directory",root),("undecodable",undecodable)]:
    source=f'try:\n    print of audio_music_play of ["{path}", 0]\ncatch e:\n    print of [e.kind, e.message]\n'
-   q=execute("music-"+name,source,{"SDL_AUDIODRIVER":"dummy"}); out=q.stdout.decode(errors="replace")
+   q=execute("music-"+name,source,{"SDL_AUDIODRIVER":"bogusdrv" if name != "undecodable" else "dummy"}); out=q.stdout.decode(errors="replace")
    if name=="undecodable" and not mixer_ok:
     print(f"SKIP: audio_music_play undecodable (a valid WAV did not play here, so no mixer or device: probe stdout={probe.stdout!r} stderr={probe.stderr!r})")
    else:
-    check("audio_music_play "+name+" raises named io without stderr diagnostic",q.returncode==0 and '["io"' in out and str(path) in out and b"audio_music:" not in q.stderr,f"rc={q.returncode} stdout={q.stdout!r} stderr={q.stderr!r}")
+    check("audio_music_play "+name+" raises named io without stderr diagnostic",q.returncode==0 and clean(q) and '["io"' in out and str(path) in out and b"audio_music:" not in q.stderr,f"rc={q.returncode} stdout={q.stdout!r} stderr={q.stderr!r}")
   refusal_tape=root/"audio-refusal.tape"
   execute("audio-refusal-tape",'print of null\n',{"EIGS_TRACE":str(refusal_tape)})
   refusal=[]
@@ -80,5 +96,5 @@ with tempfile.TemporaryDirectory() as tmp:
    all(q.returncode==0 and q.stdout==refusal[0].stdout and q.stderr==refusal[0].stderr for q in refusal) and
    b'not replayable under EIGS_REPLAY' in refusal[0].stdout,
    repr([(q.returncode,q.stdout,q.stderr) for q in refusal]))
- else: print("PASS: audio_music_play rows skipped (non-gfx binary)")
+ else: print("SKIP: audio_music_play rows skipped (non-gfx binary)")
  sys.exit(1 if failures else 0)
