@@ -2309,7 +2309,7 @@ Value* builtin_sgd_update(Value *arg) {
                              ps, gs, r, sgd_row_kind(row_type), sgd_row_kind(grow_type));
                     return make_null();
                 }
-                if (row_list && row->data.list.count != grow->data.list.count) {
+                if (row_list && row && grow && row->data.list.count != grow->data.list.count) {
                     rt_error(EK_VALUE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %d against %d",
                              ps, gs, r, row->data.list.count, grow->data.list.count);
                     return make_null();
