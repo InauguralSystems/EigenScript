@@ -2220,6 +2220,10 @@ Value* builtin_sgd_update(Value *arg) {
     Value *param = list_get_view(arg, 0, &param_view);
     EIGS_VIEW(grad_view);
     Value *grad = list_get_view(arg, 1, &grad_view);
+    ARG_GUARD(!param || (param->type != VAL_LIST && param->type != VAL_BUFFER) ||
+              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
+              param->type != grad->type,
+              "sgd_update", "params and grad of the same kind (a list or a buffer)", make_null());
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2432,6 +2436,10 @@ Value* builtin_sgd_update_rows(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_rows", "parameter and gradient matrices with list rows", make_null());
+    ARG_GUARD(matrix->type != grad->type ||
+              (matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0) ||
+              !flat_is_vector(row_indices),
+              "sgd_update_rows", "params and grad of the same kind (a list of rows or a 2-D buffer), and a vector of row indices", make_null());
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
      * list or a buffer — update the named rows' doubles in place. */
@@ -2454,7 +2462,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
         free(row_snapshot);
         return list_get_return(arg, 0);
     }
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(row_indices))
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST)
         return list_get_return(arg, 0);
 
     int row_limit = matrix->data.list.count < grad->data.list.count
@@ -2645,6 +2653,10 @@ Value* builtin_sgd_update_cols(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_cols", "parameter and gradient matrices with list rows", make_null());
+    ARG_GUARD(matrix->type != grad->type ||
+              (matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0) ||
+              !flat_is_vector(col_indices),
+              "sgd_update_cols", "params and grad of the same kind (a list of rows or a 2-D buffer), and a vector of column indices", make_null());
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
@@ -2666,7 +2678,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
         free(col_snapshot);
         return list_get_return(arg, 0);
     }
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(col_indices))
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST)
         return list_get_return(arg, 0);
 
     int rows = matrix->data.list.count < grad->data.list.count
@@ -2878,7 +2890,11 @@ Value* builtin_tensor_load(Value *arg) {
     }
 
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) { tensor_load_record_verdict(0, 0); return make_null(); }
+    if (!f) {
+        int err = errno;
+        tensor_load_record_verdict(0, 0);
+        return file_io_error("tensor_load", arg->data.str, err);
+    }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];

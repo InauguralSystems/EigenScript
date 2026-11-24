@@ -25,10 +25,14 @@ if EIGS_REPLAY="$T/write.tape" "$EIGS" "$T/write.eigs" >/dev/null 2>"$T/e"; then
 [ "$(cat "$T/victim")" = original ] || fail "marker fell through to live write"
 ok "unservable filesystem records cannot mutate live files"
 
-echo 'tensor_load of "missing"' >"$T/tensor.eigs"
+cat >"$T/tensor-save.eigs" <<EOF
+tensor_save of [[[1.0]], "$T/tensor.bin"]
+EOF
+"$EIGS" "$T/tensor-save.eigs" >/dev/null
+echo "tensor_load of \"$T/tensor.bin\"" >"$T/tensor.eigs"
 for bad in '[]' '[1]' '["x", 2]'; do
   EIGS_TRACE="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null
-  sed "s/tensor_load=null/tensor_load=$bad/" "$T/tensor.tape" > "$T/tensor.edited"
+  sed "s/tensor_load=.*/tensor_load=$bad/" "$T/tensor.tape" > "$T/tensor.edited"
   mv "$T/tensor.edited" "$T/tensor.tape"
   if EIGS_REPLAY="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null 2>"$T/e"; then fail "tensor verdict $bad succeeded"; fi
   grep -F 'tensor_load: malformed replay verdict' "$T/e" >/dev/null || fail "tensor verdict $bad lacked diagnostic"

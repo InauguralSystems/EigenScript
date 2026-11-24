@@ -2349,17 +2349,17 @@
     "category": "output_only",
     "minimum": null,
     "maximum": null,
-    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. R1.6z reviewed repin: only the retired constructor spelling in a comment changes (make_num to make_float); executable C and the whole-argument helper closure are unchanged.",
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. #2514 reviewed repin: a failed fopen now raises io through file_io_error; argument validation and shape are unchanged.",
     "public_names": [
       "tensor_load"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "998726436ed5365feca6f92ca78aaa423a9c9078cf4023f92dd545f6e55b7adf"
+      "db35896492f11d9f7c569e7dd9a5222ec4cd3b460734fc601b05dda5704fbcc2"
     ],
     "source_sha256": {
       "builtin_tensor_load": [
-        "998726436ed5365feca6f92ca78aaa423a9c9078cf4023f92dd545f6e55b7adf"
+        "db35896492f11d9f7c569e7dd9a5222ec4cd3b460734fc601b05dda5704fbcc2"
       ]
     }
   },
