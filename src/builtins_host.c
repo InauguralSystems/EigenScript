@@ -821,7 +821,10 @@ int file_io_replay(const char *fn, Value **out) {
         *out = make_null();
         return 1;
     }
-    if (v && v->type == VAL_LIST && v->data.list.count == 2 &&
+    /* Only tensor_load records this tagged error form.  In particular, an
+     * ls answer containing exactly two strings is an ordinary answer. */
+    if (strcmp(fn, "tensor_load") == 0 && v && v->type == VAL_LIST &&
+        v->data.list.count == 2 &&
         list_elem_type(v, 0) == VAL_STR && list_elem_type(v, 1) == VAL_STR) {
         const char *kind = list_get_ref(v, 0)->data.str;
         ErrKind ek = strcmp(kind, "value") == 0 ? EK_VALUE :

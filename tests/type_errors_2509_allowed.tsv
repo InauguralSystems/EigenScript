@@ -198,7 +198,6 @@ send	pos	1	dict	send of [ch, {"a": 1}]	ANY: `send of [channel, value]`
 send	pos	1	list	send of [ch, []]	ANY: `send of [channel, value]`
 send	pos	1	string	send of [ch, "zz_census_2509"]	ANY: `send of [channel, value]`
 set_exit_code	whole	-	number	set_exit_code of 0	ANY: `set_exit_code of N`
-sgd_update	pos	0	list	sgd_update of [[], [2], 0.5]	ANY: `sgd_update of [params, grad, lr]`
 sha256	whole	-	string	sha256 of "zz_census_2509"	KIND: `sha256 of string`
 shape	whole	-	list	shape of []	ANY: `shape of t`
 shape	whole	-	number	shape of 0	ANY: `shape of t`

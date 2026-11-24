@@ -1,1 +1,1 @@
-- Programs must catch newly reported `tensor_load`, shape-mismatched `sgd_update`, and invalid-path/codec `audio_music_play` errors; `sandbox_run` refusal kinds are now fully documented (#2518, #2521, #2522, #2523).
+- Programs must catch newly reported `tensor_load`, shape-mismatched `sgd_update`, and invalid-path/codec `audio_music_play` errors; tensor errors replay without confusing two-entry listings, and `sandbox_run` refusal kinds are fully documented (#2518, #2521, #2522, #2523).

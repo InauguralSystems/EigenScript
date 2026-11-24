@@ -2253,23 +2253,21 @@ Value* builtin_sgd_update(Value *arg) {
             int pc = pn ? list_get_ref(param, 0)->data.list.count : 0;
             int gc = gn ? list_get_ref(grad, 0)->data.list.count : 0;
             snprintf(ps, sizeof ps, "[%d,%d]", pn, pc); snprintf(gs, sizeof gs, "[%d,%d]", gn, gc);
-            for (int r = 0; r < pn; r++) {
+            for (int r = 0; r < pn && r < gn; r++) {
                 Value *row = list_get_ref(param, r);
-                if (!row || row->type != VAL_LIST || row->data.list.count != pc) mismatch = 1;
+                Value *grow = list_get_ref(grad, r);
+                /* Preserve the established treatment of null/non-list later
+                 * rows: the update loop skips them.  Actual row pairs are
+                 * compared to each other, not to row zero. */
+                if (row && row->type == VAL_LIST && grow && grow->type == VAL_LIST &&
+                    row->data.list.count != grow->data.list.count) mismatch = 1;
             }
-            for (int r = 0; r < gn; r++) {
-                Value *row = list_get_ref(grad, r);
-                if (!row || row->type != VAL_LIST || row->data.list.count != gc) mismatch = 1;
-            }
-            if (pc != gc) mismatch = 1;
         }
         if (mismatch) {
             rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
             return make_null();
         }
-    } else if (param->data.buffer.count != grad->data.buffer.count ||
-               param->data.buffer.rows != grad->data.buffer.rows ||
-               param->data.buffer.cols != grad->data.buffer.cols) {
+    } else if (param->data.buffer.count != grad->data.buffer.count) {
         rt_error(EK_VALUE, 0, "sgd_update: params shape [%d,%d] does not match grad shape [%d,%d]",
                  param->data.buffer.rows, param->data.buffer.cols,
                  grad->data.buffer.rows, grad->data.buffer.cols);

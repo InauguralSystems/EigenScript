@@ -1,36 +1,77 @@
 #!/usr/bin/env python3
-import os, struct, subprocess, tempfile, sys
-E=sys.argv[1] if len(sys.argv)>1 else os.environ.get('EIGS','src/eigenscript')
-with tempfile.TemporaryDirectory() as d:
- def run(name, source, want):
-  p=os.path.join(d,name+'.eigs'); open(p,'w').write(source)
-  for strict in (None,'0','1'):
-   env=os.environ.copy()
-   if strict is None: env.pop('EIGS_STRICT',None)
-   else: env['EIGS_STRICT']=strict
-   q=subprocess.run([E,p],text=True,capture_output=True,env=env)
-   if q.returncode or want not in q.stdout:
-    print('FAIL:',name,strict,q.stdout,q.stderr); return False
-  print('PASS:',name); return True
- def caught(expr): return 'try:\n    '+expr+'\ncatch e:\n    print of [e.kind, e.message]\n'
+"""Regression rows for #2518/#2521/#2522/#2523; every row is its own program."""
+import os, pathlib, struct, subprocess, sys, tempfile
+EIGS = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else os.environ.get("EIGS","src/eigenscript")).resolve()
+def caught(expr): return f"try:\n    {expr}\ncatch e:\n    print of [e.kind, e.message]\n"
+with tempfile.TemporaryDirectory() as tmp:
+ root=pathlib.Path(tmp); failures=0; serial=0
+ def execute(name,source,env_extra=None):
+  global serial
+  serial+=1; program=root/f"{serial:02d}-{name}.eigs"; program.write_text(source)
+  env=os.environ.copy(); env.pop("EIGS_TRACE",None); env.pop("EIGS_REPLAY",None)
+  if env_extra: env.update(env_extra)
+  return subprocess.run([str(EIGS),str(program)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ def check(name,condition,detail=""):
+  global failures
+  if condition: print(f"PASS: {name}")
+  else: failures+=1; print(f"FAIL: {name}: {detail}")
+ def strict_error(name,expression,kind,message_part=None):
+  good=True; details=[]
+  for strict in (None,"0","1"):
+   q=execute(f"{name}-{strict or 'unset'}",caught(expression),{} if strict is None else {"EIGS_STRICT":strict})
+   output=q.stdout.decode(errors="replace")
+   if q.returncode or f'["{kind}"' not in output or (message_part and message_part not in output):
+    good=False; details.append(f"strict={strict!r} rc={q.returncode} stdout={output!r} stderr={q.stderr!r}")
+  check(name,good,"; ".join(details))
  fixtures={
-  'short_header':b'x', 'bad_ndim':struct.pack('IIII',3,1,1,0),
-  'zero_rows':struct.pack('IIII',2,0,1,0), 'zero_cols':struct.pack('IIII',2,1,0,0),
-  'short_payload':struct.pack('IIII',2,1,2,0)+struct.pack('d',1.0)}
- ok=True
- for n,b in fixtures.items():
-  path=os.path.join(d,n); open(path,'wb').write(b)
-  kind='io' if n in ('short_header','short_payload') else 'value'
-  ok &= run(n,caught('tensor_load of '+repr(path).replace("'",'"')), '["'+kind+'"')
- ok &= run('directory',caught('tensor_load of '+repr(d).replace("'",'"')), '["io"')
- shapes=[('nested_flat','[[1.0,2.0]]','[1.0,2.0]','type_mismatch'),
-         ('flat_nested','[1.0,2.0]','[[1.0,2.0]]','type_mismatch'),
-         ('flat_lengths','[1.0,2.0]','[1.0]','value'),
-         ('row_counts','[[1.0],[2.0]]','[[1.0]]','value'),
-         ('row_lengths','[[1.0,2.0]]','[[1.0]]','value')]
- for n,p,g,k in shapes:
-  src='p is '+p+'\n'+caught('sgd_update of [p, '+g+', 0.5]')+'print of p\n'
-  ok &= run(n,src,'["'+k+'"')
- ok &= run('sandbox_value','r is sandbox_run of [1, "code", []]\nprint of r.error.kind\n','value')
- ok &= run('music_missing',caught('audio_music_play of ["'+os.path.join(d,'missing')+'", 0]'),'["io"')
- sys.exit(0 if ok else 1)
+  "short_header":(b"x","io"), "bad_ndim":(struct.pack("IIII",3,1,1,0),"value"),
+  "zero_rows":(struct.pack("IIII",2,0,1,0),"value"), "zero_cols":(struct.pack("IIII",2,1,0,0),"value"),
+  "short_payload":(struct.pack("IIII",2,1,2,0)+struct.pack("d",1.0),"io")}
+ for name,(data,kind) in fixtures.items():
+  path=root/name; path.write_bytes(data); source=caught(f'tensor_load of "{path}"'); tape=root/f"{name}.tape"
+  recorded=execute(name+"-trace",source,{"EIGS_TRACE":str(tape)})
+  replayed=execute(name+"-replay",source,{"EIGS_REPLAY":str(tape)})
+  tape_text=tape.read_text(errors="replace") if tape.exists() else ""
+  check("tensor_load "+name+" traces and replays identically",
+   recorded.returncode==replayed.returncode==0 and recorded.stdout==replayed.stdout and recorded.stderr==replayed.stderr and
+   f'["{kind}"' in recorded.stdout.decode(errors="replace") and tape_text.count("tensor_load=")==1,
+   f"record={recorded.returncode,recorded.stdout,recorded.stderr} replay={replayed.returncode,replayed.stdout,replayed.stderr} tape={tape_text!r}")
+ strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",str(root))
+ listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
+ ls_source=f'print of ls of "{listing}"\n'; ls_tape=root/"ls.tape"
+ ls_record=execute("ls-two-trace",ls_source,{"EIGS_TRACE":str(ls_tape)})
+ (listing/"a").unlink(); (listing/"b").unlink()
+ ls_replay=execute("ls-two-replay",ls_source,{"EIGS_REPLAY":str(ls_tape)})
+ check("ls two-string answer is not replayed as an error",ls_record.returncode==ls_replay.returncode==0 and ls_record.stdout==ls_replay.stdout and b'["a", "b"]' in ls_record.stdout,
+  f"record={ls_record.returncode,ls_record.stdout,ls_record.stderr} replay={ls_replay.returncode,ls_replay.stdout,ls_replay.stderr}")
+ shapes=[("nested_flat","[[1.0,2.0]]","[1.0,2.0]","type_mismatch"),("flat_nested","[1.0,2.0]","[[1.0,2.0]]","type_mismatch"),
+  ("flat_lengths","[1.0,2.0]","[1.0]","value"),("row_counts","[[1.0],[2.0]]","[[1.0]]","value"),("row_lengths","[[1.0,2.0]]","[[1.0]]","value")]
+ for name,params,grad,kind in shapes: strict_error("sgd_update "+name,f"sgd_update of [{params}, {grad}, 0.5]",kind)
+ strict_error("sgd_update buffer shapes", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value")
+ ragged=execute("sgd-ragged-matching","p is [[1.0, 2.0], [3.0]]\nsgd_update of [p, [[0.1, 0.2], [0.3]], 0.5]\nprint of p\n")
+ check("sgd_update matching ragged shapes update row by row",ragged.returncode==0 and b"[[0.95, 1.9], [2.85]]" in ragged.stdout,f"rc={ragged.returncode} stdout={ragged.stdout!r} stderr={ragged.stderr!r}")
+ sandbox=execute("sandbox-value",'r is sandbox_run of [1, "code", []]\nprint of r.error.kind\n')
+ check("sandbox_run descriptor validation kind is value",sandbox.returncode==0 and b"value" in sandbox.stdout,f"rc={sandbox.returncode} stdout={sandbox.stdout!r} stderr={sandbox.stderr!r}")
+ api=subprocess.run([str(EIGS),"--api"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ if b"audio_music_play" in api.stdout:
+  undecodable=root/"undecodable.mp3"; undecodable.write_text("not an audio stream\n")
+  for name,path in [("missing",root/"missing.mp3"),("directory",root),("undecodable",undecodable)]:
+   source=f'try:\n    print of audio_music_play of ["{path}", 0]\ncatch e:\n    print of [e.kind, e.message]\n'
+   q=execute("music-"+name,source,{"SDL_AUDIODRIVER":"dummy"}); out=q.stdout.decode(errors="replace")
+   if name=="undecodable" and out.strip()=="false":
+    print("SKIP: audio_music_play undecodable (dummy mixer device unavailable; answered false)")
+   else:
+    check("audio_music_play "+name+" raises named io without stderr diagnostic",q.returncode==0 and '["io"' in out and str(path) in out and b"audio_music:" not in q.stderr,f"rc={q.returncode} stdout={q.stdout!r} stderr={q.stderr!r}")
+  refusal_tape=root/"audio-refusal.tape"
+  execute("audio-refusal-tape",'print of null\n',{"EIGS_TRACE":str(refusal_tape)})
+  refusal=[]
+  for strict in (None,"0","1"):
+   env={"EIGS_REPLAY":str(refusal_tape)}
+   if strict is not None: env["EIGS_STRICT"]=strict
+   refusal.append(execute("music-replay-"+(strict or "unset"),caught(f'audio_music_play of ["{root / "missing.mp3"}", 0]'),env))
+  check("audio_music_play replay refusal is byte-identical in every strict state",
+   all(q.returncode==0 and q.stdout==refusal[0].stdout and q.stderr==refusal[0].stderr for q in refusal) and
+   b'not replayable under EIGS_REPLAY' in refusal[0].stdout,
+   repr([(q.returncode,q.stdout,q.stderr) for q in refusal]))
+ else: print("PASS: audio_music_play rows skipped (non-gfx binary)")
+ sys.exit(1 if failures else 0)
