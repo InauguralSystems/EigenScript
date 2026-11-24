@@ -1081,3 +1081,13 @@ tree-lock-smoke:
 	sleep "$(or $(EIGS_LOCK_SMOKE_SLEEP),0)"; \
 	[ -z "$(EIGS_LOCK_SMOKE_SESSION)" ] || ps -o args= -s "$$(ps -o sid= -p $$$$ | tr -d ' ')" > "$(EIGS_LOCK_SMOKE_SESSION)"; \
 	[ -z "$(EIGS_LOCK_SMOKE_DONE)" ] || : > "$(EIGS_LOCK_SMOKE_DONE)"
+
+GENERIC_OPS_VARIANT ?= release
+GENERIC_OPS_OBJ := $(filter-out build/$(GENERIC_OPS_VARIANT)/main.o,$(OBJ_$(GENERIC_OPS_VARIANT)))
+build/$(GENERIC_OPS_VARIANT)/generic_ops_operands.h: tests/generic_ops_gen.py | build/$(GENERIC_OPS_VARIANT)
+	python3 $< --emit-c-header $@
+
+build/$(GENERIC_OPS_VARIANT)/test_generic_ops: tests/test_generic_ops.c build/$(GENERIC_OPS_VARIANT)/generic_ops_operands.h $(GENERIC_OPS_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(GENERIC_OPS_VARIANT)) -I$(SRC_DIR) -Ibuild/$(GENERIC_OPS_VARIANT) -o $@ $< $(GENERIC_OPS_OBJ) $(LIBS_$(GENERIC_OPS_VARIANT))
+.PHONY: generic-ops-test
+generic-ops-test: build/$(GENERIC_OPS_VARIANT)/test_generic_ops

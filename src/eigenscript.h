@@ -1976,6 +1976,27 @@ static inline void val_decref(Value *v) {
 }
 
 #include "value_slot.h"
+
+/* Number model 2: exact signed int64 integers beside IEEE 754 doubles.
+ * See docs/design/phase2-numbers.md. */
+#define EIGS_NUMBER_MODEL 2
+
+/* Generic opcode operations. Arguments are BORROWED slots; the returned
+ * slot is a NEW reference (the caller must slot_decref it). The calling
+ * thread must have a state attached: an error is recorded on that state, at
+ * the active VM line (including the current trace stamp). These are the VM's
+ * own operations, called by compiled code that is already running as
+ * EigenScript: unlike the embedding entry points they do not save or install
+ * the floating-point environment, so the caller must be in the IEEE 754
+ * default environment (docs/EMBEDDING.md). */
+typedef enum {
+    EIGS_OP_ADD, EIGS_OP_SUB, EIGS_OP_MUL, EIGS_OP_DIV, EIGS_OP_IDIV,
+    EIGS_OP_MOD, EIGS_OP_EQ, EIGS_OP_NE, EIGS_OP_LT, EIGS_OP_LE,
+    EIGS_OP_GT, EIGS_OP_GE, EIGS_OP_BAND, EIGS_OP_BOR, EIGS_OP_BXOR,
+    EIGS_OP_SHL, EIGS_OP_SHR, EIGS_OP_NEG, EIGS_OP_NOT, EIGS_OP_BNOT
+} EigsOperator;
+EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
+EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a);
 #include "container.h"
 
 static inline int eigs_bool_gate(BuiltinFn fn, const Value *arg) {

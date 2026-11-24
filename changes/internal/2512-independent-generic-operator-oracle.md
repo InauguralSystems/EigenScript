@@ -1,0 +1,1 @@
+- Pin generic operator export and tiered VM tests to an oracle generated from `main` (#2512).

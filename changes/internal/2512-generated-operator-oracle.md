@@ -1,0 +1,1 @@
+- Generate the generic-operator compatibility oracle from the complete operand cross-product. (#2512).
