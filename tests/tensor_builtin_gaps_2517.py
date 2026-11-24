@@ -46,8 +46,13 @@ def rejected(builtin, params, grad, indices="[0]", named=False):
     if grad.startswith("buffer"):
         setup.append(buffer("g", 0 if grad == "buffer1d" else 1))
         gexpr = "g"
+    if params == "flatlist":
+        pexpr = "[1.0, 2.0]"
+    if grad == "flatlist":
+        gexpr = "[1.0, 2.0]"
     before = "[buf_get_bits of [p, 0], buf_get_bits of [p, 1]]" if pexpr == "p" else \
-             "[f64_bits of p[0][0], f64_bits of p[0][1]]"
+             ("[f64_bits of p[0], f64_bits of p[1]]" if params == "flatlist" else
+              "[f64_bits of p[0][0], f64_bits of p[0][1]]")
     if pexpr != "p":
         setup.append("p is " + pexpr)
         pexpr = "p"
@@ -63,13 +68,15 @@ def rejected(builtin, params, grad, indices="[0]", named=False):
 
 
 # The message names the pairing that was passed (#2517).
-KIND = {"list": "a list", "buffer": "a 2-D buffer", "buffer1d": "a 1-D buffer"}
+KIND = {"list": "a list", "flatlist": "a list", "buffer": "a 2-D buffer", "buffer1d": "a 1-D buffer"}
 
 cases = []
 for fn in ("sgd_update_rows", "sgd_update_cols"):
     cases.extend(rejected(fn, p, g, named=True) for p, g in
                  (("buffer", "list"), ("list", "buffer"),
-                  ("buffer1d", "list"), ("buffer1d", "buffer")))
+                  ("buffer1d", "list"), ("buffer1d", "buffer"),
+                  ("flatlist", "buffer"), ("flatlist", "buffer1d"),
+                  ("buffer", "flatlist"), ("buffer1d", "flatlist")))
     cases.append(rejected(fn, "list", "list", "0"))
 for p, g in (("buffer", "list"), ("list", "buffer")):
     cases.append(rejected("sgd_update", p, g, named=True))

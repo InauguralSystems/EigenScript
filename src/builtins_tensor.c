@@ -2447,6 +2447,9 @@ Value* builtin_sgd_update_rows(Value *arg) {
               !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
               !row_indices || (row_indices->type != VAL_LIST && row_indices->type != VAL_BUFFER),
               "sgd_update_rows", "list or buffer parameter, gradient, and indices", make_null());
+    /* #2517: a pairing of different kinds is refused first, naming both kinds,
+     * before the learning rate, the cells or the row shapes are read. */
+    if (sgd_pair_refused("sgd_update_rows", matrix, grad)) return make_null();
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2456,7 +2459,6 @@ Value* builtin_sgd_update_rows(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_rows", "parameter and gradient matrices with list rows", make_null());
-    if (sgd_pair_refused("sgd_update_rows", matrix, grad)) return make_null();
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
      * list or a buffer — update the named rows' doubles in place. */
@@ -2661,6 +2663,9 @@ Value* builtin_sgd_update_cols(Value *arg) {
               !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
               !col_indices || (col_indices->type != VAL_LIST && col_indices->type != VAL_BUFFER),
               "sgd_update_cols", "list or buffer parameter, gradient, and indices", make_null());
+    /* #2517: a pairing of different kinds is refused first, naming both kinds,
+     * before the learning rate, the cells or the row shapes are read. */
+    if (sgd_pair_refused("sgd_update_cols", matrix, grad)) return make_null();
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2670,7 +2675,6 @@ Value* builtin_sgd_update_cols(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_cols", "parameter and gradient matrices with list rows", make_null());
-    if (sgd_pair_refused("sgd_update_cols", matrix, grad)) return make_null();
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
