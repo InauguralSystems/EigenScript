@@ -9,6 +9,7 @@
  */
 
 #include "eigenscript.h"
+#include "builtins_internal.h"
 #include "ext_register.h"   /* register_gfx_builtins (#744) */
 #include "ext_names.h"
 #include "trace.h"   /* audio capture is a nondet input source (#579) */
@@ -1905,6 +1906,14 @@ Value* builtin_audio_music_play(Value *arg) {
         return make_bool(0);
     }
     const char *path = list_get_ref(arg, 0)->data.str;
+    FILE *probe = fopen(path, "rb");
+    if (!probe) return file_io_error("audio_music_play", path, errno);
+    struct stat music_st;
+    if (fstat(fileno(probe), &music_st) == 0 && S_ISDIR(music_st.st_mode)) {
+        fclose(probe);
+        return file_io_error("audio_music_play", path, EISDIR);
+    }
+    fclose(probe);
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
     if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
@@ -1922,9 +1931,8 @@ Value* builtin_audio_music_play(Value *arg) {
     if (g_music) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
     g_music = p_Mix_LoadMUS(path);
     if (!g_music) {
-        fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
-                p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
+        return file_recorded_error(EK_IO, "audio_music_play", path,
+                                   p_SDL_GetError ? p_SDL_GetError() : "cannot decode music");
     }
     if (p_Mix_PlayMusic(g_music, (int)loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",

@@ -2235,6 +2235,46 @@ Value* builtin_sgd_update(Value *arg) {
                  "got %s params and %s grad", sgd_pair_kind(param), sgd_pair_kind(grad));
         return make_null();
     }
+    if (param->type == VAL_LIST) {
+        int pn = param->data.list.count, gn = grad->data.list.count;
+        int p_nested = pn > 0 && list_elem_type(param, 0) == VAL_LIST;
+        int g_nested = gn > 0 && list_elem_type(grad, 0) == VAL_LIST;
+        char ps[96], gs[96];
+        if (p_nested != g_nested) {
+            snprintf(ps, sizeof ps, p_nested ? "[%d rows]" : "[%d]", pn);
+            snprintf(gs, sizeof gs, g_nested ? "[%d rows]" : "[%d]", gn);
+            rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s have different nesting", ps, gs);
+            return make_null();
+        }
+        int mismatch = pn != gn;
+        if (!p_nested) {
+            snprintf(ps, sizeof ps, "[%d]", pn); snprintf(gs, sizeof gs, "[%d]", gn);
+        } else {
+            int pc = pn ? list_get_ref(param, 0)->data.list.count : 0;
+            int gc = gn ? list_get_ref(grad, 0)->data.list.count : 0;
+            snprintf(ps, sizeof ps, "[%d,%d]", pn, pc); snprintf(gs, sizeof gs, "[%d,%d]", gn, gc);
+            for (int r = 0; r < pn; r++) {
+                Value *row = list_get_ref(param, r);
+                if (!row || row->type != VAL_LIST || row->data.list.count != pc) mismatch = 1;
+            }
+            for (int r = 0; r < gn; r++) {
+                Value *row = list_get_ref(grad, r);
+                if (!row || row->type != VAL_LIST || row->data.list.count != gc) mismatch = 1;
+            }
+            if (pc != gc) mismatch = 1;
+        }
+        if (mismatch) {
+            rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
+            return make_null();
+        }
+    } else if (param->data.buffer.count != grad->data.buffer.count ||
+               param->data.buffer.rows != grad->data.buffer.rows ||
+               param->data.buffer.cols != grad->data.buffer.cols) {
+        rt_error(EK_VALUE, 0, "sgd_update: params shape [%d,%d] does not match grad shape [%d,%d]",
+                 param->data.buffer.rows, param->data.buffer.cols,
+                 grad->data.buffer.rows, grad->data.buffer.cols);
+        return make_null();
+    }
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2917,11 +2957,16 @@ Value* builtin_tensor_load(Value *arg) {
         int err = errno;
         return file_io_error("tensor_load", arg->data.str, err);
     }
+    struct stat load_st;
+    if (fstat(fileno(f), &load_st) == 0 && S_ISDIR(load_st.st_mode)) {
+        fclose(f);
+        return file_io_error("tensor_load", arg->data.str, EISDIR);
+    }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];
     if (fread(header, sizeof(uint32_t), 4, f) != 4) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short four-word header");
     }
 
     uint32_t ndim_raw = header[0];
@@ -2938,7 +2983,7 @@ Value* builtin_tensor_load(Value *arg) {
         fseek(f, 0, SEEK_SET);
         uint32_t old_header[3];
         if (fread(old_header, sizeof(uint32_t), 3, f) != 3) {
-            fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+            fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short legacy three-word header");
         }
         ndim_raw = old_header[0];
         rows_raw = old_header[1];
@@ -2947,10 +2992,11 @@ Value* builtin_tensor_load(Value *arg) {
     }
 
     if (ndim_raw != 1 && ndim_raw != 2) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str, "ndim is not 1 or 2");
     }
     if (rows_raw == 0 || cols_raw == 0) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str,
+                                               rows_raw == 0 ? "zero rows" : "zero columns");
     }
 
     uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
@@ -2969,10 +3015,10 @@ Value* builtin_tensor_load(Value *arg) {
     /* Read numeric data */
     double *data = xmalloc_array((size_t)total, sizeof(double));
     if (!data) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_LIMIT, "tensor_load", arg->data.str, "payload allocation failed");
     }
     if ((int)fread(data, sizeof(double), total, f) != total) {
-        free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        free(data); fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short tensor payload");
     }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
      * here. flat_to_tensor_* retains it through make_float; checking first lets the strict raise

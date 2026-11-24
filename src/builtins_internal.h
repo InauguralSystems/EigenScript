@@ -136,6 +136,8 @@ Value* builtin_sgd_update_cols(Value *arg);
 Value* builtin_tensor_save(Value *arg);
 Value* builtin_tensor_load(Value *arg);
 Value* file_io_error(const char *fn, const char *path, int err);
+Value* file_recorded_error(ErrKind kind, const char *fn, const char *path,
+                           const char *defect);
 int file_io_replay(const char *fn, Value **out);
 
 /* builtins_buf.c (#744) — numeric buffers, the vectorized buf_* kernels,
