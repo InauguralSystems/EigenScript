@@ -1040,39 +1040,25 @@ static int vm_number_compare(EigsSlot a, EigsSlot b, int *out) {
 
 EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b);
 
-/* The comparison opcodes' slow path, out of line (#2512 round 5). Inline
- * in GENERIC_CMP these paths made vm_run_ex spill on every opcode (+21
- * instructions per trip of an empty loop) and put four tests in front of
- * the float pair. Same answers as the export: an int pair, a string pair,
- * null equality and the exact mixed-number order are decided here; every
- * other pair, and every error, goes to eigs_op_binary. cmp 2 = unordered. */
+/* The == / != opcodes' slow path (GENERIC_CMP's unordered arms only), out of
+ * line: inline in GENERIC_CMP it made vm_run_ex spill on every opcode (+21
+ * instructions per trip of an empty loop, #2512 round 5). main's route: a
+ * string pair compares bytes, and every other pair goes straight to
+ * values_equal_op, the function main's EQ/NE called. A number test or a null
+ * test in front of it cost bool == 61 and dict == 148 instructions per
+ * operation (#2512 round 6). */
 static __attribute__((noinline)) EigsSlot vm_cmp_rest(EigsOperator op, EigsSlot a, EigsSlot b) {
-    int c;
+    int eq;
     if (slot_is_ptr(a) && slot_is_ptr(b) && slot_as_ptr(a)->type == VAL_STR &&
         slot_as_ptr(b)->type == VAL_STR) {
-        int r = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
-                       slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
-        c = (r > 0) - (r < 0);
-    } else if (vm_number_compare(a, b, &c)) {
-        /* an int pair, or an int with a float: exact order, 2 = unordered */
-    } else if ((op == EIGS_OP_EQ || op == EIGS_OP_NE) && (slot_is_null(a) || slot_is_null(b))) {
-        int eq = slot_is_null(a) && slot_is_null(b);
-        return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
-    } else if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
-        /* Keep main's direct equality route.  Sending bools and containers
-         * through the public operator's classification first is measurable
-         * overhead on every opcode despite producing the same answer. */
+        eq = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
+                    slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "") == 0;
+    } else {
         Value *av = slot_to_value(a), *bv = slot_to_value(b);
-        int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
+        eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
         val_decref(av); val_decref(bv);
-        return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
-    } else return eigs_op_binary(op, a, b);
-    if (op == EIGS_OP_EQ) return slot_from_bool(c == 0);
-    if (op == EIGS_OP_NE) return slot_from_bool(c != 0);
-    if (op == EIGS_OP_LT) return slot_from_bool(c == -1);
-    if (op == EIGS_OP_GT) return slot_from_bool(c == 1);
-    if (op == EIGS_OP_LE) return slot_from_bool(c == -1 || c == 0);
-    return slot_from_bool(c == 0 || c == 1);   /* EIGS_OP_GE: the only caller is GENERIC_CMP */
+    }
+    return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
 }
 
 static const char *slot_type_name(EigsSlot s);
@@ -4065,6 +4051,10 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     CASE(BNOT): {
         EigsSlot s = g_vm.stack[g_vm.sp - 1];
+        /* An SMI owns nothing: invert it here, as main's vm_bit_operand path
+         * did, instead of paying the export's call and classification
+         * (+26 instructions per ~, #2512 round 6). */
+        if (slot_is_smi(s)) { g_vm.stack[g_vm.sp - 1] = slot_from_int(~slot_smi_val(s)); DISPATCH(); }
         EigsSlot r = eigs_op_unary(EIGS_OP_BNOT, s);
         slot_decref(s);
         g_vm.stack[g_vm.sp - 1] = r;
