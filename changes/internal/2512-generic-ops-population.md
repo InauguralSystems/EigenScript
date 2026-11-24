@@ -1,0 +1,1 @@
+- Exercise C generic operator exports over the generated cross-product operand population (#2512).
