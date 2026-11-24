@@ -27,8 +27,9 @@ acquisition—not reads performed by a running EigenScript program—and therefo
 remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
 
 `tensor_load` is the exception among tensor checkpoint reads: each call writes
-exactly one `N ... tensor_load=` record.  A successful record contains the
-loaded tensor value.  An error record contains a tagged list with the error
+exactly one `N ... tensor_load=` record.  A successful load records
+`null`, not the tensor: the payload is untaped, and replay refuses the call with
+`io` before opening the path.  An error record contains a tagged list with the error
 kind and message (including the path and the malformed-header, short-read, or
 allocation defect); replay raises that recorded kind and message without
 opening the path.

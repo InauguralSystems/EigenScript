@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Regression rows for #2518/#2521/#2522/#2523; every row is its own program."""
-import os, pathlib, resource, struct, subprocess, sys, tempfile
+import json, os, pathlib, resource, struct, subprocess, sys, tempfile
 EIGS = pathlib.Path(sys.argv[1] if len(sys.argv)>1 else os.environ.get("EIGS","src/eigenscript")).resolve()
 CLASSIFIER = pathlib.Path(__file__).with_name("lsan_classify.sh")
 def hard_diagnostic(output):
@@ -116,17 +116,29 @@ with tempfile.TemporaryDirectory() as tmp:
   ("string_cell",'[[1.0,"x"]]',("list",[["number","str"]])),
   ("bool_cell","[[1.0,true]]",("list",[["number","bool"]])),
   ("buffer1","buffer of 1",("buffer",1)), ("buffer2","buffer of 2",("buffer",2)),
-  ("buffer3","buffer of 3",("buffer",3))]
+  ("buffer3","buffer of 3",("buffer",3)),
+  ("nested_empty_first","[[],[1.5]]",("list",[[],["number"]])),
+  ("nested_empty_last","[[1.5],[]]",("list",[["number"],[]])),
+  ("nested_all_empty","[[],[]]",("list",[[],[]])),
+  ("deep","[[[1.0]]]",("list",[[["number"]]])),
+  ("bufval2","buf_from_list of ([1.5,-2.5])",("buffer",2)),
+  ("bufval3","buf_from_list of ([1.5,-2.5,4.0])",("buffer",3))]
+ def numbers(src):
+  # The operand's cells as Python data; a "buffer of N" holds zeros.
+  if src.startswith("buffer of"): return [0.0]*int(src.split()[-1])
+  return eval(src.replace("buf_from_list of",""),{"__builtins__":{}})
+ def step(p,g,lr): return [step(a,b,lr) for a,b in zip(p,g)] if isinstance(p,list) else p-lr*g
  def first_bad(model):
   if model[0]!="list": return None
-  def walk(x):
+  def walk(x,depth):
    if isinstance(x,list):
+    if depth==2: return "list"
     for y in x:
-     bad=walk(y)
+     bad=walk(y,depth+1)
      if bad: return bad
    elif x!="number": return x
    return None
-  return walk(model[1])
+  return walk(model[1],0)
  def shape_text(rows):
   if not any(isinstance(x,list) for x in rows): return f"[{len(rows)}]"
   return "["+str(len(rows))+" rows:"+"".join(("," if i else "")+" "+(str(len(x)) if isinstance(x,list) else x) for i,x in enumerate(rows))+"]"
@@ -164,8 +176,22 @@ with tempfile.TemporaryDirectory() as tmp:
      kind,msg=expected; wanted=f'["{kind}", "{msg}"]'.encode()
      ok=q.returncode==0 and clean(q) and wanted in q.stdout and unchanged
     else:
-     ok=q.returncode==0 and clean(q) and b'["ok", ' in q.stdout
+     # The exact cells after the update, not only that the call answered.
+     shown="[v for v in p]"
+     q=execute(f"sgd-ok-{pn}-{gn}-{strict or 'unset'}",f"p is {params}\nsgd_update of [p, {grad}, 0.5]\nprint of {shown}\n",env)
+     try: got=json.loads(q.stdout)
+     except ValueError: got=None
+     ok=q.returncode==0 and clean(q) and got==step(numbers(params),numbers(grad),0.5)
     check(f"sgd generated {pn}/{gn} strict={strict or 'unset'}",ok,repr((expected,q.returncode,q.stdout,q.stderr,before)))
+ # params and grad the same object: every accepted shape, against the same model.
+ for pn,params,pm in shape_cases:
+  if model_sgd(pm,pm) is not None: continue
+  for strict in (None,"0","1"):
+   sgd_rows+=1; env={} if strict is None else {"EIGS_STRICT":strict}
+   q=execute(f"sgd-alias-{pn}-{strict or 'unset'}",f"p is {params}\nsgd_update of [p, p, 0.5]\nprint of [v for v in p]\n",env)
+   try: got=json.loads(q.stdout)
+   except ValueError: got=None
+   check(f"sgd aliased {pn} strict={strict or 'unset'}",q.returncode==0 and clean(q) and got==step(numbers(params),numbers(params),0.5),repr((q.returncode,q.stdout,q.stderr)))
  print(f"ROWS: sgd_update generated={sgd_rows}")
  sandbox=execute("sandbox-value",'r is sandbox_run of [1, "code", []]\nprint of r.error.kind\n')
  check("sandbox_run descriptor validation kind is value",sandbox.returncode==0 and b"value" in sandbox.stdout,f"rc={sandbox.returncode} stdout={sandbox.stdout!r} stderr={sandbox.stderr!r}")
