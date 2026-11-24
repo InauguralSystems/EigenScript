@@ -28,6 +28,10 @@ OPERANDS = [
     # Review-round additions: heterogeneous/nested containers, a multi-key
     # dict, digit text, and explicit signed integer and floating divisors.
     '[1, "a"]', "[[1], [2]]", '{"a": 1, "b": 2}', '"1"',
+    # Distinct ints that round to the same double (2^53 and 2^53 + 1;
+    # 2^63 - 2 and 2^63 - 1; their negatives): an int pair compared as
+    # doubles answers wrong only on such a pair (plant D, round 6).
+    "9007199254740992", "-9007199254740993", "9223372036854775806",
 ]
 BIN = ["+", "-", "*", "/", "//", "%", "&", "|", "^", "<<", ">>", "==", "!=", "<", ">", "<=", ">="]
 UN = ["-", "not", "~"]
