@@ -3973,24 +3973,31 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     /* ---- Comparison ---- */
 
-#define GENERIC_CMP(NAME, PUBLIC_OP, TEST) \
+/* Fast paths as on main c35118f9: two SMIs (immediates, nothing to release)
+ * and two doubles (C's comparison is IEEE: NaN is unequal and unordered).
+ * The double test is false for an int, so a mixed or boxed-int pair, a string
+ * pair and every error go to the export. Equality was 10-12% slower with the
+ * generic int test (which also reads a heap box) plus two releases here. */
+#define GENERIC_CMP(NAME, PUBLIC_OP, TEST, RAW_BITS) \
     CASE(NAME): { EigsSlot _b = g_vm.stack[g_vm.sp - 1], _a = g_vm.stack[g_vm.sp - 2]; \
-        int64_t _ai, _bi; double _ad, _bd; \
-        if (slot_int_value(_a, &_ai) && slot_int_value(_b, &_bi)) { \
-            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ai TEST _bi); \
+        if (slot_is_smi(_a) && slot_is_smi(_b)) { \
+            g_vm.stack[g_vm.sp - 2] = slot_from_bool((RAW_BITS) ? (_a.u TEST _b.u) : \
+                                                     (slot_smi_val(_a) TEST slot_smi_val(_b))); \
             g_vm.sp--; DISPATCH(); } \
-        if (slot_f64_value(_a, &_ad) && slot_f64_value(_b, &_bd) && \
-            !slot_int_value(_a, &_ai) && !slot_int_value(_b, &_bi)) { \
+        double _ad, _bd; \
+        if (__builtin_expect(slot_f64_value(_a, &_ad) & slot_f64_value(_b, &_bd), 1)) { \
             slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ad TEST _bd); \
             g_vm.sp--; DISPATCH(); } \
         EigsSlot _r = eigs_op_binary((PUBLIC_OP), _a, _b); slot_decref(_a); slot_decref(_b); \
         g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
-    GENERIC_CMP(EQ, EIGS_OP_EQ, ==)
-    GENERIC_CMP(NE, EIGS_OP_NE, !=)
-    GENERIC_CMP(LT, EIGS_OP_LT, <)
-    GENERIC_CMP(GT, EIGS_OP_GT, >)
-    GENERIC_CMP(LE, EIGS_OP_LE, <=)
-    GENERIC_CMP(GE, EIGS_OP_GE, >=)
+/* An SMI's encoding is canonical, so == and != compare the raw bits (as on
+ * main, RAW_BITS 1); an ordering needs the sign-extended value. */
+    GENERIC_CMP(EQ, EIGS_OP_EQ, ==, 1)
+    GENERIC_CMP(NE, EIGS_OP_NE, !=, 1)
+    GENERIC_CMP(LT, EIGS_OP_LT, <, 0)
+    GENERIC_CMP(GT, EIGS_OP_GT, >, 0)
+    GENERIC_CMP(LE, EIGS_OP_LE, <=, 0)
+    GENERIC_CMP(GE, EIGS_OP_GE, >=, 0)
 
     /* ---- Variables ---- */
 
