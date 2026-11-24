@@ -2219,6 +2219,23 @@ static const char *sgd_pair_kind(const Value *v) {
     return val_type_name(v->type);
 }
 
+/* A list's shape for sgd_update's messages (#2523): "[n]" for a flat list;
+ * "[r rows: c0, c1, ...]" for a nested one, a scalar row shown as "num".
+ * Rows past the sixth are elided with "...". */
+static void sgd_list_shape(Value *v, char *out, size_t cap) {
+    int n = v->data.list.count;
+    if (n == 0 || list_elem_type(v, 0) != VAL_LIST) { snprintf(out, cap, "[%d]", n); return; }
+    size_t k = (size_t)snprintf(out, cap, "[%d rows:", n);
+    for (int r = 0; r < n && k < cap; r++) {
+        if (r == 6) { k += (size_t)snprintf(out + k, cap - k, " ..."); break; }
+        Value *row = list_get_ref(v, r);
+        if (row && row->type == VAL_LIST)
+            k += (size_t)snprintf(out + k, cap - k, "%s %d", r ? "," : "", row->data.list.count);
+        else k += (size_t)snprintf(out + k, cap - k, "%s num", r ? "," : "");
+    }
+    if (k < cap) snprintf(out + k, cap - k, "]");
+}
+
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
@@ -2239,54 +2256,34 @@ Value* builtin_sgd_update(Value *arg) {
         int pn = param->data.list.count, gn = grad->data.list.count;
         int p_nested = pn > 0 && list_elem_type(param, 0) == VAL_LIST;
         int g_nested = gn > 0 && list_elem_type(grad, 0) == VAL_LIST;
-        char ps[96], gs[96];
+        char ps[160], gs[160];
+        sgd_list_shape(param, ps, sizeof ps);
+        sgd_list_shape(grad, gs, sizeof gs);
         if (p_nested != g_nested) {
-            snprintf(ps, sizeof ps, p_nested ? "[%d rows]" : "[%d]", pn);
-            snprintf(gs, sizeof gs, g_nested ? "[%d rows]" : "[%d]", gn);
             rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s have different nesting", ps, gs);
             return make_null();
         }
-        int mismatch = pn != gn;
-        int mismatch_row = -1, mismatch_p_count = -1, mismatch_g_count = -1;
-        int mismatch_kind = 0;
-        if (!p_nested) {
-            snprintf(ps, sizeof ps, "[%d]", pn); snprintf(gs, sizeof gs, "[%d]", gn);
-        } else {
-            int pc = pn ? list_get_ref(param, 0)->data.list.count : 0;
-            int gc = gn ? list_get_ref(grad, 0)->data.list.count : 0;
-            snprintf(ps, sizeof ps, "[%d,%d]", pn, pc); snprintf(gs, sizeof gs, "[%d,%d]", gn, gc);
-            for (int r = 0; r < pn && r < gn; r++) {
+        if (pn != gn) {
+            rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
+            return make_null();
+        }
+        if (p_nested) {
+            for (int r = 0; r < pn; r++) {
                 Value *row = list_get_ref(param, r);
                 Value *grow = list_get_ref(grad, r);
                 int row_list = row && row->type == VAL_LIST;
                 int grow_list = grow && grow->type == VAL_LIST;
                 if (row_list != grow_list) {
-                    mismatch = mismatch_kind = 1; mismatch_row = r; break;
+                    rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %s against %s",
+                             ps, gs, r, row_list ? "list" : "number", grow_list ? "list" : "number");
+                    return make_null();
                 }
                 if (row_list && row->data.list.count != grow->data.list.count) {
-                    mismatch = 1; mismatch_row = r;
-                    mismatch_p_count = row->data.list.count;
-                    mismatch_g_count = grow->data.list.count;
-                    break;
+                    rt_error(EK_VALUE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %d against %d",
+                             ps, gs, r, row->data.list.count, grow->data.list.count);
+                    return make_null();
                 }
             }
-        }
-        if (mismatch) {
-            if (mismatch_row >= 0 && mismatch_kind) {
-                Value *pr = list_get_ref(param, mismatch_row);
-                Value *gr = list_get_ref(grad, mismatch_row);
-                rt_error(EK_TYPE, 0, "sgd_update: params and grad shapes differ at row %d: %s against %s",
-                         mismatch_row, pr && pr->type == VAL_LIST ? "list" : "number",
-                         gr && gr->type == VAL_LIST ? "list" : "number");
-                return make_null();
-            }
-            if (mismatch_row >= 0) {
-                rt_error(EK_VALUE, 0, "sgd_update: params and grad shapes differ at row %d: %d against %d",
-                         mismatch_row, mismatch_p_count, mismatch_g_count);
-                return make_null();
-            }
-            rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
-            return make_null();
         }
     } else if (param->data.buffer.count != grad->data.buffer.count) {
         char ps[64], gs[64];

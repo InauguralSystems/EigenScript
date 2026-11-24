@@ -296,7 +296,7 @@ leaf_exec OP_NUM_ONE               OP_NUM_ONE
 leaf_exec OP_NUM_ZERO              OP_NUM_ZERO
 
 ## Slot classifiers (R1.1 worklist)
-D1=64 D2=21 D3=28 T=72 dispositions=113 missing=0 stale=0
+D1=64 D2=21 D3=28 T=73 dispositions=113 missing=0 stale=0
 D1 container.h:dict_value_get_f64             guarded          slot_f64_value=1
 D1 container.h:dict_value_get_int             smi-arm          slot_int_value=1
 D1 container.h:dict_value_get_ref             smi-arm          eigs_slot_ref=1 slot_is_f64=1 slot_is_smi=1
@@ -1415,28 +1415,28 @@ builtins_tensor.c:2203 sgd_cell list_get_f64 READ b
 builtins_tensor.c:2204 sgd_cell eigs_slot_float READ b
 builtins_tensor.c:2207 sgd_cell eigs_math_result GUARD c
 builtins_tensor.c:2209 sgd_cell list_set_f64 PRODUCE c
-builtins_tensor.c:2305 builtin_sgd_update eigs_slot_opt_float READ b
-builtins_tensor.c:2380 builtin_numerical_grad_rows eigs_slot_opt_float READ b
-builtins_tensor.c:2436 builtin_numerical_grad_rows make_float PRODUCE c
-builtins_tensor.c:2458 builtin_numerical_grad_rows eigs_slot_float READ b
-builtins_tensor.c:2460 builtin_numerical_grad_rows eigs_math_result GUARD c
-builtins_tensor.c:2465 builtin_numerical_grad_rows eigs_math_result GUARD c
-builtins_tensor.c:2474 builtin_numerical_grad_rows eigs_math_result GUARD c
-builtins_tensor.c:2474 builtin_numerical_grad_rows list_set_f64 PRODUCE c
-builtins_tensor.c:2520 builtin_sgd_update_rows eigs_slot_opt_float READ b
-builtins_tensor.c:2602 builtin_numerical_grad_cols eigs_slot_opt_float READ b
-builtins_tensor.c:2661 builtin_numerical_grad_cols make_float PRODUCE c
-builtins_tensor.c:2679 builtin_numerical_grad_cols eigs_slot_float READ b
-builtins_tensor.c:2682 builtin_numerical_grad_cols eigs_math_result GUARD c
-builtins_tensor.c:2688 builtin_numerical_grad_cols eigs_math_result GUARD c
-builtins_tensor.c:2699 builtin_numerical_grad_cols eigs_math_result GUARD c
-builtins_tensor.c:2699 builtin_numerical_grad_cols list_set_f64 PRODUCE c
-builtins_tensor.c:2736 builtin_sgd_update_cols eigs_slot_opt_float READ b
-builtins_tensor.c:2943 tensor_load_record_verdict make_int PRODUCE c
-builtins_tensor.c:2944 tensor_load_record_verdict make_int PRODUCE c
-builtins_tensor.c:2968 builtin_tensor_load VAL_INT TEST a
-builtins_tensor.c:2969 builtin_tensor_load VAL_INT TEST a
-builtins_tensor.c:3056 builtin_tensor_load eigs_math_result_named GUARD c
+builtins_tensor.c:2302 builtin_sgd_update eigs_slot_opt_float READ b
+builtins_tensor.c:2377 builtin_numerical_grad_rows eigs_slot_opt_float READ b
+builtins_tensor.c:2433 builtin_numerical_grad_rows make_float PRODUCE c
+builtins_tensor.c:2455 builtin_numerical_grad_rows eigs_slot_float READ b
+builtins_tensor.c:2457 builtin_numerical_grad_rows eigs_math_result GUARD c
+builtins_tensor.c:2462 builtin_numerical_grad_rows eigs_math_result GUARD c
+builtins_tensor.c:2471 builtin_numerical_grad_rows eigs_math_result GUARD c
+builtins_tensor.c:2471 builtin_numerical_grad_rows list_set_f64 PRODUCE c
+builtins_tensor.c:2517 builtin_sgd_update_rows eigs_slot_opt_float READ b
+builtins_tensor.c:2599 builtin_numerical_grad_cols eigs_slot_opt_float READ b
+builtins_tensor.c:2658 builtin_numerical_grad_cols make_float PRODUCE c
+builtins_tensor.c:2676 builtin_numerical_grad_cols eigs_slot_float READ b
+builtins_tensor.c:2679 builtin_numerical_grad_cols eigs_math_result GUARD c
+builtins_tensor.c:2685 builtin_numerical_grad_cols eigs_math_result GUARD c
+builtins_tensor.c:2696 builtin_numerical_grad_cols eigs_math_result GUARD c
+builtins_tensor.c:2696 builtin_numerical_grad_cols list_set_f64 PRODUCE c
+builtins_tensor.c:2733 builtin_sgd_update_cols eigs_slot_opt_float READ b
+builtins_tensor.c:2940 tensor_load_record_verdict make_int PRODUCE c
+builtins_tensor.c:2941 tensor_load_record_verdict make_int PRODUCE c
+builtins_tensor.c:2965 builtin_tensor_load VAL_INT TEST a
+builtins_tensor.c:2966 builtin_tensor_load VAL_INT TEST a
+builtins_tensor.c:3053 builtin_tensor_load eigs_math_result_named GUARD c
 chunk.c:196 const_hash_value VAL_FLOAT TEST f
 chunk.c:197 const_hash_value VAL_F64_RAW RAW f
 chunk.c:205 const_hash_value VAL_INT TEST f

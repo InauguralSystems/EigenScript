@@ -8,12 +8,13 @@ def hard_diagnostic(output):
 def caught(expr): return f"try:\n    {expr}\ncatch e:\n    print of [e.kind, e.message]\n"
 with tempfile.TemporaryDirectory() as tmp:
  root=pathlib.Path(tmp); failures=0; serial=0
- def execute(name,source,env_extra=None):
+ # stdin_bytes feeds the child (the legacy-header row reads a pipe)
+ def execute(name,source,env_extra=None,stdin_bytes=None):
   global serial
   serial+=1; program=root/f"{serial:02d}-{name}.eigs"; program.write_text(source)
   env=os.environ.copy(); env.pop("EIGS_TRACE",None); env.pop("EIGS_REPLAY",None)
   if env_extra: env.update(env_extra)
-  q=subprocess.run([str(EIGS),str(program)],env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+  q=subprocess.run([str(EIGS),str(program)],env=env,input=stdin_bytes if stdin_bytes is not None else b"",stdout=subprocess.PIPE,stderr=subprocess.PIPE)
   if hard_diagnostic(q.stdout+q.stderr): q.returncode=125
   return q
  def check(name,condition,detail=""):
@@ -21,20 +22,23 @@ with tempfile.TemporaryDirectory() as tmp:
   if condition: print(f"PASS: {name}")
   else: failures+=1; print(f"FAIL: {name}: {detail}")
  def clean(q): return not hard_diagnostic(q.stdout+q.stderr)
- def strict_error(name,expression,kind,message_part=None):
+ def strict_error(name,expression,kind,message_part=None,env_extra=None,stdin_bytes=None,stderr_absent=None):
   good=True; details=[]
   for strict in (None,"0","1"):
-   q=execute(f"{name}-{strict or 'unset'}",caught(expression),{} if strict is None else {"EIGS_STRICT":strict})
+   env=dict(env_extra or {})
+   if strict is not None: env["EIGS_STRICT"]=strict
+   q=execute(f"{name}-{strict or 'unset'}",caught(expression),env,stdin_bytes)
    output=q.stdout.decode(errors="replace")
-   if q.returncode or not clean(q) or f'["{kind}"' not in output or (message_part and message_part not in output):
+   if q.returncode or not clean(q) or f'["{kind}"' not in output or (message_part and message_part not in output) or (stderr_absent and stderr_absent in q.stderr):
     good=False; details.append(f"strict={strict!r} rc={q.returncode} stdout={output!r} stderr={q.stderr!r}")
   check(name,good,"; ".join(details))
  fixtures={
-  "short_header":(b"x","io"), "bad_ndim":(struct.pack("IIII",3,1,1,0),"value"),
-  "zero_rows":(struct.pack("IIII",2,0,1,0),"value"), "zero_cols":(struct.pack("IIII",2,1,0,0),"value"),
-  "short_payload":(struct.pack("IIII",2,1,2,0)+struct.pack("d",1.0),"io")}
- for name,(data,kind) in fixtures.items():
+  "short_header":(b"x","io","short four-word header"), "bad_ndim":(struct.pack("IIII",3,1,1,0),"value","ndim is not 1 or 2"),
+  "zero_rows":(struct.pack("IIII",2,0,1,0),"value","zero rows"), "zero_cols":(struct.pack("IIII",2,1,0,0),"value","zero columns"),
+  "short_payload":(struct.pack("IIII",2,1,2,0)+struct.pack("d",1.0),"io","short tensor payload")}
+ for name,(data,kind,defect) in fixtures.items():
   path=root/name; path.write_bytes(data); source=caught(f'tensor_load of "{path}"'); tape=root/f"{name}.tape"
+  strict_error("tensor_load "+name+" names the path and the defect",f'tensor_load of "{path}"',kind,f"{path}': {defect}")
   recorded=execute(name+"-trace",source,{"EIGS_TRACE":str(tape)})
   replayed=execute(name+"-replay",source,{"EIGS_REPLAY":str(tape)})
   tape_text=tape.read_text(errors="replace") if tape.exists() else ""
@@ -42,11 +46,21 @@ with tempfile.TemporaryDirectory() as tmp:
    recorded.returncode==replayed.returncode==0 and recorded.stdout==replayed.stdout and recorded.stderr==replayed.stderr and
    f'["{kind}"' in recorded.stdout.decode(errors="replace") and tape_text.count("tensor_load=")==1,
    f"record={recorded.returncode,recorded.stdout,recorded.stderr} replay={replayed.returncode,replayed.stdout,replayed.stderr} tape={tape_text!r}")
+ # A fourth header word above 1 selects the legacy three-word format, which re-reads
+ # from the start; only a stream that cannot seek can then come up short.
+ strict_error("tensor_load legacy short header through a pipe",'tensor_load of "/dev/stdin"',"io","'/dev/stdin': short legacy three-word header",stdin_bytes=struct.pack("IIII",2,1,1,7))
  strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",f"{root}': Is a directory")
  alloc=root/"allocation.tensor"; alloc.write_bytes(struct.pack("IIII",2,1,10000000,0))
  def memory_cap(): resource.setrlimit(resource.RLIMIT_AS,(70000000,70000000))
  alloc_program=root/"allocation.eigs"; alloc_program.write_text(caught(f'tensor_load of "{alloc}"'))
- alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,preexec_fn=memory_cap)
+ # An ASan binary cannot reserve its shadow memory under an address-space cap, so
+ # under ASan the allocator's own cap makes the payload allocation fail instead.
+ asan_probe=subprocess.run([str(EIGS),"--version"],env=dict(os.environ,ASAN_OPTIONS="help=1"),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ if b"AddressSanitizer" in asan_probe.stdout+asan_probe.stderr:
+  asan_env=dict(os.environ); asan_env["ASAN_OPTIONS"]=(asan_env.get("ASAN_OPTIONS","")+":allocator_may_return_null=1:max_allocation_size_mb=16").lstrip(":")
+  alloc_q=subprocess.run([str(EIGS),str(alloc_program)],env=asan_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+ else:
+  alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,preexec_fn=memory_cap)
  check("tensor_load payload allocation raises limit naming path and size",alloc_q.returncode==0 and clean(alloc_q) and b'["limit"' in alloc_q.stdout and str(alloc).encode() in alloc_q.stdout and b"80000000" in alloc_q.stdout,repr((alloc_q.returncode,alloc_q.stdout,alloc_q.stderr)))
  listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
  ls_source=f'print of ls of "{listing}"\n'; ls_tape=root/"ls.tape"
@@ -57,10 +71,21 @@ with tempfile.TemporaryDirectory() as tmp:
   f"record={ls_record.returncode,ls_record.stdout,ls_record.stderr} replay={ls_replay.returncode,ls_replay.stdout,ls_replay.stderr}")
  shapes=[("nested_flat","[[1.0,2.0]]","[1.0,2.0]","type_mismatch"),("flat_nested","[1.0,2.0]","[[1.0,2.0]]","type_mismatch"),
   ("flat_lengths","[1.0,2.0]","[1.0]","value"),("row_counts","[[1.0],[2.0]]","[[1.0]]","value"),("row_lengths","[[1.0,2.0]]","[[1.0]]","value")]
- for name,params,grad,kind in shapes: strict_error("sgd_update "+name,f"sgd_update of [{params}, {grad}, 0.5]",kind)
- strict_error("sgd_update later grad scalar","sgd_update of [[[1.0,2.0],[3.0,4.0]], [[1.0,2.0],5.0], 0.5]","type_mismatch","row 1: list against number")
- strict_error("sgd_update later params scalar","sgd_update of [[[1.0,2.0],3.0], [[1.0,2.0],[3.0,4.0]], 0.5]","type_mismatch","row 1: number against list")
- strict_error("sgd_update ragged message","sgd_update of [[[1.0,2.0],[3.0]], [[1.0,2.0],[3.0,4.0]], 0.5]","value","sgd_update: params and grad shapes differ at row 1: 1 against 2")
+ def sgd_error(name,params,grad,kind,message_part=None):
+  # Raises the kind in every state, and params is printed unchanged after the raise.
+  before=execute(name+"-before",f"p is {params}\nprint of p\n").stdout
+  good=True; details=[]
+  for strict in (None,"0","1"):
+   q=execute(f"{name}-{strict or 'unset'}",f"p is {params}\ntry:\n    sgd_update of [p, {grad}, 0.5]\ncatch e:\n    print of [e.kind, e.message]\nprint of p\n",{} if strict is None else {"EIGS_STRICT":strict})
+   out=q.stdout.decode(errors="replace"); lines=q.stdout.splitlines()
+   if q.returncode or not clean(q) or f'["{kind}"' not in out or (message_part and message_part not in out) or not lines or lines[-1]+b"\n"!=before:
+    good=False; details.append(f"strict={strict!r} rc={q.returncode} stdout={out!r} before={before!r}")
+  check("sgd_update "+name+" raises before any write",good,"; ".join(details))
+ for name,params,grad,kind in shapes: sgd_error(name,params,grad,kind)
+ sgd_error("later grad scalar","[[1.0,2.0],[3.0,4.0]]","[[1.0,2.0],5.0]","type_mismatch","params shape [2 rows: 2, 2] and grad shape [2 rows: 2, num] differ at row 1: list against number")
+ sgd_error("later params scalar","[[1.0,2.0],3.0]","[[1.0,2.0],[3.0,4.0]]","type_mismatch","params shape [2 rows: 2, num] and grad shape [2 rows: 2, 2] differ at row 1: number against list")
+ sgd_error("ragged message","[[1.0,2.0],[3.0]]","[[1.0,2.0],[3.0,4.0]]","value","sgd_update: params shape [2 rows: 2, 1] and grad shape [2 rows: 2, 2] differ at row 1: 1 against 2")
+ sgd_error("row count message","[[1.0],[2.0,3.0]]","[[1.0]]","value","params shape [2 rows: 1, 2] does not match grad shape [1 rows: 1]")
  strict_error("sgd_update buffer shapes", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value")
  strict_error("sgd_update buffer shape message", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value", "params shape 2 x 2 does not match grad shape count 3")
  ragged=execute("sgd-ragged-matching","p is [[1.0, 2.0], [3.0]]\nsgd_update of [p, [[0.1, 0.2], [0.3]], 0.5]\nprint of p\n")
@@ -78,13 +103,18 @@ with tempfile.TemporaryDirectory() as tmp:
   wav.write_bytes(b"RIFF"+struct.pack("<I",36+len(pcm))+b"WAVEfmt "+struct.pack("<IHHIIHH",16,1,1,8000,16000,2,16)+b"data"+struct.pack("<I",len(pcm))+pcm)
   probe=execute("music-probe",f'print of audio_music_play of ["{wav}", 0]\n',{"SDL_AUDIODRIVER":"dummy"})
   mixer_ok=probe.stdout.decode(errors="replace").strip()=="true"
-  for name,path in [("missing",root/"missing.mp3"),("directory",root),("undecodable",undecodable)]:
-   source=f'try:\n    print of audio_music_play of ["{path}", 0]\ncatch e:\n    print of [e.kind, e.message]\n'
-   q=execute("music-"+name,source,{"SDL_AUDIODRIVER":"bogusdrv" if name != "undecodable" else "dummy"}); out=q.stdout.decode(errors="replace")
+  noperm=root/"noperm.mp3"; noperm.write_bytes(wav.read_bytes()); noperm.chmod(0)
+  cases=[("missing",root/"missing.mp3"),("directory",root),("undecodable",undecodable)]
+  if os.geteuid()==0: print("SKIP: audio_music_play no-permission row (running as root, which can read a mode-0 file)")
+  else: cases.append(("no permission",noperm))
+  for name,path in cases:
    if name=="undecodable" and not mixer_ok:
     print(f"SKIP: audio_music_play undecodable (a valid WAV did not play here, so no mixer or device: probe stdout={probe.stdout!r} stderr={probe.stderr!r})")
-   else:
-    check("audio_music_play "+name+" raises named io without stderr diagnostic",q.returncode==0 and clean(q) and '["io"' in out and str(path) in out and b"audio_music:" not in q.stderr,f"rc={q.returncode} stdout={q.stdout!r} stderr={q.stderr!r}")
+    continue
+   # Paths that cannot be opened run with no audio device (bogusdrv): the ruling says
+   # a headless box raises the same error as a box with speakers.
+   strict_error("audio_music_play "+name+" raises named io without stderr diagnostic",f'audio_music_play of ["{path}", 0]',"io",str(path),
+    env_extra={"SDL_AUDIODRIVER":"bogusdrv" if name!="undecodable" else "dummy"},stderr_absent=b"audio_music:")
   refusal_tape=root/"audio-refusal.tape"
   execute("audio-refusal-tape",'print of null\n',{"EIGS_TRACE":str(refusal_tape)})
   refusal=[]
