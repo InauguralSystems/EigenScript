@@ -7,6 +7,15 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 EIGS = Path(os.environ.get("EIGS", ROOT / "src/eigenscript"))
+CLASSIFIER = ROOT / "tests/lsan_classify.sh"
+
+
+def hard_diagnostic(output):
+    """Use the suite's shared classifier even when the child exits zero."""
+    classified = subprocess.run(
+        ["sh", "-c", '. "$1"; lsan_classify "$(cat)"; [ "$?" -eq 1 ]',
+         "classify", str(CLASSIFIER)], input=output, text=True)
+    return classified.returncode == 0
 
 
 def run(source, strict):
@@ -73,7 +82,8 @@ cases.append("caught is false\ntry:\n    tensor_load of \"/nonexistent/zz.bin\"\
 source = "\n".join(cases) + "\nprint of \"PASS: tensor builtin gaps #2517/#2514\"\n"
 for state in (None, "0", "1"):
     result = run(source, state)
-    if result.returncode or "PASS:" not in result.stdout:
+    if (result.returncode or hard_diagnostic(result.stdout + result.stderr)
+            or "PASS:" not in result.stdout):
         print(result.stdout, end="")
         print(result.stderr, end="")
         raise SystemExit(f"FAIL: EIGS_STRICT={state!r} rc={result.returncode}")

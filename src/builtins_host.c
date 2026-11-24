@@ -309,7 +309,7 @@ Value* builtin_stream_close(Value *arg) {
 /* Forward declarations for the taped filesystem error representation shared
  * by mkdir/ls and the file readers below. */
 Value *file_io_error(const char *fn, const char *path, int err);
-static int file_io_replay(const char *fn, Value **out);
+int file_io_replay(const char *fn, Value **out);
 
 /* mkdir of "path" → true on success; I/O failure raises EK_IO. Creates parents. */
 /* #585/#1885: replay is side-effect-free: TAKE precedes mkdir(2), as it does
@@ -785,7 +785,7 @@ Value *file_io_error(const char *fn, const char *path, int err) {
 
 /* Return zero only when replay is disabled.  Once replay is enabled every
  * result, including an unservable/corrupt record, short-circuits live I/O. */
-static int file_io_replay(const char *fn, Value **out) {
+int file_io_replay(const char *fn, Value **out) {
     *out = NULL;
     if (!__builtin_expect(g_replay_enabled, 0)) return 0;
     if (trace_replay_refuse_off_owner(fn)) { *out = make_null(); return 1; }

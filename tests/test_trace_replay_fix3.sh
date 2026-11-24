@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "PLAN: 5"
+echo "PLAN: 7"
 set -eu
 EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -38,6 +38,30 @@ for bad in '[]' '[1]' '["x", 2]'; do
   grep -F 'tensor_load: malformed replay verdict' "$T/e" >/dev/null || fail "tensor verdict $bad lacked diagnostic"
 done
 ok "malformed tensor verdict shapes are refused"
+
+cat >"$T/tensor-missing.eigs" <<EOF
+try:
+    tensor_load of "$T/absent.tensor"
+catch e:
+    print of [e.kind, e.message]
+EOF
+EIGS_TRACE="$T/missing.tape" "$EIGS" "$T/tensor-missing.eigs" >"$T/missing.live"
+EIGS_REPLAY="$T/missing.tape" "$EIGS" "$T/tensor-missing.eigs" >"$T/missing.replay"
+cmp "$T/missing.live" "$T/missing.replay" || fail "missing tensor output differed on replay"
+[ "$(grep -c ' tensor_load=' "$T/missing.tape")" -eq 1 ] || fail "missing tensor recorded other than one verdict"
+ok "missing tensor_load replays the identical io error"
+
+cat >"$T/tensor-next.eigs" <<EOF
+try:
+    tensor_load of "$T/still-absent.tensor"
+catch e:
+    print of [e.kind, e.message]
+print of (env_get of "TENSOR_LOAD_NEXT_RECORD")
+EOF
+TENSOR_LOAD_NEXT_RECORD=kept EIGS_TRACE="$T/next.tape" "$EIGS" "$T/tensor-next.eigs" >"$T/next.live"
+TENSOR_LOAD_NEXT_RECORD=changed EIGS_REPLAY="$T/next.tape" "$EIGS" "$T/tensor-next.eigs" >"$T/next.replay"
+cmp "$T/next.live" "$T/next.replay" || fail "record following failed tensor_load shifted"
+ok "failed tensor_load leaves the following nondeterministic record aligned"
 
 echo 'print of "x"' >"$T/unit.eigs"
 echo "load_file of \"$T/unit.eigs\"" >"$T/load.eigs"

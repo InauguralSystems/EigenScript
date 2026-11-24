@@ -136,6 +136,7 @@ Value* builtin_sgd_update_cols(Value *arg);
 Value* builtin_tensor_save(Value *arg);
 Value* builtin_tensor_load(Value *arg);
 Value* file_io_error(const char *fn, const char *path, int err);
+int file_io_replay(const char *fn, Value **out);
 
 /* builtins_buf.c (#744) — numeric buffers, the vectorized buf_* kernels,
  * the PCM16LE codecs and the DEFLATE codecs. Registered by builtins.c's

@@ -2873,8 +2873,13 @@ Value* builtin_tensor_load(Value *arg) {
          * corrupt-tape diagnostics stay intact, but never use it as permission
          * to open the payload: tensor bytes themselves were never taped. */
         Value *verdict = NULL;
-        if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
-        int taken = trace_replay_take("tensor_load", &verdict);
+        if (file_io_replay("tensor_load", &verdict)) {
+            if (g_has_error) return make_null();
+        } else {
+            rt_error(EK_IO, 0, "tensor_load: unservable replay record");
+            return make_null();
+        }
+        int taken = verdict != NULL;
         int valid = taken && verdict &&
             (verdict->type == VAL_NULL ||
              (verdict->type == VAL_LIST && verdict->data.list.count == 2 &&
@@ -2892,7 +2897,6 @@ Value* builtin_tensor_load(Value *arg) {
     FILE *f = fopen(arg->data.str, "rb");
     if (!f) {
         int err = errno;
-        tensor_load_record_verdict(0, 0);
         return file_io_error("tensor_load", arg->data.str, err);
     }
 
