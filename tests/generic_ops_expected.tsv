@@ -577,52 +577,52 @@ unset	u	BNOT	~"a"	error	type_mismatch	cannot apply '~' to str
 1	b	IDIV	generic_ninf // 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
 1	b	MOD	generic_nan % 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
 1	b	MOD	-0.0 % 0.0	error	value	arithmetic: result is not a number (NaN has no defined value)
-1	b	MOD	generic_inf % 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	MOD	generic_ninf % 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BAND	generic_nan & 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	MOD	generic_inf % 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	MOD	generic_ninf % 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	BAND	generic_nan & 1.0	error	value	'&': number nan has no integer representation
 1	b	BAND	-0.0 & 0.0	value	num	0
-1	b	BAND	generic_inf & 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BAND	generic_ninf & 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BOR	generic_nan | 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	BAND	generic_inf & 1.0	error	value	'&': number inf has no integer representation
+1	b	BAND	generic_ninf & 1.0	error	value	'&': number -inf has no integer representation
+1	b	BOR	generic_nan | 1.0	error	value	'|': number nan has no integer representation
 1	b	BOR	-0.0 | 0.0	value	num	0
-1	b	BOR	generic_inf | 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BOR	generic_ninf | 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BXOR	generic_nan ^ 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	BOR	generic_inf | 1.0	error	value	'|': number inf has no integer representation
+1	b	BOR	generic_ninf | 1.0	error	value	'|': number -inf has no integer representation
+1	b	BXOR	generic_nan ^ 1.0	error	value	'^': number nan has no integer representation
 1	b	BXOR	-0.0 ^ 0.0	value	num	0
-1	b	BXOR	generic_inf ^ 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	BXOR	generic_ninf ^ 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	SHL	generic_nan << 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	BXOR	generic_inf ^ 1.0	error	value	'^': number inf has no integer representation
+1	b	BXOR	generic_ninf ^ 1.0	error	value	'^': number -inf has no integer representation
+1	b	SHL	generic_nan << 1.0	error	value	'<<': number nan has no integer representation
 1	b	SHL	-0.0 << 0.0	value	num	0
-1	b	SHL	generic_inf << 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	SHL	generic_ninf << 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	SHR	generic_nan >> 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	SHL	generic_inf << 1.0	error	value	'<<': number inf has no integer representation
+1	b	SHL	generic_ninf << 1.0	error	value	'<<': number -inf has no integer representation
+1	b	SHR	generic_nan >> 1.0	error	value	'>>': number nan has no integer representation
 1	b	SHR	-0.0 >> 0.0	value	num	0
-1	b	SHR	generic_inf >> 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	SHR	generic_ninf >> 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	EQ	generic_nan == 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	SHR	generic_inf >> 1.0	error	value	'>>': number inf has no integer representation
+1	b	SHR	generic_ninf >> 1.0	error	value	'>>': number -inf has no integer representation
+1	b	EQ	generic_nan == 1.0	value	bool	false
 1	b	EQ	-0.0 == 0.0	value	bool	true
-1	b	EQ	generic_inf == 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	EQ	generic_ninf == 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	NE	generic_nan != 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	EQ	generic_inf == 1.0	value	bool	false
+1	b	EQ	generic_ninf == 1.0	value	bool	false
+1	b	NE	generic_nan != 1.0	value	bool	true
 1	b	NE	-0.0 != 0.0	value	bool	false
-1	b	NE	generic_inf != 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	NE	generic_ninf != 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	LT	generic_nan < 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	NE	generic_inf != 1.0	value	bool	true
+1	b	NE	generic_ninf != 1.0	value	bool	true
+1	b	LT	generic_nan < 1.0	value	bool	false
 1	b	LT	-0.0 < 0.0	value	bool	false
-1	b	LT	generic_inf < 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	LT	generic_ninf < 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	GT	generic_nan > 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	LT	generic_inf < 1.0	value	bool	false
+1	b	LT	generic_ninf < 1.0	value	bool	true
+1	b	GT	generic_nan > 1.0	value	bool	false
 1	b	GT	-0.0 > 0.0	value	bool	false
-1	b	GT	generic_inf > 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	GT	generic_ninf > 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	LE	generic_nan <= 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	GT	generic_inf > 1.0	value	bool	true
+1	b	GT	generic_ninf > 1.0	value	bool	false
+1	b	LE	generic_nan <= 1.0	value	bool	false
 1	b	LE	-0.0 <= 0.0	value	bool	true
-1	b	LE	generic_inf <= 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	LE	generic_ninf <= 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	GE	generic_nan >= 1.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	LE	generic_inf <= 1.0	value	bool	false
+1	b	LE	generic_ninf <= 1.0	value	bool	true
+1	b	GE	generic_nan >= 1.0	value	bool	false
 1	b	GE	-0.0 >= 0.0	value	bool	true
-1	b	GE	generic_inf >= 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
-1	b	GE	generic_ninf >= 1.0	error	value	arithmetic: non-finite arithmetic result (infinity)
+1	b	GE	generic_inf >= 1.0	value	bool	true
+1	b	GE	generic_ninf >= 1.0	value	bool	false
 1	b	IDIV	-5 // 2	value	num	-3
 1	b	LT	2 < 2	value	bool	false
 1	b	ADD	9223372036854775807 + 1	error	value	integer overflow in '+'

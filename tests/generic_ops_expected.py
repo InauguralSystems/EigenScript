@@ -28,8 +28,12 @@ def specs():
  return r
 def run(binary, strict, expr, loop=False):
  body = f"define oracle_expr() as:\n    return {expr}\n"
- if "generic_nan" in expr: body = "generic_nan is 0.0 / 0.0\n" + body
- if "generic_inf" in expr or "generic_ninf" in expr: body = "generic_inf is 1.0 / 0.0\ngeneric_ninf is -1.0 / 0.0\n" + body
+ # The special operands are built from their IEEE bits, exactly like the C
+ # test's eigs_set_global: under EIGS_STRICT=1 `0.0 / 0.0` and `1.0 / 0.0`
+ # raise at the setup line, and the row then recorded the setup's error
+ # instead of the operator's answer (35 strict=1 rows, round 4).
+ if "generic_nan" in expr: body = "generic_nan is f64_from_bits of 9221120237041090560\n" + body
+ if "generic_inf" in expr or "generic_ninf" in expr: body = "generic_inf is f64_from_bits of 9218868437227405312\ngeneric_ninf is f64_from_bits of -4503599627370496\n" + body
  if loop: body += "for oracle_i in range of 5001:\n    oracle_value is oracle_expr of []\n"
  else: body += "oracle_value is oracle_expr of []\n"
  src = "try:\n" + "".join("    "+line+"\n" for line in body.splitlines()) + "    print of ((type of oracle_value) + \"\\t\" + (str of oracle_value))\ncatch oracle_error:\n    print of (\"error\\t\" + oracle_error.kind + \"\\t\" + oracle_error.message)\n"
