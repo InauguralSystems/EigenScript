@@ -387,8 +387,10 @@ Notes on the families:
   loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: the standard one-string file-I/O error
-  record when opening the path fails, `[rows, cols]` for an over-cap header,
-  otherwise `null`. Replay re-raises a recorded open error byte-for-byte.
+  record when opening the path fails, a two-string `[kind, message]` for a
+  malformed, short or unallocatable file, `[rows, cols]` for an over-cap header,
+  otherwise `null`. Replay re-raises a recorded open or file error
+  byte-for-byte.
   For every other structurally valid verdict, replay raises the
   same generic `io` file-read-boundary error before filesystem access; an
   over-cap verdict does not reconstruct its recorded `limit` error. Tensor
