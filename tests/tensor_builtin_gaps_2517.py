@@ -36,7 +36,7 @@ def buffer(name, rows=1):
                        f"buf_set of [{name}, 1, 2.0]", f"{name} is {reshape}"))
 
 
-def rejected(builtin, params, grad, indices="[0]"):
+def rejected(builtin, params, grad, indices="[0]", named=False):
     setup = []
     pexpr = "[[1.0, 2.0]]"
     gexpr = "[[1.0, 2.0]]"
@@ -56,13 +56,18 @@ def rejected(builtin, params, grad, indices="[0]"):
         args = f"[{pexpr}, {gexpr}, 0.5]"
     return "\n".join(setup + [f"before is {before}", "caught is false", "try:",
         f"    {builtin} of {args}", "catch e:", "    caught is e.kind == \"type_mismatch\"",
+        *([f"    caught is caught and contains of [e.message, \"got {KIND[params]} params and {KIND[grad]} grad\"]"]
+          if named else []),
         f"assert of [caught, \"{builtin} rejected mismatched inputs\"]",
         f"assert of [{before} == before, \"{builtin} rejection is atomic\"]"])
 
 
+# The message names the pairing that was passed (#2517).
+KIND = {"list": "a list", "buffer": "a 2-D buffer", "buffer1d": "a 1-D buffer"}
+
 cases = []
 for fn in ("sgd_update_rows", "sgd_update_cols"):
-    cases.extend(rejected(fn, p, g) for p, g in
+    cases.extend(rejected(fn, p, g, named=True) for p, g in
                  (("buffer", "list"), ("list", "buffer"),
                   ("buffer1d", "list"), ("buffer1d", "buffer")))
     cases.append(rejected(fn, "list", "list", "0"))

@@ -2413,6 +2413,21 @@ rows_grad_failed:
 /* ==== BUILTIN: sgd_update_rows ==== */
 /* sgd_update_rows of [matrix, grad, row_indices, lr]
  * Updates only the specified rows of matrix in-place: row -= lr * grad_row */
+/* #2517: a mixed parameter/gradient pairing raises, naming what was passed. */
+static const char *sgd_pair_kind(const Value *v) {
+    if (v->type == VAL_LIST) return "a list";
+    if (v->type == VAL_BUFFER) return v->data.buffer.rows > 0 ? "a 2-D buffer" : "a 1-D buffer";
+    return val_type_name(v->type);
+}
+
+static int sgd_pair_refused(const char *who, const Value *matrix, const Value *grad) {
+    if (matrix->type == grad->type && !(matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0))
+        return 0;
+    rt_error(EK_TYPE, 0, "%s: expected params and grad of the same kind (a list of rows or a 2-D buffer), "
+             "got %s params and %s grad", who, sgd_pair_kind(matrix), sgd_pair_kind(grad));
+    return 1;
+}
+
 Value* builtin_sgd_update_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_rows");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
@@ -2436,10 +2451,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_rows", "parameter and gradient matrices with list rows", make_null());
-    ARG_GUARD(matrix->type != grad->type ||
-              (matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0) ||
-              !flat_is_vector(row_indices),
-              "sgd_update_rows", "params and grad of the same kind (a list of rows or a 2-D buffer), and a vector of row indices", make_null());
+    if (sgd_pair_refused("sgd_update_rows", matrix, grad)) return make_null();
 
     /* #1093: shaped-buffer matrix + shaped-buffer gradient, index vector as a
      * list or a buffer — update the named rows' doubles in place. */
@@ -2653,10 +2665,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
     ARG_GUARD((matrix->type == VAL_LIST && !tensor_rows_all_lists(matrix)) ||
               (grad->type == VAL_LIST && !tensor_rows_all_lists(grad)),
               "sgd_update_cols", "parameter and gradient matrices with list rows", make_null());
-    ARG_GUARD(matrix->type != grad->type ||
-              (matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0) ||
-              !flat_is_vector(col_indices),
-              "sgd_update_cols", "params and grad of the same kind (a list of rows or a 2-D buffer), and a vector of column indices", make_null());
+    if (sgd_pair_refused("sgd_update_cols", matrix, grad)) return make_null();
 
     /* #1093: shaped-buffer matrix + gradient, list-or-buffer index vector. */
     if (matrix->type == VAL_BUFFER && grad->type == VAL_BUFFER
