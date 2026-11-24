@@ -56,15 +56,24 @@ with tempfile.TemporaryDirectory() as tmp:
  # An ASan binary cannot reserve its shadow memory under an address-space cap, so
  # under ASan the allocator's own cap makes the payload allocation fail instead.
  asan_probe=subprocess.run([str(EIGS),"--version"],env=dict(os.environ,ASAN_OPTIONS="help=1"),stdout=subprocess.PIPE,stderr=subprocess.PIPE)
- if b"AddressSanitizer" in asan_probe.stdout+asan_probe.stderr:
+ is_asan=b"AddressSanitizer" in asan_probe.stdout+asan_probe.stderr
+ alloc_kwargs=None
+ if is_asan:
   asan_env=dict(os.environ); asan_env["ASAN_OPTIONS"]=(asan_env.get("ASAN_OPTIONS","")+":allocator_may_return_null=1:max_allocation_size_mb=16").lstrip(":")
-  alloc_q=subprocess.run([str(EIGS),str(alloc_program)],env=asan_env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
- else:
-  alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,preexec_fn=memory_cap)
- check("tensor_load payload allocation raises limit naming path and size",alloc_q.returncode==0 and clean(alloc_q) and b'["limit"' in alloc_q.stdout and str(alloc).encode() in alloc_q.stdout and b"80000000" in alloc_q.stdout,repr((alloc_q.returncode,alloc_q.stdout,alloc_q.stderr)))
+  alloc_kwargs={"env":asan_env}
+ elif sys.platform=="darwin":
+  # macOS refuses RLIMIT_AS, so no cap can be set there; Linux lanes run the rows.
+  print("SKIP: tensor_load allocation rows (macOS has no usable RLIMIT_AS)")
+ else: alloc_kwargs={"preexec_fn":memory_cap}
+ if alloc_kwargs is not None:
+  alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,**alloc_kwargs)
+  check("tensor_load payload allocation raises limit naming path and size",alloc_q.returncode==0 and clean(alloc_q) and b'["limit"' in alloc_q.stdout and str(alloc).encode() in alloc_q.stdout and b"80000000" in alloc_q.stdout,repr((alloc_q.returncode,alloc_q.stdout,alloc_q.stderr)))
  # Trace and replay of the three cases that had none (a limit error replayed
  # as io stayed green until these rows; #2526 round 4 plant Z6). The replay
  # runs with no cap and no file change, so only the tape can give the kind.
+ # Under ASan the refused allocation prints one allocator warning, which only
+ # the recording run makes; it is the instrument's line, not the program's.
+ def quiet(err): return b"".join(x for x in err.splitlines(True) if b"WARNING: AddressSanitizer failed to allocate" not in x)
  def traced(name,source,kind,record_kwargs,replay_kwargs):
   tape=root/f"{name}.tape"; program=root/f"{name}.eigs"; program.write_text(source)
   base=dict(os.environ); base.pop("EIGS_TRACE",None); base.pop("EIGS_REPLAY",None)
@@ -74,13 +83,11 @@ with tempfile.TemporaryDirectory() as tmp:
   rep=subprocess.run([str(EIGS),str(program)],env=penv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,**replay_kwargs)
   tape_text=tape.read_text(errors="replace") if tape.exists() else ""
   check(f"tensor_load {name} traces and replays identically",
-   rec.returncode==rep.returncode==0 and clean(rec) and clean(rep) and rec.stdout==rep.stdout and rec.stderr==rep.stderr and
+   rec.returncode==rep.returncode==0 and clean(rec) and clean(rep) and rec.stdout==rep.stdout and quiet(rec.stderr)==quiet(rep.stderr) and
    f'["{kind}"'.encode() in rec.stdout and tape_text.count("tensor_load=")==1,
    f"record={rec.returncode,rec.stdout,rec.stderr} replay={rep.returncode,rep.stdout,rep.stderr} tape={tape_text!r}")
- if b"AddressSanitizer" in asan_probe.stdout+asan_probe.stderr:
-  traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",{"env":asan_env},{})
- else:
-  traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",{"preexec_fn":memory_cap},{})
+ if alloc_kwargs is not None:
+  traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",alloc_kwargs,{})
  traced("directory",caught(f'tensor_load of "{root}"'),"io",{},{})
  traced("legacy_pipe",caught('tensor_load of "/dev/stdin"'),"io",{"input":struct.pack("IIII",2,1,1,7)},{"input":b""})
  listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
@@ -165,7 +172,9 @@ with tempfile.TemporaryDirectory() as tmp:
  api=subprocess.run([str(EIGS),"--api"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  check("api probe has no sanitizer diagnostic",clean(api),repr((api.returncode,api.stdout,api.stderr)))
  if b"audio_music_play" in api.stdout:
-  undecodable=root/"undecodable.mp3"; undecodable.write_text("not an audio stream\n")
+  # An .ogg, not an .mp3: some mpg123 releases accept any bytes at load and fail
+  # only at play, which the ruling on #2522 answers with false, not a raise.
+  undecodable=root/"undecodable.ogg"; undecodable.write_text("not an audio stream\n")
   # The undecodable row needs a working mixer and device. Probe that with a
   # VALID file, independent of the code under test: a skip keyed on the row's
   # own `false` answer would also skip the very regression the row exists for.

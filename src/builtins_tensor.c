@@ -2239,7 +2239,7 @@ static void sgd_list_shape(Value *v, char *out, size_t cap) {
         if (r == 6) { k += (size_t)snprintf(out + k, cap - k, " ..."); break; }
         Value *row = list_get_ref(v, r);
         ValType row_type = list_elem_type(v, r);
-        if (row_type == VAL_LIST)
+        if (row_type == VAL_LIST && row)
             k += (size_t)snprintf(out + k, cap - k, "%s %d", r ? "," : "", row->data.list.count);
         else k += (size_t)snprintf(out + k, cap - k, "%s %s", r ? "," : "",
                                    sgd_row_kind(row_type));
