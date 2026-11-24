@@ -62,6 +62,27 @@ with tempfile.TemporaryDirectory() as tmp:
  else:
   alloc_q=subprocess.run([str(EIGS),str(alloc_program)],stdout=subprocess.PIPE,stderr=subprocess.PIPE,preexec_fn=memory_cap)
  check("tensor_load payload allocation raises limit naming path and size",alloc_q.returncode==0 and clean(alloc_q) and b'["limit"' in alloc_q.stdout and str(alloc).encode() in alloc_q.stdout and b"80000000" in alloc_q.stdout,repr((alloc_q.returncode,alloc_q.stdout,alloc_q.stderr)))
+ # Trace and replay of the three cases that had none (a limit error replayed
+ # as io stayed green until these rows; #2526 round 4 plant Z6). The replay
+ # runs with no cap and no file change, so only the tape can give the kind.
+ def traced(name,source,kind,record_kwargs,replay_kwargs):
+  tape=root/f"{name}.tape"; program=root/f"{name}.eigs"; program.write_text(source)
+  base=dict(os.environ); base.pop("EIGS_TRACE",None); base.pop("EIGS_REPLAY",None)
+  rk=dict(record_kwargs); renv=dict(rk.pop("env",base)); renv["EIGS_TRACE"]=str(tape)
+  rec=subprocess.run([str(EIGS),str(program)],env=renv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,**rk)
+  penv=dict(base); penv["EIGS_REPLAY"]=str(tape)
+  rep=subprocess.run([str(EIGS),str(program)],env=penv,stdout=subprocess.PIPE,stderr=subprocess.PIPE,**replay_kwargs)
+  tape_text=tape.read_text(errors="replace") if tape.exists() else ""
+  check(f"tensor_load {name} traces and replays identically",
+   rec.returncode==rep.returncode==0 and clean(rec) and clean(rep) and rec.stdout==rep.stdout and rec.stderr==rep.stderr and
+   f'["{kind}"'.encode() in rec.stdout and tape_text.count("tensor_load=")==1,
+   f"record={rec.returncode,rec.stdout,rec.stderr} replay={rep.returncode,rep.stdout,rep.stderr} tape={tape_text!r}")
+ if b"AddressSanitizer" in asan_probe.stdout+asan_probe.stderr:
+  traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",{"env":asan_env},{})
+ else:
+  traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",{"preexec_fn":memory_cap},{})
+ traced("directory",caught(f'tensor_load of "{root}"'),"io",{},{})
+ traced("legacy_pipe",caught('tensor_load of "/dev/stdin"'),"io",{"input":struct.pack("IIII",2,1,1,7)},{"input":b""})
  listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
  ls_source=f'print of ls of "{listing}"\n'; ls_tape=root/"ls.tape"
  ls_record=execute("ls-two-trace",ls_source,{"EIGS_TRACE":str(ls_tape)})
