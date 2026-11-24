@@ -752,6 +752,7 @@ result).**
 | `value_slot.h:slot_true` | not-a-classifier | constructor (D3) |
 | `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
 | `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
+| `vm.c:#define GENERIC_CMP` | smi-arm | exact int pairs and float pairs compare inline; mixed and nonnumeric operands use the generic export |
 | `vm.c:#define INT_ARITH` | smi-arm | two exact integer slots use checked int64 arithmetic; the result is an SMI when it fits and an owned int box otherwise, and overflow raises (R1.3) (D1) |
 | `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |

@@ -420,11 +420,9 @@ run_plant overflow-wrap src/vm.c \
 
 # Plant 5: unary negation wraps INT64_MIN instead of reporting overflow.
 run_plant 5 src/vm.c \
-    '            if (i == INT64_MIN) {
-                rt_error(EK_VALUE, current_line, "integer overflow in unary '\''-'\''");
-                g_vm.stack[g_vm.sp - 1] = slot_null();
-            } else g_vm.stack[g_vm.sp - 1] = slot_from_int(-i);' \
-    '            g_vm.stack[g_vm.sp - 1] = slot_from_int((int64_t)(0ULL - (uint64_t)i)); /* PLANT 5: wrap INT64_MIN */' \
+    '        if (i == INT64_MIN) { rt_error(EK_VALUE, op_line(), "integer overflow in unary '\''-'\''"); return slot_null(); }
+        return slot_from_int(-i);' \
+    '        return slot_from_int((int64_t)(0ULL - (uint64_t)i)); /* PLANT 5: wrap INT64_MIN */' \
     tests/phase2/rows/N4b.neg-min-raises.out \
     '["value", true]' \
     '-9223372036854775808' \

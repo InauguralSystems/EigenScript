@@ -1,0 +1,1 @@
+- Fixed generic operator exports to match interpreter semantics, validate operator families, and preserve allocation-free numeric comparisons (#2512).

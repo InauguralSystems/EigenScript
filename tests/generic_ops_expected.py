@@ -13,25 +13,26 @@ def specs():
  r=[]
  for op,tok in OPS:
   for a,b in [("2","3"),("2.5","0.5"),("2","0.5"),("0.5","2"),(('"a"'),"1")]: r.append(("b",op,f"{a} {tok} {b}"))
+ for op,tok in [(x,y) for x,y in OPS if x in ("EQ","NE","LT","GT","LE","GE")]:
+  for a,b in [('"a"','"a"'),('"a"','"b"'),('"c"','"a"'),('"d"','"a"')]: r.append(("b",op,f"{a} {tok} {b}"))
+ r += [("b","BAND","6 & 3.0"),("b","BOR","6 | 1.0"),("b","BXOR","5 ^ 1.0"),("b","SHL","1 << 2.0"),("b","BAND","6 & 2.5")]
+ for op,tok in [(x,y) for x,y in OPS if x in ("EQ","NE","LT","GT")]:
+  r += [("b",op,f"9007199254740993 {tok} 9007199254740992.0"),("b",op,f"9007199254740992.0 {tok} 9007199254740993")]
+ for op,tok in OPS:
+  for a,b in (("generic_nan","1.0"),("-0.0","0.0"),("generic_inf","1.0"),("generic_ninf","1.0")):
+   r.append(("b",op,f"{a} {tok} {b}"))
  r += [("b","IDIV","-5 // 2"),("b","LT","2 < 2"),("b","ADD","9223372036854775807 + 1"),("b","SUB","(-9223372036854775807 - 1) - 1"),("b","MUL","9223372036854775807 * 2"),("b","IDIV","(-9223372036854775807 - 1) // -1"),("b","MOD","(-9223372036854775807 - 1) % -1")]
  for op,tok in [("DIV","/"),("IDIV","//"),("MOD","%")]: r += [("b",op,f"2 {tok} 0"),("b",op,f"2 {tok} 0.0")]
  for op,tok in [("SHL","<<"),("SHR",">>")]: r += [("b",op,f"2 {tok} -1"),("b",op,f"2 {tok} 64")]
  r += [("u","NEG","-2"),("u","NEG","-2.5"),("u","NEG",'-"a"'),("u","NEG","-(-9223372036854775807 - 1)"),("u","NOT","not 2"),("u","NOT","not 2.5"),("u","NOT",'not "a"'),("u","BNOT","~2"),("u","BNOT","~2.0"),("u","BNOT",'~"a"')]
  return r
-def value_kind(expr, text):
- if text in ("true","false"): return "bool"
- if text == "null": return "null"
- if expr.startswith('"') and " + " in expr: return "str"
- if any(x in expr for x in (" & "," | "," ^ "," << "," >> ")) or expr.startswith("~"): return "int"
- if any(x in expr for x in (" / ",".5",".0","generic_nan")) and not any(x in expr for x in ("==","!=","<",">")): return "float"
- if any(x in expr for x in ("==","!=","<",">")) or expr.startswith("not "): return "bool"
- return "int"
 def run(binary, strict, expr, loop=False):
  body = f"define oracle_expr() as:\n    return {expr}\n"
  if "generic_nan" in expr: body = "generic_nan is 0.0 / 0.0\n" + body
+ if "generic_inf" in expr or "generic_ninf" in expr: body = "generic_inf is 1.0 / 0.0\ngeneric_ninf is -1.0 / 0.0\n" + body
  if loop: body += "for oracle_i in range of 5001:\n    oracle_value is oracle_expr of []\n"
  else: body += "oracle_value is oracle_expr of []\n"
- src = "try:\n" + "".join("    "+line+"\n" for line in body.splitlines()) + "    print of (str of oracle_value)\ncatch oracle_error:\n    print of (oracle_error.kind + \"\\t\" + oracle_error.message)\n"
+ src = "try:\n" + "".join("    "+line+"\n" for line in body.splitlines()) + "    print of ((type of oracle_value) + \"\\t\" + (str of oracle_value))\ncatch oracle_error:\n    print of (\"error\\t\" + oracle_error.kind + \"\\t\" + oracle_error.message)\n"
  with tempfile.NamedTemporaryFile("w",suffix=".eigs",delete=False) as f: f.write(src); name=f.name
  env=os.environ.copy(); env.pop("EIGS_STRICT",None)
  if strict != "unset": env["EIGS_STRICT"]=strict
@@ -39,9 +40,10 @@ def run(binary, strict, expr, loop=False):
  finally: os.unlink(name)
  if p.returncode: raise SystemExit(f"{expr}: rc={p.returncode}: {p.stderr}{p.stdout}")
  out=p.stdout.rstrip("\n")
- if "\t" in out:
-  kind,msg=out.split("\t",1); return "error",kind,msg
- return "value",value_kind(expr,out),out
+ parts=out.split("\t",2)
+ if parts[0] == "error": return "error",parts[1],parts[2]
+ if len(parts) != 2: raise SystemExit(f"{expr}: malformed oracle output: {out!r}")
+ return "value",parts[0],parts[1]
 def generate(binary, loop=False):
  rows=["# state\tform\top\texpression\tresult\tkind\tprinted-or-message"]
  for strict in ("unset","0","1"):

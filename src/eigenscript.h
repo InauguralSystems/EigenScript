@@ -1983,7 +1983,8 @@ static inline void val_decref(Value *v) {
 
 /* Generic opcode operations. Arguments are BORROWED slots; the returned
  * slot is a NEW reference (the caller must slot_decref it). Errors use the
- * active VM line, or line zero when called outside execution. */
+ * active VM line (including the current trace stamp for an open state), or
+ * line zero when no state is current. */
 typedef enum {
     EIGS_OP_ADD, EIGS_OP_SUB, EIGS_OP_MUL, EIGS_OP_DIV, EIGS_OP_IDIV,
     EIGS_OP_MOD, EIGS_OP_EQ, EIGS_OP_NE, EIGS_OP_LT, EIGS_OP_LE,

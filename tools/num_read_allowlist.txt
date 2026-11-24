@@ -61,7 +61,6 @@ value_slot.h|slot_f64_value|2|float reader (#1758: was vm.c slot_as_double): an 
 value_slot.h|slot_from_f64|1|constructor: writes a double into a fresh slot (#1758: was slot_from_num)
 value_slot.h|slot_truthy_immediate|1|truthiness after slot_is_f64
 vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_FLOAT; NUM_REUSE writes
-vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_FLOAT && b->type == VAL_FLOAT; NUM_REUSE writes
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
 vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_FLOAT tests on index and value
@@ -70,7 +69,7 @@ vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_FLOAT /
 vm.c|slot_bridge_unwrap|1|NaN-boxing boundary after slot_is_f64
 vm.c|slot_truthy|1|truthiness after slot_is_f64
 vm.c|vm_leaf_accessor_exec|1|leaf-accessor fast path: constants the scanner admitted only as VAL_FLOAT (chunk_scan_leaf_accessor) and values behind VAL_FLOAT tests
-vm.c|vm_run_ex|34|typed interpreter payload accesses: float slots/boxes behind slot_is_f64, VAL_FLOAT or NUM_REUSE; INT_CONST is verifier-typed, other int reads behind VAL_INT guards including both IDIV/MOD operands (#1758 N4) and temporal/slice/dispatch diagnostics; iterator state is VM-built
+vm.c|vm_run_ex|23|typed interpreter payload accesses: float slots/boxes behind slot_is_f64, VAL_FLOAT or NUM_REUSE; INT_CONST is verifier-typed, other int reads behind VAL_INT guards including both IDIV/MOD operands (#1758 N4) and temporal/slice/dispatch diagnostics; iterator state is VM-built
 vm.c|vm_slot_lift|1|NaN-boxing boundary after slot_is_f64
 vm.c|vm_store_local_slot|2|in-place local number store after slot_is_f64
 builtins.c|builtin_json_build|1|VAL_INT text is exact digits; float text retains the bridge (#1758 R1.2d)

@@ -9,24 +9,16 @@ else
         TOTAL=$((TOTAL + 1)); FAIL=$((FAIL + 1)); echo "  FAIL: build generic operator differential"
     else
         for strict in unset 0 1; do
-            for tier in interpreter default hot osr; do
-                case "$tier" in
-                    interpreter) tier_env="EIGS_JIT_OFF=1" ;;
-                    default) tier_env="" ;;
-                    hot) tier_env="EIGS_JIT_HOT=1" ;;
-                    osr) tier_env="EIGS_JIT_HOT=1 EIGS_JIT_OSR_THRESHOLD=1" ;;
-                esac
                 case "$strict" in unset) strict_env="env -u EIGS_STRICT" ;; *) strict_env="EIGS_STRICT=$strict" ;; esac
                 TOTAL=$((TOTAL + 1))
-                out=$(env $strict_env $tier_env ../build/$variant/test_generic_ops 2>&1); rc=$?
+                out=$(env $strict_env ../build/$variant/test_generic_ops 2>&1); rc=$?
                 expected="PASS: generic operator exports strict=$strict examined="
                 case "$strict" in unset) expected="PASS: generic operator exports strict=unset examined=" ;; esac
-                if [ "$rc" -eq 0 ] && grep -q "^$expected" <<< "$out"; then
-                    PASS=$((PASS + 1)); echo "  PASS: strict=$strict tier=$tier ${out#PASS: }"
+                if rc_ok "$rc" "$out" && grep -q "^$expected" <<< "$out"; then
+                    PASS=$((PASS + 1)); echo "  PASS: strict=$strict ${out#PASS: }"
                 else
                     FAIL=$((FAIL + 1)); echo "  FAIL: strict=$strict tier=$tier generic operator differential (rc=$rc)"; printf '    %s\n' "$out"
                 fi
-            done
         done
         for tier in interpreter default hot osr; do
             case "$tier" in
@@ -37,7 +29,7 @@ else
             esac
             TOTAL=$((TOTAL + 1))
             out=$(env $tier_env python3 ../tests/generic_ops_expected.py --program-check ../build/$variant/eigenscript 2>&1); rc=$?
-            if [ "$rc" -eq 0 ] && grep -q '^PASS: generic operator program oracle rows=' <<< "$out"; then
+            if rc_ok "$rc" "$out" && grep -q '^PASS: generic operator program oracle rows=' <<< "$out"; then
                 PASS=$((PASS + 1)); echo "  PASS: program tier=$tier ${out#PASS: }"
             else
                 FAIL=$((FAIL + 1)); echo "  FAIL: tier=$tier generic operator program oracle (rc=$rc)"; printf '    %s\n' "$out"

@@ -1048,6 +1048,10 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     int ia = slot_int_value(a, &ai), ib = slot_int_value(b, &bi);
     int na = ia || slot_f64_value(a, &ad), nb = ib || slot_f64_value(b, &bd);
     const char *name = "?";
+    if (op < EIGS_OP_ADD || op > EIGS_OP_SHR) {
+        rt_error(EK_VALUE, line, "eigs_op_binary: invalid binary operator %d", (int)op);
+        return slot_null();
+    }
     if (ia) ad = (double)ai;
     if (ib) bd = (double)bi;
     /* &, |, ^, << and >> accept exact integer representations (phase2 N8). */
@@ -1074,6 +1078,15 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     }
     /* == and != serve every kind using phase2 equality (including mixed numbers). */
     if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
+        int cmp;
+        if (vm_number_compare(a, b, &cmp) || (na && nb)) {
+            if (!(vm_number_compare(a, b, &cmp))) {
+                cmp = (ad > bd) - (ad < bd);
+                if (isnan(ad) || isnan(bd)) cmp = 2;
+            }
+            int eq = cmp == 0;
+            return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
+        }
         Value *av = slot_to_value(a), *bv = slot_to_value(b);
         int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
         val_decref(av); val_decref(bv);
@@ -1086,8 +1099,9 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         if (!ok && na && nb) { cmp = (ad > bd) - (ad < bd); if (isnan(ad) || isnan(bd)) cmp = 2; ok = 1; }
         if (!ok && slot_is_ptr(a) && slot_is_ptr(b) &&
             slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
-            cmp = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
-                         slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
+            int raw = strcmp(slot_as_ptr(a)->data.str ? slot_as_ptr(a)->data.str : "",
+                             slot_as_ptr(b)->data.str ? slot_as_ptr(b)->data.str : "");
+            cmp = (raw > 0) - (raw < 0);
             ok = 1;
         }
         if (!ok) {
@@ -1170,6 +1184,10 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
 }
 
 EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a) {
+    if (op != EIGS_OP_NEG && op != EIGS_OP_NOT && op != EIGS_OP_BNOT) {
+        rt_error(EK_VALUE, op_line(), "eigs_op_unary: invalid unary operator %d", (int)op);
+        return slot_null();
+    }
     /* not serves every kind through the language truthiness rule. */
     if (op == EIGS_OP_NOT) return slot_from_bool(!slot_truthy(a));
     int64_t i; double d = 0.0;
@@ -3955,16 +3973,24 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
 
     /* ---- Comparison ---- */
 
-#define GENERIC_CMP(NAME, PUBLIC_OP) \
+#define GENERIC_CMP(NAME, PUBLIC_OP, TEST) \
     CASE(NAME): { EigsSlot _b = g_vm.stack[g_vm.sp - 1], _a = g_vm.stack[g_vm.sp - 2]; \
+        int64_t _ai, _bi; double _ad, _bd; \
+        if (slot_int_value(_a, &_ai) && slot_int_value(_b, &_bi)) { \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ai TEST _bi); \
+            g_vm.sp--; DISPATCH(); } \
+        if (slot_f64_value(_a, &_ad) && slot_f64_value(_b, &_bd) && \
+            !slot_int_value(_a, &_ai) && !slot_int_value(_b, &_bi)) { \
+            slot_decref(_a); slot_decref(_b); g_vm.stack[g_vm.sp - 2] = slot_from_bool(_ad TEST _bd); \
+            g_vm.sp--; DISPATCH(); } \
         EigsSlot _r = eigs_op_binary((PUBLIC_OP), _a, _b); slot_decref(_a); slot_decref(_b); \
         g_vm.stack[g_vm.sp - 2] = _r; g_vm.sp--; DISPATCH(); }
-    GENERIC_CMP(EQ, EIGS_OP_EQ)
-    GENERIC_CMP(NE, EIGS_OP_NE)
-    GENERIC_CMP(LT, EIGS_OP_LT)
-    GENERIC_CMP(GT, EIGS_OP_GT)
-    GENERIC_CMP(LE, EIGS_OP_LE)
-    GENERIC_CMP(GE, EIGS_OP_GE)
+    GENERIC_CMP(EQ, EIGS_OP_EQ, ==)
+    GENERIC_CMP(NE, EIGS_OP_NE, !=)
+    GENERIC_CMP(LT, EIGS_OP_LT, <)
+    GENERIC_CMP(GT, EIGS_OP_GT, >)
+    GENERIC_CMP(LE, EIGS_OP_LE, <=)
+    GENERIC_CMP(GE, EIGS_OP_GE, >=)
 
     /* ---- Variables ---- */
 
