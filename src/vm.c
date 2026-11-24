@@ -1050,6 +1050,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
     const char *name = "?";
     if (ia) ad = (double)ai;
     if (ib) bd = (double)bi;
+    /* &, |, ^, << and >> accept exact integer representations (phase2 N8). */
     if (op >= EIGS_OP_BAND && op <= EIGS_OP_SHR) {
         static const char *names[] = {"&", "|", "^", "<<", ">>"};
         int64_t av, bv;
@@ -1071,12 +1072,14 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         }
         return slot_null();
     }
+    /* == and != serve every kind using phase2 equality (including mixed numbers). */
     if (op == EIGS_OP_EQ || op == EIGS_OP_NE) {
         Value *av = slot_to_value(a), *bv = slot_to_value(b);
         int eq = values_equal_op(av, bv, op == EIGS_OP_EQ ? "==" : "!=");
         val_decref(av); val_decref(bv);
         return slot_from_bool(op == EIGS_OP_EQ ? eq : !eq);
     }
+    /* Ordered comparisons serve numbers/strings; phase2 N2 defines mixed promotion and NaN. */
     if (op >= EIGS_OP_LT && op <= EIGS_OP_GE) {
         static const char *names[] = {"<", "<=", ">", ">="};
         int cmp = 0, ok = vm_number_compare(a, b, &cmp);
@@ -1098,6 +1101,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         if (op == EIGS_OP_GT) return slot_from_bool(cmp > 0);
         return slot_from_bool(cmp >= 0);
     }
+    /* + concatenates two strings; the phase2 non-number rule rejects other kinds. */
     if (op == EIGS_OP_ADD && !na && !nb && slot_is_ptr(a) && slot_is_ptr(b) &&
         slot_as_ptr(a)->type == VAL_STR && slot_as_ptr(b)->type == VAL_STR) {
         Value *av = slot_as_ptr(a), *bv = slot_as_ptr(b);
@@ -1107,6 +1111,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         memcpy(s, av->data.str, la); memcpy(s + la, bv->data.str, lb); s[la + lb] = 0;
         return slot_from_value(make_str_owned_len(s, (size_t)la + lb));
     }
+    /* Arithmetic on non-numbers reports the operator-specific phase2 type error. */
     if (!na || !nb) {
         static const char *names[] = {"+", "-", "*", "/", "//", "%"};
         name = names[op];
@@ -1119,15 +1124,18 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         else rt_error(EK_TYPE, line, "cannot apply '%s' to %s and %s", name, slot_type_name(a), slot_type_name(b));
         return (op == EIGS_OP_ADD || op == EIGS_OP_IDIV) ? slot_null() : slot_from_f64(0.0);
     }
+    /* Integer +, - and * preserve int64 and raise on phase2 int64 overflow. */
     if ((op == EIGS_OP_ADD || op == EIGS_OP_SUB || op == EIGS_OP_MUL) && ia && ib) {
         char ch = op == EIGS_OP_ADD ? '+' : op == EIGS_OP_SUB ? '-' : '*';
         return vm_int_arith(ai, bi, ch, line);
     }
+    /* / always promotes to float and uses the phase2 IEEE result writer. */
     if (op == EIGS_OP_DIV) {
         r = eigs_math_result(ad / bd);
         if (r == 0.0 && ad != 0.0 && isfinite(ad) && isfinite(bd)) g_math_flags |= EIGS_MATH_UNDERFLOW;
         return slot_from_f64(r);
     }
+    /* Integer // implements phase2 floor division with int64 overflow checking. */
     if (op == EIGS_OP_IDIV && ia && ib) {
         if (bi == 0) { rt_error(EK_VALUE, line, "division by zero"); return slot_from_int(0); }
         if (ai == INT64_MIN && bi == -1) { rt_error(EK_VALUE, line, "integer overflow in '//'"); return slot_from_int(0); }
@@ -1135,6 +1143,7 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
         if (rem != 0 && ((rem < 0) != (bi < 0))) ir--;
         return slot_from_int(ir);
     }
+    /* Mixed/float // implements phase2 floor division then the IEEE result writer. */
     if (op == EIGS_OP_IDIV) {
         double q;
         if (bd == 0.0 || !isfinite(ad) || !isfinite(bd)) q = floor(ad / bd);
@@ -1144,13 +1153,16 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
             else q = signbit(ad / bd) ? -0.0 : 0.0; }
         return slot_from_f64(eigs_math_result(q));
     }
+    /* Integer % follows the divisor sign, paired with phase2 floor //. */
     if (op == EIGS_OP_MOD && ia && ib) {
         if (bi == 0) { rt_error(EK_VALUE, line, "modulo by zero"); return slot_from_int(0); }
         ir = bi == -1 ? 0 : ai % bi;
         if (ir != 0 && ((ir < 0) != (bi < 0))) ir += bi;
         return slot_from_int(ir);
     }
+    /* Mixed/float % uses phase2 floor modulo and the IEEE result writer. */
     if (op == EIGS_OP_MOD) return slot_from_f64(eigs_math_result(vm_floor_mod(ad, bd)));
+    /* Mixed +, - and * promote to float and use the phase2 IEEE result writer. */
     r = op == EIGS_OP_ADD ? ad + bd : op == EIGS_OP_SUB ? ad - bd : ad * bd;
     r = eigs_math_result(r);
     if (op == EIGS_OP_MUL && r == 0.0 && ad != 0.0 && bd != 0.0) g_math_flags |= EIGS_MATH_UNDERFLOW;
@@ -1158,8 +1170,10 @@ EigsSlot eigs_op_binary(EigsOperator op, EigsSlot a, EigsSlot b) {
 }
 
 EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a) {
+    /* not serves every kind through the language truthiness rule. */
     if (op == EIGS_OP_NOT) return slot_from_bool(!slot_truthy(a));
     int64_t i; double d = 0.0;
+    /* Unary ~ accepts exact integer representations under phase2 N8. */
     if (op == EIGS_OP_BNOT) {
         int k = vm_bit_operand(a, &i);
         if (k == 1) return slot_from_int(~i);
@@ -1170,7 +1184,9 @@ EigsSlot eigs_op_unary(EigsOperator op, EigsSlot a) {
         }
         return slot_null();
     }
+    /* Unary - on float uses the phase2 IEEE result writer. */
     if (slot_f64_value(a, &d)) return slot_from_f64(eigs_math_result(-d));
+    /* Unary - on int preserves int64 and raises on phase2 INT64_MIN overflow. */
     if (slot_int_value(a, &i)) {
         if (i == INT64_MIN) { rt_error(EK_VALUE, op_line(), "integer overflow in unary '-'"); return slot_null(); }
         return slot_from_int(-i);

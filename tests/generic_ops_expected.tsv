@@ -1,0 +1,337 @@
+# state	form	op	expression	result	kind	printed-or-message
+unset	b	ADD	2 + 3	value	int	5
+unset	b	ADD	2.5 + 0.5	value	float	3.0
+unset	b	ADD	2 + 0.5	value	float	2.5
+unset	b	ADD	0.5 + 2	value	float	2.5
+unset	b	ADD	"a" + 1	error	type_mismatch	cannot apply '+' to str and num (use an f-string or 'str of' to concatenate)
+unset	b	SUB	2 - 3	value	int	-1
+unset	b	SUB	2.5 - 0.5	value	float	2.0
+unset	b	SUB	2 - 0.5	value	float	1.5
+unset	b	SUB	0.5 - 2	value	float	-1.5
+unset	b	SUB	"a" - 1	error	type_mismatch	cannot apply '-' to str and num
+unset	b	MUL	2 * 3	value	int	6
+unset	b	MUL	2.5 * 0.5	value	float	1.25
+unset	b	MUL	2 * 0.5	value	float	1.0
+unset	b	MUL	0.5 * 2	value	float	1.0
+unset	b	MUL	"a" * 1	error	type_mismatch	cannot apply '*' to str and num
+unset	b	DIV	2 / 3	value	float	0.6666666666666666
+unset	b	DIV	2.5 / 0.5	value	float	5.0
+unset	b	DIV	2 / 0.5	value	float	4.0
+unset	b	DIV	0.5 / 2	value	float	0.25
+unset	b	DIV	"a" / 1	error	type_mismatch	cannot apply '/' to str and num
+unset	b	IDIV	2 // 3	value	int	0
+unset	b	IDIV	2.5 // 0.5	value	float	5.0
+unset	b	IDIV	2 // 0.5	value	float	4.0
+unset	b	IDIV	0.5 // 2	value	float	0.0
+unset	b	IDIV	"a" // 1	error	type_mismatch	cannot apply '//' to str and num
+unset	b	MOD	2 % 3	value	int	2
+unset	b	MOD	2.5 % 0.5	value	float	0.0
+unset	b	MOD	2 % 0.5	value	float	0.0
+unset	b	MOD	0.5 % 2	value	float	0.5
+unset	b	MOD	"a" % 1	error	type_mismatch	cannot apply '%' to str and num
+unset	b	BAND	2 & 3	value	int	2
+unset	b	BAND	2.5 & 0.5	error	value	'&': number 2.5 has no integer representation
+unset	b	BAND	2 & 0.5	error	value	'&': number 0.5 has no integer representation
+unset	b	BAND	0.5 & 2	error	value	'&': number 0.5 has no integer representation
+unset	b	BAND	"a" & 1	error	type_mismatch	cannot apply '&' to str and num
+unset	b	BOR	2 | 3	value	int	3
+unset	b	BOR	2.5 | 0.5	error	value	'|': number 2.5 has no integer representation
+unset	b	BOR	2 | 0.5	error	value	'|': number 0.5 has no integer representation
+unset	b	BOR	0.5 | 2	error	value	'|': number 0.5 has no integer representation
+unset	b	BOR	"a" | 1	error	type_mismatch	cannot apply '|' to str and num
+unset	b	BXOR	2 ^ 3	value	int	1
+unset	b	BXOR	2.5 ^ 0.5	error	value	'^': number 2.5 has no integer representation
+unset	b	BXOR	2 ^ 0.5	error	value	'^': number 0.5 has no integer representation
+unset	b	BXOR	0.5 ^ 2	error	value	'^': number 0.5 has no integer representation
+unset	b	BXOR	"a" ^ 1	error	type_mismatch	cannot apply '^' to str and num
+unset	b	SHL	2 << 3	value	int	16
+unset	b	SHL	2.5 << 0.5	error	value	'<<': number 2.5 has no integer representation
+unset	b	SHL	2 << 0.5	error	value	'<<': number 0.5 has no integer representation
+unset	b	SHL	0.5 << 2	error	value	'<<': number 0.5 has no integer representation
+unset	b	SHL	"a" << 1	error	type_mismatch	cannot apply '<<' to str and num
+unset	b	SHR	2 >> 3	value	int	0
+unset	b	SHR	2.5 >> 0.5	error	value	'>>': number 2.5 has no integer representation
+unset	b	SHR	2 >> 0.5	error	value	'>>': number 0.5 has no integer representation
+unset	b	SHR	0.5 >> 2	error	value	'>>': number 0.5 has no integer representation
+unset	b	SHR	"a" >> 1	error	type_mismatch	cannot apply '>>' to str and num
+unset	b	EQ	2 == 3	value	bool	false
+unset	b	EQ	2.5 == 0.5	value	bool	false
+unset	b	EQ	2 == 0.5	value	bool	false
+unset	b	EQ	0.5 == 2	value	bool	false
+unset	b	EQ	"a" == 1	value	bool	false
+unset	b	NE	2 != 3	value	bool	true
+unset	b	NE	2.5 != 0.5	value	bool	true
+unset	b	NE	2 != 0.5	value	bool	true
+unset	b	NE	0.5 != 2	value	bool	true
+unset	b	NE	"a" != 1	value	bool	true
+unset	b	LT	2 < 3	value	bool	true
+unset	b	LT	2.5 < 0.5	value	bool	false
+unset	b	LT	2 < 0.5	value	bool	false
+unset	b	LT	0.5 < 2	value	bool	true
+unset	b	LT	"a" < 1	error	type_mismatch	cannot compare str and num with '<'
+unset	b	GT	2 > 3	value	bool	false
+unset	b	GT	2.5 > 0.5	value	bool	true
+unset	b	GT	2 > 0.5	value	bool	true
+unset	b	GT	0.5 > 2	value	bool	false
+unset	b	GT	"a" > 1	error	type_mismatch	cannot compare str and num with '>'
+unset	b	LE	2 <= 3	value	bool	true
+unset	b	LE	2.5 <= 0.5	value	bool	false
+unset	b	LE	2 <= 0.5	value	bool	false
+unset	b	LE	0.5 <= 2	value	bool	true
+unset	b	LE	"a" <= 1	error	type_mismatch	cannot compare str and num with '<='
+unset	b	GE	2 >= 3	value	bool	false
+unset	b	GE	2.5 >= 0.5	value	bool	true
+unset	b	GE	2 >= 0.5	value	bool	true
+unset	b	GE	0.5 >= 2	value	bool	false
+unset	b	GE	"a" >= 1	error	type_mismatch	cannot compare str and num with '>='
+unset	b	IDIV	-5 // 2	value	int	-3
+unset	b	LT	2 < 2	value	bool	false
+unset	b	ADD	9223372036854775807 + 1	error	value	integer overflow in '+'
+unset	b	SUB	(-9223372036854775807 - 1) - 1	error	value	integer overflow in '-'
+unset	b	MUL	9223372036854775807 * 2	error	value	integer overflow in '*'
+unset	b	IDIV	(-9223372036854775807 - 1) // -1	error	value	integer overflow in '//'
+unset	b	MOD	(-9223372036854775807 - 1) % -1	value	int	0
+unset	b	DIV	2 / 0	value	float	inf
+unset	b	DIV	2 / 0.0	value	float	inf
+unset	b	IDIV	2 // 0	error	value	division by zero
+unset	b	IDIV	2 // 0.0	value	float	inf
+unset	b	MOD	2 % 0	error	value	modulo by zero
+unset	b	MOD	2 % 0.0	value	float	nan
+unset	b	SHL	2 << -1	value	int	1
+unset	b	SHL	2 << 64	value	int	0
+unset	b	SHR	2 >> -1	value	int	4
+unset	b	SHR	2 >> 64	value	int	0
+unset	u	NEG	-2	value	int	-2
+unset	u	NEG	-2.5	value	float	-2.5
+unset	u	NEG	-"a"	error	type_mismatch	cannot negate str
+unset	u	NEG	-(-9223372036854775807 - 1)	error	value	integer overflow in unary '-'
+unset	u	NOT	not 2	value	bool	false
+unset	u	NOT	not 2.5	value	bool	false
+unset	u	NOT	not "a"	value	bool	false
+unset	u	BNOT	~2	value	int	-3
+unset	u	BNOT	~2.0	value	int	-3
+unset	u	BNOT	~"a"	error	type_mismatch	cannot apply '~' to str
+0	b	ADD	2 + 3	value	int	5
+0	b	ADD	2.5 + 0.5	value	float	3.0
+0	b	ADD	2 + 0.5	value	float	2.5
+0	b	ADD	0.5 + 2	value	float	2.5
+0	b	ADD	"a" + 1	error	type_mismatch	cannot apply '+' to str and num (use an f-string or 'str of' to concatenate)
+0	b	SUB	2 - 3	value	int	-1
+0	b	SUB	2.5 - 0.5	value	float	2.0
+0	b	SUB	2 - 0.5	value	float	1.5
+0	b	SUB	0.5 - 2	value	float	-1.5
+0	b	SUB	"a" - 1	error	type_mismatch	cannot apply '-' to str and num
+0	b	MUL	2 * 3	value	int	6
+0	b	MUL	2.5 * 0.5	value	float	1.25
+0	b	MUL	2 * 0.5	value	float	1.0
+0	b	MUL	0.5 * 2	value	float	1.0
+0	b	MUL	"a" * 1	error	type_mismatch	cannot apply '*' to str and num
+0	b	DIV	2 / 3	value	float	0.6666666666666666
+0	b	DIV	2.5 / 0.5	value	float	5.0
+0	b	DIV	2 / 0.5	value	float	4.0
+0	b	DIV	0.5 / 2	value	float	0.25
+0	b	DIV	"a" / 1	error	type_mismatch	cannot apply '/' to str and num
+0	b	IDIV	2 // 3	value	int	0
+0	b	IDIV	2.5 // 0.5	value	float	5.0
+0	b	IDIV	2 // 0.5	value	float	4.0
+0	b	IDIV	0.5 // 2	value	float	0.0
+0	b	IDIV	"a" // 1	error	type_mismatch	cannot apply '//' to str and num
+0	b	MOD	2 % 3	value	int	2
+0	b	MOD	2.5 % 0.5	value	float	0.0
+0	b	MOD	2 % 0.5	value	float	0.0
+0	b	MOD	0.5 % 2	value	float	0.5
+0	b	MOD	"a" % 1	error	type_mismatch	cannot apply '%' to str and num
+0	b	BAND	2 & 3	value	int	2
+0	b	BAND	2.5 & 0.5	error	value	'&': number 2.5 has no integer representation
+0	b	BAND	2 & 0.5	error	value	'&': number 0.5 has no integer representation
+0	b	BAND	0.5 & 2	error	value	'&': number 0.5 has no integer representation
+0	b	BAND	"a" & 1	error	type_mismatch	cannot apply '&' to str and num
+0	b	BOR	2 | 3	value	int	3
+0	b	BOR	2.5 | 0.5	error	value	'|': number 2.5 has no integer representation
+0	b	BOR	2 | 0.5	error	value	'|': number 0.5 has no integer representation
+0	b	BOR	0.5 | 2	error	value	'|': number 0.5 has no integer representation
+0	b	BOR	"a" | 1	error	type_mismatch	cannot apply '|' to str and num
+0	b	BXOR	2 ^ 3	value	int	1
+0	b	BXOR	2.5 ^ 0.5	error	value	'^': number 2.5 has no integer representation
+0	b	BXOR	2 ^ 0.5	error	value	'^': number 0.5 has no integer representation
+0	b	BXOR	0.5 ^ 2	error	value	'^': number 0.5 has no integer representation
+0	b	BXOR	"a" ^ 1	error	type_mismatch	cannot apply '^' to str and num
+0	b	SHL	2 << 3	value	int	16
+0	b	SHL	2.5 << 0.5	error	value	'<<': number 2.5 has no integer representation
+0	b	SHL	2 << 0.5	error	value	'<<': number 0.5 has no integer representation
+0	b	SHL	0.5 << 2	error	value	'<<': number 0.5 has no integer representation
+0	b	SHL	"a" << 1	error	type_mismatch	cannot apply '<<' to str and num
+0	b	SHR	2 >> 3	value	int	0
+0	b	SHR	2.5 >> 0.5	error	value	'>>': number 2.5 has no integer representation
+0	b	SHR	2 >> 0.5	error	value	'>>': number 0.5 has no integer representation
+0	b	SHR	0.5 >> 2	error	value	'>>': number 0.5 has no integer representation
+0	b	SHR	"a" >> 1	error	type_mismatch	cannot apply '>>' to str and num
+0	b	EQ	2 == 3	value	bool	false
+0	b	EQ	2.5 == 0.5	value	bool	false
+0	b	EQ	2 == 0.5	value	bool	false
+0	b	EQ	0.5 == 2	value	bool	false
+0	b	EQ	"a" == 1	value	bool	false
+0	b	NE	2 != 3	value	bool	true
+0	b	NE	2.5 != 0.5	value	bool	true
+0	b	NE	2 != 0.5	value	bool	true
+0	b	NE	0.5 != 2	value	bool	true
+0	b	NE	"a" != 1	value	bool	true
+0	b	LT	2 < 3	value	bool	true
+0	b	LT	2.5 < 0.5	value	bool	false
+0	b	LT	2 < 0.5	value	bool	false
+0	b	LT	0.5 < 2	value	bool	true
+0	b	LT	"a" < 1	error	type_mismatch	cannot compare str and num with '<'
+0	b	GT	2 > 3	value	bool	false
+0	b	GT	2.5 > 0.5	value	bool	true
+0	b	GT	2 > 0.5	value	bool	true
+0	b	GT	0.5 > 2	value	bool	false
+0	b	GT	"a" > 1	error	type_mismatch	cannot compare str and num with '>'
+0	b	LE	2 <= 3	value	bool	true
+0	b	LE	2.5 <= 0.5	value	bool	false
+0	b	LE	2 <= 0.5	value	bool	false
+0	b	LE	0.5 <= 2	value	bool	true
+0	b	LE	"a" <= 1	error	type_mismatch	cannot compare str and num with '<='
+0	b	GE	2 >= 3	value	bool	false
+0	b	GE	2.5 >= 0.5	value	bool	true
+0	b	GE	2 >= 0.5	value	bool	true
+0	b	GE	0.5 >= 2	value	bool	false
+0	b	GE	"a" >= 1	error	type_mismatch	cannot compare str and num with '>='
+0	b	IDIV	-5 // 2	value	int	-3
+0	b	LT	2 < 2	value	bool	false
+0	b	ADD	9223372036854775807 + 1	error	value	integer overflow in '+'
+0	b	SUB	(-9223372036854775807 - 1) - 1	error	value	integer overflow in '-'
+0	b	MUL	9223372036854775807 * 2	error	value	integer overflow in '*'
+0	b	IDIV	(-9223372036854775807 - 1) // -1	error	value	integer overflow in '//'
+0	b	MOD	(-9223372036854775807 - 1) % -1	value	int	0
+0	b	DIV	2 / 0	value	float	inf
+0	b	DIV	2 / 0.0	value	float	inf
+0	b	IDIV	2 // 0	error	value	division by zero
+0	b	IDIV	2 // 0.0	value	float	inf
+0	b	MOD	2 % 0	error	value	modulo by zero
+0	b	MOD	2 % 0.0	value	float	nan
+0	b	SHL	2 << -1	value	int	1
+0	b	SHL	2 << 64	value	int	0
+0	b	SHR	2 >> -1	value	int	4
+0	b	SHR	2 >> 64	value	int	0
+0	u	NEG	-2	value	int	-2
+0	u	NEG	-2.5	value	float	-2.5
+0	u	NEG	-"a"	error	type_mismatch	cannot negate str
+0	u	NEG	-(-9223372036854775807 - 1)	error	value	integer overflow in unary '-'
+0	u	NOT	not 2	value	bool	false
+0	u	NOT	not 2.5	value	bool	false
+0	u	NOT	not "a"	value	bool	false
+0	u	BNOT	~2	value	int	-3
+0	u	BNOT	~2.0	value	int	-3
+0	u	BNOT	~"a"	error	type_mismatch	cannot apply '~' to str
+1	b	ADD	2 + 3	value	int	5
+1	b	ADD	2.5 + 0.5	value	float	3.0
+1	b	ADD	2 + 0.5	value	float	2.5
+1	b	ADD	0.5 + 2	value	float	2.5
+1	b	ADD	"a" + 1	error	type_mismatch	cannot apply '+' to str and num (use an f-string or 'str of' to concatenate)
+1	b	SUB	2 - 3	value	int	-1
+1	b	SUB	2.5 - 0.5	value	float	2.0
+1	b	SUB	2 - 0.5	value	float	1.5
+1	b	SUB	0.5 - 2	value	float	-1.5
+1	b	SUB	"a" - 1	error	type_mismatch	cannot apply '-' to str and num
+1	b	MUL	2 * 3	value	int	6
+1	b	MUL	2.5 * 0.5	value	float	1.25
+1	b	MUL	2 * 0.5	value	float	1.0
+1	b	MUL	0.5 * 2	value	float	1.0
+1	b	MUL	"a" * 1	error	type_mismatch	cannot apply '*' to str and num
+1	b	DIV	2 / 3	value	float	0.6666666666666666
+1	b	DIV	2.5 / 0.5	value	float	5.0
+1	b	DIV	2 / 0.5	value	float	4.0
+1	b	DIV	0.5 / 2	value	float	0.25
+1	b	DIV	"a" / 1	error	type_mismatch	cannot apply '/' to str and num
+1	b	IDIV	2 // 3	value	int	0
+1	b	IDIV	2.5 // 0.5	value	float	5.0
+1	b	IDIV	2 // 0.5	value	float	4.0
+1	b	IDIV	0.5 // 2	value	float	0.0
+1	b	IDIV	"a" // 1	error	type_mismatch	cannot apply '//' to str and num
+1	b	MOD	2 % 3	value	int	2
+1	b	MOD	2.5 % 0.5	value	float	0.0
+1	b	MOD	2 % 0.5	value	float	0.0
+1	b	MOD	0.5 % 2	value	float	0.5
+1	b	MOD	"a" % 1	error	type_mismatch	cannot apply '%' to str and num
+1	b	BAND	2 & 3	value	int	2
+1	b	BAND	2.5 & 0.5	error	value	'&': number 2.5 has no integer representation
+1	b	BAND	2 & 0.5	error	value	'&': number 0.5 has no integer representation
+1	b	BAND	0.5 & 2	error	value	'&': number 0.5 has no integer representation
+1	b	BAND	"a" & 1	error	type_mismatch	cannot apply '&' to str and num
+1	b	BOR	2 | 3	value	int	3
+1	b	BOR	2.5 | 0.5	error	value	'|': number 2.5 has no integer representation
+1	b	BOR	2 | 0.5	error	value	'|': number 0.5 has no integer representation
+1	b	BOR	0.5 | 2	error	value	'|': number 0.5 has no integer representation
+1	b	BOR	"a" | 1	error	type_mismatch	cannot apply '|' to str and num
+1	b	BXOR	2 ^ 3	value	int	1
+1	b	BXOR	2.5 ^ 0.5	error	value	'^': number 2.5 has no integer representation
+1	b	BXOR	2 ^ 0.5	error	value	'^': number 0.5 has no integer representation
+1	b	BXOR	0.5 ^ 2	error	value	'^': number 0.5 has no integer representation
+1	b	BXOR	"a" ^ 1	error	type_mismatch	cannot apply '^' to str and num
+1	b	SHL	2 << 3	value	int	16
+1	b	SHL	2.5 << 0.5	error	value	'<<': number 2.5 has no integer representation
+1	b	SHL	2 << 0.5	error	value	'<<': number 0.5 has no integer representation
+1	b	SHL	0.5 << 2	error	value	'<<': number 0.5 has no integer representation
+1	b	SHL	"a" << 1	error	type_mismatch	cannot apply '<<' to str and num
+1	b	SHR	2 >> 3	value	int	0
+1	b	SHR	2.5 >> 0.5	error	value	'>>': number 2.5 has no integer representation
+1	b	SHR	2 >> 0.5	error	value	'>>': number 0.5 has no integer representation
+1	b	SHR	0.5 >> 2	error	value	'>>': number 0.5 has no integer representation
+1	b	SHR	"a" >> 1	error	type_mismatch	cannot apply '>>' to str and num
+1	b	EQ	2 == 3	value	bool	false
+1	b	EQ	2.5 == 0.5	value	bool	false
+1	b	EQ	2 == 0.5	value	bool	false
+1	b	EQ	0.5 == 2	value	bool	false
+1	b	EQ	"a" == 1	value	bool	false
+1	b	NE	2 != 3	value	bool	true
+1	b	NE	2.5 != 0.5	value	bool	true
+1	b	NE	2 != 0.5	value	bool	true
+1	b	NE	0.5 != 2	value	bool	true
+1	b	NE	"a" != 1	value	bool	true
+1	b	LT	2 < 3	value	bool	true
+1	b	LT	2.5 < 0.5	value	bool	false
+1	b	LT	2 < 0.5	value	bool	false
+1	b	LT	0.5 < 2	value	bool	true
+1	b	LT	"a" < 1	error	type_mismatch	cannot compare str and num with '<'
+1	b	GT	2 > 3	value	bool	false
+1	b	GT	2.5 > 0.5	value	bool	true
+1	b	GT	2 > 0.5	value	bool	true
+1	b	GT	0.5 > 2	value	bool	false
+1	b	GT	"a" > 1	error	type_mismatch	cannot compare str and num with '>'
+1	b	LE	2 <= 3	value	bool	true
+1	b	LE	2.5 <= 0.5	value	bool	false
+1	b	LE	2 <= 0.5	value	bool	false
+1	b	LE	0.5 <= 2	value	bool	true
+1	b	LE	"a" <= 1	error	type_mismatch	cannot compare str and num with '<='
+1	b	GE	2 >= 3	value	bool	false
+1	b	GE	2.5 >= 0.5	value	bool	true
+1	b	GE	2 >= 0.5	value	bool	true
+1	b	GE	0.5 >= 2	value	bool	false
+1	b	GE	"a" >= 1	error	type_mismatch	cannot compare str and num with '>='
+1	b	IDIV	-5 // 2	value	int	-3
+1	b	LT	2 < 2	value	bool	false
+1	b	ADD	9223372036854775807 + 1	error	value	integer overflow in '+'
+1	b	SUB	(-9223372036854775807 - 1) - 1	error	value	integer overflow in '-'
+1	b	MUL	9223372036854775807 * 2	error	value	integer overflow in '*'
+1	b	IDIV	(-9223372036854775807 - 1) // -1	error	value	integer overflow in '//'
+1	b	MOD	(-9223372036854775807 - 1) % -1	value	int	0
+1	b	DIV	2 / 0	error	value	arithmetic: non-finite arithmetic result (infinity)
+1	b	DIV	2 / 0.0	error	value	arithmetic: non-finite arithmetic result (infinity)
+1	b	IDIV	2 // 0	error	value	division by zero
+1	b	IDIV	2 // 0.0	error	value	arithmetic: non-finite arithmetic result (infinity)
+1	b	MOD	2 % 0	error	value	modulo by zero
+1	b	MOD	2 % 0.0	error	value	arithmetic: result is not a number (NaN has no defined value)
+1	b	SHL	2 << -1	value	int	1
+1	b	SHL	2 << 64	value	int	0
+1	b	SHR	2 >> -1	value	int	4
+1	b	SHR	2 >> 64	value	int	0
+1	u	NEG	-2	value	int	-2
+1	u	NEG	-2.5	value	float	-2.5
+1	u	NEG	-"a"	error	type_mismatch	cannot negate str
+1	u	NEG	-(-9223372036854775807 - 1)	error	value	integer overflow in unary '-'
+1	u	NOT	not 2	value	bool	false
+1	u	NOT	not 2.5	value	bool	false
+1	u	NOT	not "a"	value	bool	false
+1	u	BNOT	~2	value	int	-3
+1	u	BNOT	~2.0	value	int	-3
+1	u	BNOT	~"a"	error	type_mismatch	cannot apply '~' to str
