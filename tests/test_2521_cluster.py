@@ -42,7 +42,7 @@ with tempfile.TemporaryDirectory() as tmp:
    recorded.returncode==replayed.returncode==0 and recorded.stdout==replayed.stdout and recorded.stderr==replayed.stderr and
    f'["{kind}"' in recorded.stdout.decode(errors="replace") and tape_text.count("tensor_load=")==1,
    f"record={recorded.returncode,recorded.stdout,recorded.stderr} replay={replayed.returncode,replayed.stdout,replayed.stderr} tape={tape_text!r}")
- strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",str(root))
+ strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",f"{root}': Is a directory")
  alloc=root/"allocation.tensor"; alloc.write_bytes(struct.pack("IIII",2,1,10000000,0))
  def memory_cap(): resource.setrlimit(resource.RLIMIT_AS,(70000000,70000000))
  alloc_program=root/"allocation.eigs"; alloc_program.write_text(caught(f'tensor_load of "{alloc}"'))
