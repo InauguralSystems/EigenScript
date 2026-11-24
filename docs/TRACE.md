@@ -378,8 +378,10 @@ Notes on the families:
   payload is not represented on the tape (including `tensor_save`) are refused
   loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
-  records one compact observation: `[rows, cols]` for an over-cap header,
-  otherwise `null`. On replay, every structurally valid verdict raises the
+  records one compact observation: the standard one-string file-I/O error
+  record when opening the path fails, `[rows, cols]` for an over-cap header,
+  otherwise `null`. Replay re-raises a recorded open error byte-for-byte.
+  For every other structurally valid verdict, replay raises the
   same generic `io` file-read-boundary error before filesystem access; an
   over-cap verdict does not reconstruct its recorded `limit` error. Tensor
   payloads are untaped and are never read live during replay. Invalid path

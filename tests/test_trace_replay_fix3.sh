@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-echo "PLAN: 5"
+echo "PLAN: 7"
 set -eu
 EIGS=${EIGS:-${EIGENSCRIPT:-$(cd "$(dirname "$0")/.." && pwd)/src/eigenscript}}
 T=$(mktemp -d); trap 'rm -rf "$T"' EXIT
@@ -25,15 +25,43 @@ if EIGS_REPLAY="$T/write.tape" "$EIGS" "$T/write.eigs" >/dev/null 2>"$T/e"; then
 [ "$(cat "$T/victim")" = original ] || fail "marker fell through to live write"
 ok "unservable filesystem records cannot mutate live files"
 
-echo 'tensor_load of "missing"' >"$T/tensor.eigs"
+cat >"$T/tensor-save.eigs" <<EOF
+tensor_save of [[[1.0]], "$T/tensor.bin"]
+EOF
+"$EIGS" "$T/tensor-save.eigs" >/dev/null
+echo "tensor_load of \"$T/tensor.bin\"" >"$T/tensor.eigs"
 for bad in '[]' '[1]' '["x", 2]'; do
   EIGS_TRACE="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null
-  sed "s/tensor_load=null/tensor_load=$bad/" "$T/tensor.tape" > "$T/tensor.edited"
+  sed "s/tensor_load=.*/tensor_load=$bad/" "$T/tensor.tape" > "$T/tensor.edited"
   mv "$T/tensor.edited" "$T/tensor.tape"
   if EIGS_REPLAY="$T/tensor.tape" "$EIGS" "$T/tensor.eigs" >/dev/null 2>"$T/e"; then fail "tensor verdict $bad succeeded"; fi
   grep -F 'tensor_load: malformed replay verdict' "$T/e" >/dev/null || fail "tensor verdict $bad lacked diagnostic"
 done
 ok "malformed tensor verdict shapes are refused"
+
+cat >"$T/tensor-missing.eigs" <<EOF
+try:
+    tensor_load of "$T/absent.tensor"
+catch e:
+    print of [e.kind, e.message]
+EOF
+EIGS_TRACE="$T/missing.tape" "$EIGS" "$T/tensor-missing.eigs" >"$T/missing.live"
+EIGS_REPLAY="$T/missing.tape" "$EIGS" "$T/tensor-missing.eigs" >"$T/missing.replay"
+cmp "$T/missing.live" "$T/missing.replay" || fail "missing tensor output differed on replay"
+[ "$(grep -c ' tensor_load=' "$T/missing.tape")" -eq 1 ] || fail "missing tensor recorded other than one verdict"
+ok "missing tensor_load replays the identical io error"
+
+cat >"$T/tensor-next.eigs" <<EOF
+try:
+    tensor_load of "$T/still-absent.tensor"
+catch e:
+    print of [e.kind, e.message]
+print of (env_get of "TENSOR_LOAD_NEXT_RECORD")
+EOF
+TENSOR_LOAD_NEXT_RECORD=kept EIGS_TRACE="$T/next.tape" "$EIGS" "$T/tensor-next.eigs" >"$T/next.live"
+TENSOR_LOAD_NEXT_RECORD=changed EIGS_REPLAY="$T/next.tape" "$EIGS" "$T/tensor-next.eigs" >"$T/next.replay"
+cmp "$T/next.live" "$T/next.replay" || fail "record following failed tensor_load shifted"
+ok "failed tensor_load leaves the following nondeterministic record aligned"
 
 echo 'print of "x"' >"$T/unit.eigs"
 echo "load_file of \"$T/unit.eigs\"" >"$T/load.eigs"

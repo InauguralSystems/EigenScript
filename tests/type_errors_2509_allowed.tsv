@@ -258,7 +258,6 @@ task_yield	whole	-	dict	task_yield of {"a": 1}	IGNORED: task_yield of null
 task_yield	whole	-	list	task_yield of []	IGNORED: task_yield of null
 task_yield	whole	-	number	task_yield of 0	IGNORED: task_yield of null
 task_yield	whole	-	string	task_yield of "zz_census_2509"	IGNORED: task_yield of null
-tensor_load	whole	-	string	tensor_load of "zz_census_2509"	ANY: `tensor_load of "path"`
 text_builder_append	pos	1	dict	text_builder_append of [tb, {"a": 1}]	ANY: `text_builder_append of [builder, value]`
 text_builder_append	pos	1	list	text_builder_append of [tb, []]	ANY: `text_builder_append of [builder, value]`
 text_builder_append	pos	1	number	text_builder_append of [tb, 0]	ANY: `text_builder_append of [builder, value]`
