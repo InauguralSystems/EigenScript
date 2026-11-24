@@ -752,9 +752,11 @@ result).**
 | `value_slot.h:slot_true` | not-a-classifier | constructor (D3) |
 | `value_slot.h:slot_truthy_immediate` | smi-arm | an int is truthy when it is not 0, like a double (D1) |
 | `vm.c:#define ARITH_FAST` | guarded | an int is not a float (`slot_f64_value`): the arm's slow path pops it through `slot_bridge_unwrap`; R1.3 gives that path int arithmetic (D1) |
-| `vm.c:#define GENERIC_CMP` | smi-arm | exact int pairs and float pairs compare inline; mixed and nonnumeric operands use the generic export |
+| `vm.c:#define GENERIC_CMP` | smi-arm | two SMIs and two floats compare inline; an ordered comparison also takes string pairs and exact mixed numbers inline (main's order); every other pair goes to `vm_cmp_rest` (equality) or the generic export (D1) |
+| `vm.c:#define INT_BINOP_R` | smi-arm | two exact integer slots (`slot_int_value`: an SMI or a boxed int) take the int64 result inline; every other pair goes to the generic export (D1) |
 | `vm.c:#define INT_ARITH` | smi-arm | two exact integer slots use checked int64 arithmetic; the result is an SMI when it fits and an owned int box otherwise, and overflow raises (R1.3) (D1) |
 | `vm.c:#define READ_SLICE_BOUND` | smi-arm | an int bound is its value when a C `int` holds it, else a value error (D1) |
+| `vm.c:vm_cmp_rest` | guarded | dereferences only after `slot_is_ptr` on both operands; numbers go through `vm_number_compare` and every other pair to the generic export (D2) |
 | `vm.c:jit_helper_dot_get` | guarded | a non-null field is pushed as its bits; an SMI is a valid stack slot (D3) |
 | `vm.c:jit_helper_dot_set` | guarded | an int value skips the immediate store: the slow path pops it through `slot_bridge_unwrap` (D1) |
 | `vm.c:jit_helper_index_get` | guarded | an int index skips the fast path: the slow path lifts it through `slot_to_value` (D1) |
