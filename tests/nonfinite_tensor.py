@@ -61,6 +61,11 @@ def rows():
             table.append(Row(name, form, case, values, tensor=tensor))
     for form, value in itertools.product(('list', 'buffer'), ('-30.0', '-740.0', '-745.0', '-746.0', '-800.0', '-1000.0')):
         table.append(Row('log_softmax', form, 'finite-' + value, (('0.0', value),)))
+    for form, (case, values) in itertools.product(
+            ('list', 'buffer'),
+            (('finite-basic', (('1.0', '2.0', '3.0'),)),
+             ('finite-large-spread', (('1000.0', '0.0', '-1000.0'),)))):
+        table.append(Row('softmax', form, case, values))
     for name in MATRIX:
         cases = []
         for position, value in itertools.product(range(4), NF):
@@ -78,7 +83,7 @@ def rows():
             # Deal the mathematical A.B case to the physical transpose form.
             table.append(Row(name, form, case, transposed(a) if name == 'matmul_at' else a,
                              transposed(b) if name == 'matmul_bt' else b, True))
-    assert len(table) == 234
+    assert len(table) == 238
     assert len({row.title for row in table}) == len(table)
     return table
 

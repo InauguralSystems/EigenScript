@@ -2212,6 +2212,13 @@ static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const c
 
 /* ==== BUILTIN: sgd_update ==== */
 /* sgd_update of [param, grad, lr] — in-place param = param - lr * grad */
+/* #2517: the container kind named in a refused SGD pairing. */
+static const char *sgd_pair_kind(const Value *v) {
+    if (v->type == VAL_LIST) return "a list";
+    if (v->type == VAL_BUFFER) return v->data.buffer.rows > 0 ? "a 2-D buffer" : "a 1-D buffer";
+    return val_type_name(v->type);
+}
+
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
@@ -2220,6 +2227,14 @@ Value* builtin_sgd_update(Value *arg) {
     Value *param = list_get_view(arg, 0, &param_view);
     EIGS_VIEW(grad_view);
     Value *grad = list_get_view(arg, 1, &grad_view);
+    ARG_GUARD(!param || (param->type != VAL_LIST && param->type != VAL_BUFFER) ||
+              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER),
+              "sgd_update", "params and grad of the same kind (a list or a buffer)", make_null());
+    if (param->type != grad->type) {
+        rt_error(EK_TYPE, 0, "sgd_update: expected params and grad of the same kind (a list or a buffer), "
+                 "got %s params and %s grad", sgd_pair_kind(param), sgd_pair_kind(grad));
+        return make_null();
+    }
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2409,6 +2424,15 @@ rows_grad_failed:
 /* ==== BUILTIN: sgd_update_rows ==== */
 /* sgd_update_rows of [matrix, grad, row_indices, lr]
  * Updates only the specified rows of matrix in-place: row -= lr * grad_row */
+/* #2517: a mixed parameter/gradient pairing raises, naming what was passed. */
+static int sgd_pair_refused(const char *who, const Value *matrix, const Value *grad) {
+    if (matrix->type == grad->type && !(matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0))
+        return 0;
+    rt_error(EK_TYPE, 0, "%s: expected params and grad of the same kind (a list of rows or a 2-D buffer), "
+             "got %s params and %s grad", who, sgd_pair_kind(matrix), sgd_pair_kind(grad));
+    return 1;
+}
+
 Value* builtin_sgd_update_rows(Value *arg) {
     STRICT_LIST_MAX(arg, 4, "sgd_update_rows");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 4,
@@ -2423,6 +2447,9 @@ Value* builtin_sgd_update_rows(Value *arg) {
               !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
               !row_indices || (row_indices->type != VAL_LIST && row_indices->type != VAL_BUFFER),
               "sgd_update_rows", "list or buffer parameter, gradient, and indices", make_null());
+    /* #2517: a pairing of different kinds is refused first, naming both kinds,
+     * before the learning rate, the cells or the row shapes are read. */
+    if (sgd_pair_refused("sgd_update_rows", matrix, grad)) return make_null();
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2454,7 +2481,7 @@ Value* builtin_sgd_update_rows(Value *arg) {
         free(row_snapshot);
         return list_get_return(arg, 0);
     }
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(row_indices))
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST)
         return list_get_return(arg, 0);
 
     int row_limit = matrix->data.list.count < grad->data.list.count
@@ -2636,6 +2663,9 @@ Value* builtin_sgd_update_cols(Value *arg) {
               !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
               !col_indices || (col_indices->type != VAL_LIST && col_indices->type != VAL_BUFFER),
               "sgd_update_cols", "list or buffer parameter, gradient, and indices", make_null());
+    /* #2517: a pairing of different kinds is refused first, naming both kinds,
+     * before the learning rate, the cells or the row shapes are read. */
+    if (sgd_pair_refused("sgd_update_cols", matrix, grad)) return make_null();
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2666,7 +2696,7 @@ Value* builtin_sgd_update_cols(Value *arg) {
         free(col_snapshot);
         return list_get_return(arg, 0);
     }
-    if (matrix->type != VAL_LIST || grad->type != VAL_LIST || !flat_is_vector(col_indices))
+    if (matrix->type != VAL_LIST || grad->type != VAL_LIST)
         return list_get_return(arg, 0);
 
     int rows = matrix->data.list.count < grad->data.list.count
@@ -2861,8 +2891,13 @@ Value* builtin_tensor_load(Value *arg) {
          * corrupt-tape diagnostics stay intact, but never use it as permission
          * to open the payload: tensor bytes themselves were never taped. */
         Value *verdict = NULL;
-        if (trace_replay_refuse_off_owner("tensor_load")) return make_null();
-        int taken = trace_replay_take("tensor_load", &verdict);
+        if (file_io_replay("tensor_load", &verdict)) {
+            if (g_has_error) return make_null();
+        } else {
+            rt_error(EK_IO, 0, "tensor_load: unservable replay record");
+            return make_null();
+        }
+        int taken = verdict != NULL;
         int valid = taken && verdict &&
             (verdict->type == VAL_NULL ||
              (verdict->type == VAL_LIST && verdict->data.list.count == 2 &&
@@ -2878,7 +2913,10 @@ Value* builtin_tensor_load(Value *arg) {
     }
 
     FILE *f = fopen(arg->data.str, "rb");
-    if (!f) { tensor_load_record_verdict(0, 0); return make_null(); }
+    if (!f) {
+        int err = errno;
+        return file_io_error("tensor_load", arg->data.str, err);
+    }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];

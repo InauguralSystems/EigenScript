@@ -756,7 +756,7 @@ TENSOR_CAP=$(EIGS_REPLAY="$TMPDIR/tensor-[999999,999999].tape" "$EIGS" "$TMPDIR/
 if [ "$TENSOR_NULL" = "$TENSOR_CAP" ] \
    && echo "$TENSOR_NULL" | grep -q 'not replayable under EIGS_REPLAY' \
    && ! echo "$TENSOR_CAP" | grep -q 'limit' \
-   && grep -q 'every structurally valid verdict raises the' \
+   && grep -q 'For every other structurally valid verdict, replay raises the' \
        "$SRC_DIR/../docs/TRACE.md"; then
     ok "all structurally valid tensor verdicts raise the generic I/O boundary"
 else

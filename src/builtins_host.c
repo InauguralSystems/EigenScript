@@ -308,8 +308,8 @@ Value* builtin_stream_close(Value *arg) {
 
 /* Forward declarations for the taped filesystem error representation shared
  * by mkdir/ls and the file readers below. */
-static Value *file_io_error(const char *fn, const char *path, int err);
-static int file_io_replay(const char *fn, Value **out);
+Value *file_io_error(const char *fn, const char *path, int err);
+int file_io_replay(const char *fn, Value **out);
 
 /* mkdir of "path" → true on success; I/O failure raises EK_IO. Creates parents. */
 /* #585/#1885: replay is side-effect-free: TAKE precedes mkdir(2), as it does
@@ -662,7 +662,7 @@ Value* builtin_is_file(Value *arg) {
         make_bool(stat(arg->data.str, &st) == 0 && S_ISREG(st.st_mode)));
 }
 
-static Value *file_io_error(const char *fn, const char *path, int err);
+Value *file_io_error(const char *fn, const char *path, int err);
 
 /* rename of [old_path, new_path] — rename/replace a file. On POSIX rename(2) is
  * atomic: a crash leaves either the old file or the new file fully in place,
@@ -776,7 +776,7 @@ static Value *file_io_error_message(const char *fn, const char *message) {
     return make_null();
 }
 
-static Value *file_io_error(const char *fn, const char *path, int err) {
+Value *file_io_error(const char *fn, const char *path, int err) {
     char message[3900];
     snprintf(message, sizeof(message), "%s: '%s': %s",
              fn, path, strerror(err));
@@ -785,7 +785,7 @@ static Value *file_io_error(const char *fn, const char *path, int err) {
 
 /* Return zero only when replay is disabled.  Once replay is enabled every
  * result, including an unservable/corrupt record, short-circuits live I/O. */
-static int file_io_replay(const char *fn, Value **out) {
+int file_io_replay(const char *fn, Value **out) {
     *out = NULL;
     if (!__builtin_expect(g_replay_enabled, 0)) return 0;
     if (trace_replay_refuse_off_owner(fn)) { *out = make_null(); return 1; }

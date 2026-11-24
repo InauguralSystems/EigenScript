@@ -1,0 +1,1 @@
+- Make SGD tensor updates reject mismatched container kinds and non-matrix buffers instead of silently doing nothing, and make `tensor_load` raise `io` when its path cannot be opened (#2517, #2514, #2516).
