@@ -55,11 +55,18 @@ with tempfile.TemporaryDirectory() as tmp:
  api=subprocess.run([str(EIGS),"--api"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)
  if b"audio_music_play" in api.stdout:
   undecodable=root/"undecodable.mp3"; undecodable.write_text("not an audio stream\n")
+  # The undecodable row needs a working mixer and device. Probe that with a
+  # VALID file, independent of the code under test: a skip keyed on the row's
+  # own `false` answer would also skip the very regression the row exists for.
+  wav=root/"probe.wav"; pcm=b"\x00\x00"*64
+  wav.write_bytes(b"RIFF"+struct.pack("<I",36+len(pcm))+b"WAVEfmt "+struct.pack("<IHHIIHH",16,1,1,8000,16000,2,16)+b"data"+struct.pack("<I",len(pcm))+pcm)
+  probe=execute("music-probe",f'print of audio_music_play of ["{wav}", 0]\n',{"SDL_AUDIODRIVER":"dummy"})
+  mixer_ok=probe.stdout.decode(errors="replace").strip()=="true"
   for name,path in [("missing",root/"missing.mp3"),("directory",root),("undecodable",undecodable)]:
    source=f'try:\n    print of audio_music_play of ["{path}", 0]\ncatch e:\n    print of [e.kind, e.message]\n'
    q=execute("music-"+name,source,{"SDL_AUDIODRIVER":"dummy"}); out=q.stdout.decode(errors="replace")
-   if name=="undecodable" and out.strip()=="false":
-    print("SKIP: audio_music_play undecodable (dummy mixer device unavailable; answered false)")
+   if name=="undecodable" and not mixer_ok:
+    print(f"SKIP: audio_music_play undecodable (a valid WAV did not play here, so no mixer or device: probe stdout={probe.stdout!r} stderr={probe.stderr!r})")
    else:
     check("audio_music_play "+name+" raises named io without stderr diagnostic",q.returncode==0 and '["io"' in out and str(path) in out and b"audio_music:" not in q.stderr,f"rc={q.returncode} stdout={q.stdout!r} stderr={q.stderr!r}")
   refusal_tape=root/"audio-refusal.tape"
