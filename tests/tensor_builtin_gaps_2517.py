@@ -72,7 +72,7 @@ for fn in ("sgd_update_rows", "sgd_update_cols"):
                   ("buffer1d", "list"), ("buffer1d", "buffer")))
     cases.append(rejected(fn, "list", "list", "0"))
 for p, g in (("buffer", "list"), ("list", "buffer")):
-    cases.append(rejected("sgd_update", p, g))
+    cases.append(rejected("sgd_update", p, g, named=True))
 
 # Both accepted pairings retain their established numerical result.
 cases.append("p is [[1.0, 2.0]]\ng is [[0.5, 1.0]]\nsgd_update_rows of [p,g,[0],0.5]\n"

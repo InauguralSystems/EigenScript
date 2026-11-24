@@ -2212,6 +2212,13 @@ static int sgd_cell(Value *prow, int pi, Value *grow, int gi, double lr, const c
 
 /* ==== BUILTIN: sgd_update ==== */
 /* sgd_update of [param, grad, lr] — in-place param = param - lr * grad */
+/* #2517: the container kind named in a refused SGD pairing. */
+static const char *sgd_pair_kind(const Value *v) {
+    if (v->type == VAL_LIST) return "a list";
+    if (v->type == VAL_BUFFER) return v->data.buffer.rows > 0 ? "a 2-D buffer" : "a 1-D buffer";
+    return val_type_name(v->type);
+}
+
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
@@ -2221,9 +2228,13 @@ Value* builtin_sgd_update(Value *arg) {
     EIGS_VIEW(grad_view);
     Value *grad = list_get_view(arg, 1, &grad_view);
     ARG_GUARD(!param || (param->type != VAL_LIST && param->type != VAL_BUFFER) ||
-              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER) ||
-              param->type != grad->type,
+              !grad || (grad->type != VAL_LIST && grad->type != VAL_BUFFER),
               "sgd_update", "params and grad of the same kind (a list or a buffer)", make_null());
+    if (param->type != grad->type) {
+        rt_error(EK_TYPE, 0, "sgd_update: expected params and grad of the same kind (a list or a buffer), "
+                 "got %s params and %s grad", sgd_pair_kind(param), sgd_pair_kind(grad));
+        return make_null();
+    }
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
@@ -2414,12 +2425,6 @@ rows_grad_failed:
 /* sgd_update_rows of [matrix, grad, row_indices, lr]
  * Updates only the specified rows of matrix in-place: row -= lr * grad_row */
 /* #2517: a mixed parameter/gradient pairing raises, naming what was passed. */
-static const char *sgd_pair_kind(const Value *v) {
-    if (v->type == VAL_LIST) return "a list";
-    if (v->type == VAL_BUFFER) return v->data.buffer.rows > 0 ? "a 2-D buffer" : "a 1-D buffer";
-    return val_type_name(v->type);
-}
-
 static int sgd_pair_refused(const char *who, const Value *matrix, const Value *grad) {
     if (matrix->type == grad->type && !(matrix->type == VAL_BUFFER && matrix->data.buffer.rows <= 0))
         return 0;
