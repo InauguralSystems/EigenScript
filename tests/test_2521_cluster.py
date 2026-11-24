@@ -69,27 +69,73 @@ with tempfile.TemporaryDirectory() as tmp:
  ls_replay=execute("ls-two-replay",ls_source,{"EIGS_REPLAY":str(ls_tape)})
  check("ls two-string answer is not replayed as an error",ls_record.returncode==ls_replay.returncode==0 and ls_record.stdout==ls_replay.stdout and b'["a", "b"]' in ls_record.stdout,
   f"record={ls_record.returncode,ls_record.stdout,ls_record.stderr} replay={ls_replay.returncode,ls_replay.stdout,ls_replay.stderr}")
- shapes=[("nested_flat","[[1.0,2.0]]","[1.0,2.0]","type_mismatch"),("flat_nested","[1.0,2.0]","[[1.0,2.0]]","type_mismatch"),
-  ("flat_lengths","[1.0,2.0]","[1.0]","value"),("row_counts","[[1.0],[2.0]]","[[1.0]]","value"),("row_lengths","[[1.0,2.0]]","[[1.0]]","value")]
- def sgd_error(name,params,grad,kind,message_part=None):
-  # Raises the kind in every state, and params is printed unchanged after the raise.
-  before=execute(name+"-before",f"p is {params}\nprint of p\n").stdout
-  good=True; details=[]
-  for strict in (None,"0","1"):
-   q=execute(f"{name}-{strict or 'unset'}",f"p is {params}\ntry:\n    sgd_update of [p, {grad}, 0.5]\ncatch e:\n    print of [e.kind, e.message]\nprint of p\n",{} if strict is None else {"EIGS_STRICT":strict})
-   out=q.stdout.decode(errors="replace"); lines=q.stdout.splitlines()
-   if q.returncode or not clean(q) or f'["{kind}"' not in out or (message_part and message_part not in out) or not lines or lines[-1]+b"\n"!=before:
-    good=False; details.append(f"strict={strict!r} rc={q.returncode} stdout={out!r} before={before!r}")
-  check("sgd_update "+name+" raises before any write",good,"; ".join(details))
- for name,params,grad,kind in shapes: sgd_error(name,params,grad,kind)
- sgd_error("later grad scalar","[[1.0,2.0],[3.0,4.0]]","[[1.0,2.0],5.0]","type_mismatch","params shape [2 rows: 2, 2] and grad shape [2 rows: 2, num] differ at row 1: list against number")
- sgd_error("later params scalar","[[1.0,2.0],3.0]","[[1.0,2.0],[3.0,4.0]]","type_mismatch","params shape [2 rows: 2, num] and grad shape [2 rows: 2, 2] differ at row 1: number against list")
- sgd_error("ragged message","[[1.0,2.0],[3.0]]","[[1.0,2.0],[3.0,4.0]]","value","sgd_update: params shape [2 rows: 2, 1] and grad shape [2 rows: 2, 2] differ at row 1: 1 against 2")
- sgd_error("row count message","[[1.0],[2.0,3.0]]","[[1.0]]","value","params shape [2 rows: 1, 2] does not match grad shape [1 rows: 1]")
- strict_error("sgd_update buffer shapes", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value")
- strict_error("sgd_update buffer shape message", "sgd_update of [buffer of [2, 2], buffer of 3, 0.5]", "value", "params shape 2 x 2 does not match grad shape count 3")
- ragged=execute("sgd-ragged-matching","p is [[1.0, 2.0], [3.0]]\nsgd_update of [p, [[0.1, 0.2], [0.3]], 0.5]\nprint of p\n")
- check("sgd_update matching ragged shapes update row by row",ragged.returncode==0 and b"[[0.95, 1.9], [2.85]]" in ragged.stdout,f"rc={ragged.returncode} stdout={ragged.stdout!r} stderr={ragged.stderr!r}")
+ # Generated Cartesian contract: no direction, length or later-row case can be
+ # omitted by selecting examples by hand.  Each tuple is (name, source, model).
+ shape_cases=[
+  ("flat0","[]",("list",[])), ("flat1","[1.0]",("list",["number"])),
+  ("flat2","[1.0,2.0]",("list",["number","number"])),
+  ("flat3","[1.0,2.0,3.0]",("list",["number","number","number"])),
+  ("nested11","[[1.0]]",("list",[["number"]])),
+  ("nested12","[[1.0,2.0]]",("list",[["number","number"]])),
+  ("nested21","[[1.0],[2.0]]",("list",[["number"],["number"]])),
+  ("nested22","[[1.0,2.0],[3.0,4.0]]",("list",[["number","number"],["number","number"]])),
+  ("mixed_scalar_list","[1.0,[2.0,3.0]]",("list",["number",["number","number"]])),
+  ("mixed_list_scalar","[[1.0,2.0],3.0]",("list",[["number","number"],"number"])),
+  ("null_row","[null]",("list",["null"])), ("string_row",'["x"]',("list",["str"])),
+  ("bool_row","[true]",("list",["bool"])), ("null_cell","[[1.0,null]]",("list",[["number","null"]])),
+  ("string_cell",'[[1.0,"x"]]',("list",[["number","str"]])),
+  ("bool_cell","[[1.0,true]]",("list",[["number","bool"]])),
+  ("buffer1","buffer of 1",("buffer",1)), ("buffer2","buffer of 2",("buffer",2)),
+  ("buffer3","buffer of 3",("buffer",3))]
+ def first_bad(model):
+  if model[0]!="list": return None
+  def walk(x):
+   if isinstance(x,list):
+    for y in x:
+     bad=walk(y)
+     if bad: return bad
+   elif x!="number": return x
+   return None
+  return walk(model[1])
+ def shape_text(rows):
+  if not any(isinstance(x,list) for x in rows): return f"[{len(rows)}]"
+  return "["+str(len(rows))+" rows:"+"".join(("," if i else "")+" "+(str(len(x)) if isinstance(x,list) else x) for i,x in enumerate(rows))+"]"
+ def model_sgd(pm,gm):
+  if pm[0]!=gm[0]:
+   pk="a list" if pm[0]=="list" else "a 1-D buffer"; gk="a list" if gm[0]=="list" else "a 1-D buffer"
+   return ("type_mismatch",f"sgd_update: expected params and grad of the same kind (a list or a buffer), got {pk} params and {gk} grad")
+  for model in (pm,gm):
+   bad=first_bad(model)
+   if bad: return ("type_mismatch",f"sgd_update: expected a number, got {bad}")
+  if pm[0]=="buffer":
+   if pm[1]!=gm[1]: return ("value",f"sgd_update: params shape count {pm[1]} does not match grad shape count {gm[1]}")
+   return None
+  ps,gs=shape_text(pm[1]),shape_text(gm[1])
+  if len(pm[1])!=len(gm[1]): return ("value",f"sgd_update: params shape {ps} does not match grad shape {gs}")
+  for i,(p,g) in enumerate(zip(pm[1],gm[1])):
+   pl,gl=isinstance(p,list),isinstance(g,list)
+   if pl!=gl: return ("type_mismatch",f"sgd_update: params shape {ps} and grad shape {gs} differ at row {i}: {'list' if pl else p} against {'list' if gl else g}")
+   if pl and len(p)!=len(g): return ("value",f"sgd_update: params shape {ps} and grad shape {gs} differ at row {i}: {len(p)} against {len(g)}")
+  # Matching mixed nesting is not a tensor accepted by the arithmetic pass.
+  if pm[1] and not isinstance(pm[1][0],list) and any(isinstance(x,list) for x in pm[1]):
+   return ("type_mismatch","sgd_update: expected a number, got list")
+  return None
+ sgd_rows=0
+ for pn,params,pm in shape_cases:
+  for gn,grad,gm in shape_cases:
+   expected=model_sgd(pm,gm)
+   for strict in (None,"0","1"):
+    sgd_rows+=1; env={} if strict is None else {"EIGS_STRICT":strict}
+    before=execute("sgd-before",f"p is {params}\nprint of p\n").stdout
+    q=execute(f"sgd-{pn}-{gn}-{strict or 'unset'}",f"p is {params}\ntry:\n    sgd_update of [p, {grad}, 0.5]\n    print of [\"ok\", p]\ncatch e:\n    print of [e.kind, e.message]\nprint of p\n",env)
+    lines=q.stdout.splitlines(); unchanged=bool(lines) and lines[-1]+b"\n"==before
+    if expected:
+     kind,msg=expected; wanted=f'["{kind}", "{msg}"]'.encode()
+     ok=q.returncode==0 and clean(q) and wanted in q.stdout and unchanged
+    else:
+     ok=q.returncode==0 and clean(q) and b'["ok", ' in q.stdout
+    check(f"sgd generated {pn}/{gn} strict={strict or 'unset'}",ok,repr((expected,q.returncode,q.stdout,q.stderr,before)))
+ print(f"ROWS: sgd_update generated={sgd_rows}")
  sandbox=execute("sandbox-value",'r is sandbox_run of [1, "code", []]\nprint of r.error.kind\n')
  check("sandbox_run descriptor validation kind is value",sandbox.returncode==0 and b"value" in sandbox.stdout,f"rc={sandbox.returncode} stdout={sandbox.stdout!r} stderr={sandbox.stderr!r}")
  api=subprocess.run([str(EIGS),"--api"],stdout=subprocess.PIPE,stderr=subprocess.PIPE)

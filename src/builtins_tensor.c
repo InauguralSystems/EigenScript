@@ -2219,19 +2219,30 @@ static const char *sgd_pair_kind(const Value *v) {
     return val_type_name(v->type);
 }
 
+static const char *sgd_row_kind(ValType type) {
+    if (type == VAL_LIST) return "list";
+    if (type == VAL_INT || type == VAL_FLOAT) return "number";
+    return val_type_name(type);
+}
+
 /* A list's shape for sgd_update's messages (#2523): "[n]" for a flat list;
- * "[r rows: c0, c1, ...]" for a nested one, a scalar row shown as "num".
+ * "[r rows: c0, c1, ...]" when any row is a list, with scalar rows shown by
+ * their actual kind.  Invalid kinds are diagnosed before this is called.
  * Rows past the sixth are elided with "...". */
 static void sgd_list_shape(Value *v, char *out, size_t cap) {
     int n = v->data.list.count;
-    if (n == 0 || list_elem_type(v, 0) != VAL_LIST) { snprintf(out, cap, "[%d]", n); return; }
+    int has_list = 0;
+    for (int r = 0; r < n; r++) has_list |= list_elem_type(v, r) == VAL_LIST;
+    if (n == 0 || !has_list) { snprintf(out, cap, "[%d]", n); return; }
     size_t k = (size_t)snprintf(out, cap, "[%d rows:", n);
     for (int r = 0; r < n && k < cap; r++) {
         if (r == 6) { k += (size_t)snprintf(out + k, cap - k, " ..."); break; }
         Value *row = list_get_ref(v, r);
-        if (row && row->type == VAL_LIST)
+        ValType row_type = list_elem_type(v, r);
+        if (row_type == VAL_LIST)
             k += (size_t)snprintf(out + k, cap - k, "%s %d", r ? "," : "", row->data.list.count);
-        else k += (size_t)snprintf(out + k, cap - k, "%s num", r ? "," : "");
+        else k += (size_t)snprintf(out + k, cap - k, "%s %s", r ? "," : "",
+                                   sgd_row_kind(row_type));
     }
     if (k < cap) snprintf(out + k, cap - k, "]");
 }
@@ -2253,29 +2264,28 @@ Value* builtin_sgd_update(Value *arg) {
         return make_null();
     }
     if (param->type == VAL_LIST) {
+        /* Preserve #1637's pinned leaf-kind diagnostic.  Shape comparison is
+         * meaningful only after every row/cell is known to be numeric/list. */
+        if (!tensor_cells_numeric(param, "sgd_update") ||
+            !tensor_cells_numeric(grad, "sgd_update")) return make_null();
         int pn = param->data.list.count, gn = grad->data.list.count;
-        int p_nested = pn > 0 && list_elem_type(param, 0) == VAL_LIST;
-        int g_nested = gn > 0 && list_elem_type(grad, 0) == VAL_LIST;
         char ps[160], gs[160];
         sgd_list_shape(param, ps, sizeof ps);
         sgd_list_shape(grad, gs, sizeof gs);
-        if (p_nested != g_nested) {
-            rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s have different nesting", ps, gs);
-            return make_null();
-        }
         if (pn != gn) {
             rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
             return make_null();
         }
-        if (p_nested) {
-            for (int r = 0; r < pn; r++) {
+        for (int r = 0; r < pn; r++) {
                 Value *row = list_get_ref(param, r);
                 Value *grow = list_get_ref(grad, r);
-                int row_list = row && row->type == VAL_LIST;
-                int grow_list = grow && grow->type == VAL_LIST;
+                ValType row_type = list_elem_type(param, r);
+                ValType grow_type = list_elem_type(grad, r);
+                int row_list = row_type == VAL_LIST;
+                int grow_list = grow_type == VAL_LIST;
                 if (row_list != grow_list) {
                     rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %s against %s",
-                             ps, gs, r, row_list ? "list" : "number", grow_list ? "list" : "number");
+                             ps, gs, r, sgd_row_kind(row_type), sgd_row_kind(grow_type));
                     return make_null();
                 }
                 if (row_list && row->data.list.count != grow->data.list.count) {
@@ -2283,7 +2293,6 @@ Value* builtin_sgd_update(Value *arg) {
                              ps, gs, r, row->data.list.count, grow->data.list.count);
                     return make_null();
                 }
-            }
         }
     } else if (param->data.buffer.count != grad->data.buffer.count) {
         char ps[64], gs[64];
@@ -2301,7 +2310,8 @@ Value* builtin_sgd_update(Value *arg) {
     double lr = 0.01;
     eigs_slot_opt_float(list_slot(arg, 2), &lr, __func__);
     if (g_has_error) return make_null();
-    if (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update")) return make_null();
+    if (param->type != VAL_LIST &&
+        (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update"))) return make_null();
 
     /* #1093: both operands flat buffers — update the doubles in place. */
     if (param->type == VAL_BUFFER && grad->type == VAL_BUFFER) {

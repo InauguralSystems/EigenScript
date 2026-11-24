@@ -12,7 +12,10 @@ ignore is audio_stream_clear of null
 ignore is audio_stream_close of null
 # The music path with no loadable file: exercises the SDL_mixer load-failure
 # branch, which frees on the way out.
-ignore is audio_music_play of ["/nonexistent/eigs-no-such-track.ogg", 0]
+try:
+    ignore is audio_music_play of ["/nonexistent/eigs-no-such-track.ogg", 0]
+catch music_error:
+    ignore is music_error
 ignore is audio_music_volume of 64
 ignore is audio_music_stop of null
 print of "05 done"

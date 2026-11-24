@@ -26,6 +26,13 @@ lint/LSP/DAP inspection, and `eigenscript fmt` are host, tool, or runtime input
 acquisition—not reads performed by a running EigenScript program—and therefore
 remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
 
+`tensor_load` is the exception among tensor checkpoint reads: each call writes
+exactly one `N ... tensor_load=` record.  A successful record contains the
+loaded tensor value.  An error record contains a tagged list with the error
+kind and message (including the path and the malformed-header, short-read, or
+allocation defect); replay raises that recorded kind and message without
+opening the path.
+
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
 socket results (including sends) and the script-visible clocks (`clock_unix`,
 `monotonic_ns`, `monotonic_ms`, and `gfx_ticks`) are tape-served before their
