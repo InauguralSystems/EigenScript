@@ -29,10 +29,11 @@ remain live. The audited per-site classification, every read and write site with
 `tensor_load` is the exception among tensor checkpoint reads: each call writes
 exactly one `N ... tensor_load=` record.  A successful load records
 `null`, not the tensor: the payload is untaped, and replay refuses the call with
-`io` before opening the path.  An error record contains a tagged list with the error
-kind and message (including the path and the malformed-header, short-read, or
-allocation defect); replay raises that recorded kind and message without
-opening the path.
+`io` before opening the path.  A short header, a bad
+dimension, a zero extent, a short numeric payload and a refused payload
+allocation each record a two-string list, the error kind and the message;
+replay raises that kind and message without opening the path. A directory or a
+path that cannot be opened records the one-string file-I/O error.
 
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
 socket results (including sends) and the script-visible clocks (`clock_unix`,
@@ -388,7 +389,8 @@ Notes on the families:
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: the standard one-string file-I/O error
   record when opening the path fails, a two-string `[kind, message]` for a
-  malformed, short or unallocatable file, `[rows, cols]` for an over-cap header,
+  short header, bad dimension, zero extent, short numeric payload or refused
+  payload allocation, `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay re-raises a recorded open or file error
   byte-for-byte.
   For every other structurally valid verdict, replay raises the
