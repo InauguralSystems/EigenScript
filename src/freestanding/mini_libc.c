@@ -375,7 +375,7 @@ void eigs_qsort(void *vbase, size_t nmemb, size_t size,
 }
 
 /* ---- PRNG ----
- * drand48/lrand48/srand48 implement the POSIX-specified LCG exactly
+ * drand48/lrand48/srand48/seed48 implement the POSIX-specified LCG exactly
  * (X' = (0x5DEECE66D*X + 0xB) mod 2^48) — the harness asserts sequence
  * equality with glibc. rand/srand/random are a documented divergence:
  * a SplitMix64-based generator, NOT glibc's additive generator (rand is
@@ -399,6 +399,14 @@ long eigs_lrand48(void) {
 
 void eigs_srand48(long seedval) {
     g_x48 = (((unsigned long long)(unsigned int)seedval) << 16) | 0x330EULL;
+}
+
+unsigned short *eigs_seed48(unsigned short seed16v[3]) {
+    static unsigned short old[3];
+    for (int i = 0; i < 3; i++) old[i] = (unsigned short)(g_x48 >> (16 * i));
+    g_x48 = (unsigned long long)seed16v[0] | (unsigned long long)seed16v[1] << 16 |
+            (unsigned long long)seed16v[2] << 32;
+    return old;
 }
 
 static unsigned long long g_rand_state = 0x9E3779B97F4A7C15ULL;
@@ -556,6 +564,7 @@ double eigs_drand48(void);
 double drand48(void) __attribute__((alias("eigs_drand48")));
 long   lrand48(void) __attribute__((alias("eigs_lrand48")));
 void   srand48(long) __attribute__((alias("eigs_srand48")));
+unsigned short *seed48(unsigned short[3]) __attribute__((alias("eigs_seed48")));
 int    rand(void) __attribute__((alias("eigs_rand")));
 void   srand(unsigned) __attribute__((alias("eigs_srand")));
 long   random(void) __attribute__((alias("eigs_random")));

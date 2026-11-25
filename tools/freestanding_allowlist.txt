@@ -74,6 +74,7 @@ random
 drand48
 lrand48
 srand48
+seed48
 
 # --- halt root ---
 exit

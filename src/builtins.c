@@ -2240,29 +2240,6 @@ Value* builtin_pi(Value *arg) {
 static int g_random_seeded = 0;
 static pthread_once_t g_random_once = PTHREAD_ONCE_INIT;
 static pthread_mutex_t g_random_lock = PTHREAD_MUTEX_INITIALIZER;
-static uint64_t g_random_state48 = UINT64_C(0x1234ABCD330E);
-
-#define RANDOM_STATE48_MASK UINT64_C(0xFFFFFFFFFFFF)
-
-/* Preserve POSIX srand48's state for the historically pinned uint32 range.
- * Outside it, avalanche all 64 input bits before selecting the necessarily
- * smaller 48-bit state.  This is not an injective int64-to-state mapping, but
- * no input bit is discarded by construction (#1886). */
-static uint64_t random_state_from_seed(int64_t seed) {
-    uint64_t bits = (uint64_t)seed;
-    if (bits <= UINT32_MAX)
-        return (bits << 16) | UINT64_C(0x330E);
-    uint64_t z = bits + UINT64_C(0x9E3779B97F4A7C15);
-    z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
-    z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
-    return (z ^ (z >> 31)) & RANDOM_STATE48_MASK;
-}
-
-static uint64_t random_step_locked(void) {
-    g_random_state48 = (UINT64_C(0x5DEECE66D) * g_random_state48 + 0xB)
-                       & RANDOM_STATE48_MASK;
-    return g_random_state48;
-}
 
 static void random_seed_once(void) {
     if (__atomic_load_n(&g_random_seeded, __ATOMIC_ACQUIRE)) return;
@@ -2274,9 +2251,9 @@ static void random_seed_once(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
 #if EIGENSCRIPT_FREESTANDING
-    g_random_state48 = random_state_from_seed(ts.tv_sec ^ ts.tv_nsec); /* no pids */
+    srand48(ts.tv_sec ^ ts.tv_nsec);   /* no pids on bare metal */
 #else
-    g_random_state48 = random_state_from_seed(ts.tv_sec ^ ts.tv_nsec ^ getpid());
+    srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid());
 #endif
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
@@ -2290,7 +2267,7 @@ void eigs_ensure_random_seeded(void) {
 double eigs_random_double(void) {
     eigs_ensure_random_seeded();
     pthread_mutex_lock(&g_random_lock);
-    double result = (double)random_step_locked() / 281474976710656.0;
+    double result = drand48();
     pthread_mutex_unlock(&g_random_lock);
     return result;
 }
@@ -2298,7 +2275,7 @@ double eigs_random_double(void) {
 long eigs_random_long(void) {
     eigs_ensure_random_seeded();
     pthread_mutex_lock(&g_random_lock);
-    long result = (long)(random_step_locked() >> 17);
+    long result = lrand48();
     pthread_mutex_unlock(&g_random_lock);
     return result;
 }
@@ -2341,8 +2318,21 @@ Value* builtin_random_int(Value *arg) {
 /* The one way to seed the shared stream: `seed_random` and the CLI's
  * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
 void eigs_seed_random(int64_t seed) {
+    uint64_t bits = (uint64_t)seed;
     pthread_mutex_lock(&g_random_lock);
-    g_random_state48 = random_state_from_seed(seed);
+    if (bits <= UINT32_MAX) {
+        srand48((long)seed);
+    } else {
+        /* srand48 reads 32 bits (#1886): mix all 64 into the 48-bit state. */
+        uint64_t z = bits + UINT64_C(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
+        z ^= z >> 31;
+        unsigned short state[3] = {
+            (unsigned short)(z & 0xFFFF), (unsigned short)((z >> 16) & 0xFFFF),
+            (unsigned short)((z >> 32) & 0xFFFF)};
+        seed48(state);
+    }
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
 }

@@ -410,6 +410,14 @@ static void t_rand48(void) {
         CHECK(bits_of(a) == bits_of(b), "drand48 #%d: %a vs %a", i, a, b);
         if (g_fail > 5) return;
     }
+    unsigned short sx[3] = {0x1234, 0xABCD, 0xFEDC};
+    unsigned short *ho = seed48(sx), *eo = eigs_seed48(sx);
+    for (int i = 0; i < 3; i++)
+        CHECK(ho[i] == eo[i], "seed48 old state %d: %x vs %x", i, ho[i], eo[i]);
+    for (int i = 0; i < 1000; i++) {
+        double a = drand48(), b = eigs_drand48();
+        CHECK(bits_of(a) == bits_of(b), "seed48 drand48 #%d: %a vs %a", i, a, b);
+    }
     srand48(-999); eigs_srand48(-999);
     for (int i = 0; i < 10000; i++) {
         long a = lrand48(), b = eigs_lrand48();

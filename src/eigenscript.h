@@ -2539,10 +2539,10 @@ int eigenscript_lint(const char *path, int json_mode, int fail_on_warning);
  * in docs/BUILTINS.md / docs/STDLIB.md. Hosted-only (lint_host.c). */
 int eigs_api_dump(FILE *out, int json);
 
-/* Seed the shared POSIX-compatible 48-bit stream unless seed_random pinned it. */
+/* Seed the shared drand48 stream from entropy unless seed_random already pinned it. */
 void eigs_ensure_random_seeded(void);
-/* These are the only RNG entry points runtime code may use, so the shared
- * 48-bit state, seeding and draws stay under one lock on every platform. */
+/* The libc drand48 family owns one process-global state.  These are the only
+ * entry points runtime code may use, so seeding and draws share one lock. */
 double eigs_random_double(void);
 long eigs_random_long(void);
 void eigs_seed_random(int64_t seed);

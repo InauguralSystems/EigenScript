@@ -54,7 +54,7 @@ them.
 | `clock_ns` | HAL (TSC/PIT) | `clock_gettime` `time` `usleep` |
 | `spawn` / `yield` / `park`+`unpark` + atomic CAS | HAL (scheduler) | `pthread_mutex_*` `pthread_cond_*` `pthread_once` `pthread_self` |
 | `map_exec` (RX pages) | HAL (deferrable) | `mmap` `mprotect` `munmap` |
-| entropy (`RDRAND`/TSC) | HAL/hardware | `rand` `srand` `drand48` `lrand48` `srand48` |
+| entropy (`RDRAND`/TSC) | HAL/hardware | `rand` `srand` `drand48` `lrand48` `srand48` `seed48` |
 | `halt` / `panic` | HAL | `exit` `_exit` `abort` `atexit` |
 | `memcpy` `memset` `memcmp` | compiler/hardware intrinsic (near-root) | the rest of `mem*`/`str*` byte ops |
 | atomic libcalls wider than the ISA | HAL (interrupt mask) | `__atomic_*` operations the compiler cannot emit lock-free |
@@ -135,7 +135,7 @@ exec-page support later. (`mmap` may also back large allocations — fold into t
 heap/HAL.)
 
 ### Randomness — `BUILD` tiny
-`rand` `srand` `random` `drand48` `lrand48` `srand48`
+`rand` `srand` `random` `drand48` `lrand48` `srand48` `seed48`
 A small PRNG seeded from a hardware entropy source (`RDRAND`/`RDSEED` or TSC
 jitter). Used by `random_int`/`randn`/stdlib.
 
