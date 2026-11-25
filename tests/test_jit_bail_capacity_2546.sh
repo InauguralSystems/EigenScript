@@ -16,8 +16,8 @@ check_row() {
     comp=$(sed -n 's/^compiled:[[:space:]]*\([0-9][0-9]*\)$/\1/p' "$e"|head -1)
  if clean "$e"&&[ "$a" -eq 0 ]&&[ "$b" -eq 0 ]&&[ "$(cat "$o")" = "$literal" ]&&[ "$off" = "$literal" ]&&[ -n "$pre" ]&&[ -n "$pos" ]&&[ -n "$comp" ]&&[ "$comp" -ge 1 ]&& { [ "$pre" -gt "$pos" ] || { [ -n "$stop" ] && [ "$stop" -gt "$pos" ]; }; }; then echo "PASS: $op literal=$literal JIT-on/off examined=$row"; else echo "FAIL: $op literal=$literal rc=$a/$b prefix=${pre:-none} offset=${pos:-none} compiled=${comp:-none}" >&2; sed -n '/=== <module>\.fn\[0\]/,/^=== /p' "$e" >&2; status=1; fi
 }
-# One hot function per op kind the scan admits and whose emitter reserves. MOD, the
-# bitwise ops and BNOT have emitter branches, but the scan stops before them.
+# 30 ops, one hot function each. MOD, the bitwise ops, BNOT and JUMP_IF_TRUE have
+# emitter branches that reserve and no row here.
 check_row GET_NAME 'g is 40.0' 'return g + x' 42.0
 check_row LOCAL_IDX_GET 'g is [40.0]' $'a is g\nreturn a[0.0] + x' 42.0
 check_row LOCAL_DOT_GET 'g is {"v": 40.0}' $'a is g\nreturn a.v + x' 42.0
