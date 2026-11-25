@@ -855,8 +855,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_INDEX_SET) {
             /* Stage 4v: 1-byte op. Helper pops 3 (val, idx, target) and
              * pushes val back (net sp -2); full opcode semantics live in
-             * the helper, so no bail path. Its pending error is handled by
-             * CHECK_ERROR when the thunk returns. Pushed value type is opaque.
+             * the helper. A pending error immediately bails to CHECK_ERROR; native
+             * execution must not continue to the following opcode. Pushed value type is opaque.
              *
              * Stage 5a: the emitter now inlines the buffer-write fast
              * path (guards + store + decref) ahead of the helper call.
@@ -864,7 +864,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * size budget — account the overflow explicitly. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
-            *extra_size += 192;
+            *extra_size += 224; /* includes slow-path error bailout */
         } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
             /* Stage 4w: 5-byte op [op][exit_offset:16][counter_name:16]. Helper returns
              * 1 when the loop must exit (stall / iteration cap); the
@@ -4164,7 +4164,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *done_p;
             w = emit_jmp_rel32(w, &done_p);
             /* Slow path: Stage 4v helper call — same ABI as INDEX_GET
-             * (sync sp, aligned call, reload sp; no return value). */
+             * (sync sp, aligned call, reload sp), then tests its error status. */
             for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
@@ -4172,6 +4172,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 1 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             patch_rel32(done_p, w);
             i += 1;
         } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {

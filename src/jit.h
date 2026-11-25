@@ -247,7 +247,7 @@ int jit_helper_iter_next(void);
  * the call and reload after; a nonzero result exits the thunk with
  * post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_index_get(void);
-void jit_helper_index_set(void);
+int jit_helper_index_set(void);
 int  jit_helper_loop_stall_check(uint16_t counter_depth);
 int  jit_helper_loop_cap_check(uint16_t counter_depth);
 void jit_helper_loop_enter(uint16_t counter_depth);

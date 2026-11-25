@@ -2448,11 +2448,11 @@ static inline int vm_subscript_index_is_int(const Value *v, int *out) {
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
  * target), pushes val back (net sp -2). Full opcode semantics including
- * the slot fast paths, so the emitter never bails; errors go through
- * runtime_error and are picked up by CHECK_ERROR after the thunk. The
+ * the slot fast paths. Errors go through runtime_error; the returned latch
+ * makes the emitter bail so CHECK_ERROR handles the unwind. The
  * EIGS_JIT_STOPS histogram on the DMG-shaped workload showed INDEX_SET
  * as the only remaining bailout opcode. */
-void jit_helper_index_set(void) {
+int jit_helper_index_set(void) {
     EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
     EigsSlot idx_s = g_vm.stack[g_vm.sp - 2];
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
@@ -2474,7 +2474,7 @@ void jit_helper_index_set(void) {
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(idx_s);
             slot_decref(tgt_s);
-            return;
+            return g_has_error;
         }
         if (target->type == VAL_LIST && slot_is_f64(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
@@ -2489,7 +2489,7 @@ void jit_helper_index_set(void) {
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(idx_s);
             slot_decref(tgt_s);
-            return;
+            return g_has_error;
         }
     }
     Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
@@ -2526,6 +2526,7 @@ void jit_helper_index_set(void) {
     }
     val_decref(target); val_decref(idx);
     vm_push(val);
+    return g_has_error;
 }
 
 int jit_helper_index_get(void) {

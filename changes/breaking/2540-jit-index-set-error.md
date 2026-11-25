@@ -1,0 +1,1 @@
+- JIT-compiled indexed stores now stop at a raised error instead of executing later statements; programs relying on those later side effects must remove that reliance (#2540).
