@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""The stores of the #2528 HOT and LOOP programs lie inside the native code (#2541).
+"""Where the JIT scan ends for the #2528 HOT and LOOP programs (#2541).
 
-For the indexes 0.0 and -2.0: the end of the compiled prefix (EIGS_JIT_DUMP_PREFIX)
+For the indexes 0.0 and -2.0: the prefix that the scan returns (EIGS_JIT_DUMP_PREFIX)
 is pinned and lies past the last OP_INDEX_SET of the function (EIGS_DUMP_BC), and
-the compiled count and the stops (EIGS_JIT_STOPS) are pinned. With the int index 0
-neither store compiles; those rows of #2528 are not covered here.
+the compiled count and the stops (EIGS_JIT_STOPS) are pinned. What the emitter makes
+of that prefix is not read here. With the int index 0 neither store is in it.
 """
 import ast
 import os
@@ -15,7 +15,7 @@ import sys
 import tempfile
 
 EIGS = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else pathlib.Path(__file__).parents[1] / "src/eigenscript").resolve()
-info = subprocess.run([str(EIGS), "--build-info"], stdout=subprocess.PIPE, text=True).stdout
+info = subprocess.run([str(EIGS), "--build-info"], stdout=subprocess.PIPE, text=True, check=True).stdout
 if "jit-backend=x86-64" not in info.split():
     print("SKIP: JIT scan-end pins require a binary with the x86-64 JIT")
     raise SystemExit(0)
