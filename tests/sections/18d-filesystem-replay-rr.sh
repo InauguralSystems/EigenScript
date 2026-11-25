@@ -22,7 +22,7 @@ printf '%s\n' "$FOLLOWUP_OUTPUT"
 unset FOLLOWUP_OUTPUT FOLLOWUP_RC
 
 echo ""
-FIX2_OUTPUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_trace_read_fix2.sh" 2>&1); FIX2_RC=$?
+FIX2_OUTPUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_trace_read_fix2.sh" 2>&1); FIX2_RC=$?
 TOTAL=$((TOTAL + 1))
 if [ "$FIX2_RC" -eq 0 ] && rc_ok "$FIX2_RC" "$FIX2_OUTPUT" &&
    child_plan_ok "$FIX2_OUTPUT" "$FIX2_RC" "^PASS:" "^FAIL:"; then
@@ -34,7 +34,7 @@ printf '%s\n' "$FIX2_OUTPUT"
 unset FIX2_OUTPUT FIX2_RC
 
 echo ""
-FIX3_OUTPUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_trace_replay_fix3.sh" 2>&1); FIX3_RC=$?
+FIX3_OUTPUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_trace_replay_fix3.sh" 2>&1); FIX3_RC=$?
 TOTAL=$((TOTAL + 1))
 if [ "$FIX3_RC" -eq 0 ] && rc_ok "$FIX3_RC" "$FIX3_OUTPUT" &&
    child_plan_ok "$FIX3_OUTPUT" "$FIX3_RC" "^PASS:" "^FAIL:"; then
@@ -46,7 +46,7 @@ printf '%s\n' "$FIX3_OUTPUT"
 unset FIX3_OUTPUT FIX3_RC
 
 echo ""
-FIX1914_OUTPUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_issue_1914_followup.sh" 2>&1); FIX1914_RC=$?
+FIX1914_OUTPUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_issue_1914_followup.sh" 2>&1); FIX1914_RC=$?
 TOTAL=$((TOTAL + 1))
 if [ "$FIX1914_RC" -eq 0 ] && rc_ok "$FIX1914_RC" "$FIX1914_OUTPUT" &&
    child_plan_ok "$FIX1914_OUTPUT" "$FIX1914_RC" "^PASS:" "^FAIL:"; then
