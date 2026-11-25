@@ -4175,6 +4175,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * runtime_error). Register plan: %rdx idx slot → scratch,
              * %rdi tgt Value*, %r8d index int, %rax val slot, %rsi
              * tag-check scratch then buffer base. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             uint8_t *slow_p[8];
             int slow_n = 0;
             /* idx slot → %rdx; must be an immediate num. */
@@ -4346,7 +4350,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *
              * r13 is callee-saved in SysV, so the pre-set survives the
              * helper call. */
-            if (bail_count + 2 > (int)(sizeof bail_patches /
+            if (bail_count + 3 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -4374,6 +4378,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_jmp_rel32(w, &deep_p);
             bail_patches[bail_count++] = deep_p;
             patch_rel32(cont_p, w);
+            /* #2540: a builtin that raised answers 0 like any completed call.
+             * Leave past the CALL; CHECK_ERROR sees the latch. */
+            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
+            w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(EigsThread, has_error), 0);
+            uint8_t *clean_p;
+            w = emit_je_rel32(w, &clean_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(op_start + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(clean_p, w);
             i += 3;
         } else if (op == OP_RETURN) {
             /* Stage 4s: OP_RETURN via helper.

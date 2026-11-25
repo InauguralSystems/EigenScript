@@ -156,7 +156,7 @@ run_case 'OSR get name stops before buffer store' '["undefined_name", 7]
         print of [e.kind, e.line]
     print of b[1]
 f of []' loop
-run_case 'hot dot set stops before print' '["type_mismatch", 3]
+run_case 'hot dot set stops before buffer store' '["type_mismatch", 3]
 8.5' 'g is {"x": 1.0}
 define f(v, b, y) as:
     g.x is v
@@ -187,7 +187,7 @@ define f() as:
         print of [e.kind, e.line]
     return len of out
 print of f of []' loop
-run_case 'OSR index set planted status stops before print' '["type_mismatch", 7]
+run_case 'OSR index set wrong value raises in the last iteration' '["type_mismatch", 7]
 3.0' 'define f(b) as:
     k is 0.0
     loop while k < 4.0:
@@ -203,7 +203,7 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of 3.0' loop
-run_case 'OSR local dot set planted status stops before append' '["type_mismatch", 6]
+run_case 'OSR local dot set raised stops before append' '["type_mismatch", 6]
 3' 'define f(d, out) as:
     k is 0.0
     loop while k < 4.0:
@@ -218,7 +218,7 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of len of out' loop
-run_case 'OSR get name planted status stops before global assignment' '["undefined_name", 6]
+run_case 'OSR get name raised stops before global assignment' '["undefined_name", 6]
 2.0' 'changed is 3.0
 define f() as:
     k is 0.0
@@ -232,7 +232,7 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of changed' loop
-run_case 'OSR dot get planted status stops before buffer store' '["type_mismatch", 7]
+run_case 'OSR dot get raised stops before buffer store' '["type_mismatch", 7]
 3' 'g is {"x": {"x": 1.0}}
 define f(out) as:
     k is 0.0
@@ -262,6 +262,64 @@ try:
 catch e:
     print of [e.kind, e.message, e.line]
 print of b[1]' loop
+run_case 'hot throw stops before buffer store' 'boom
+8.5' 'define f(c, b, y) as:
+    if c > 0.0:
+        throw of "boom"
+    b[1.0] is y
+    return 0.0
+b is buf_from_list of ([5.0, 6.0])
+for k in range of 400:
+    f of [0.0, b, 8.5]
+try:
+    f of [1.0, b, 99.0]
+catch e:
+    print of e
+print of b[1]' hot
+run_case 'hot raising builtin stops before append' '["type_mismatch", "sqrt/exp/log/negative: expected a number, a list or a buffer", 2]
+400' 'define f(x, out) as:
+    z is sqrt of x
+    append of [out, 9.0]
+    return 0.0
+out is []
+for k in range of 400:
+    f of [4.0, out]
+try:
+    f of ["s", out]
+catch e:
+    print of [e.kind, e.message, e.line]
+print of len of out' hot
+run_case 'OSR raising builtin stops before buffer store' '["type_mismatch", "sqrt/exp/log/negative: expected a number, a list or a buffer", 4]
+1.0' 'define f(b, xs, n) as:
+    k is 0.0
+    loop while k < n:
+        z is sqrt of xs[k]
+        b[1.0] is k
+        k is k + 1.0
+    return 0
+b is buf_from_list of ([5.0, 6.0])
+try:
+    f of [b, [1.0, 1.0, "s"], 3.0]
+catch e:
+    print of [e.kind, e.message, e.line]
+print of b[1]' loop
+many=$(for k in $(seq 300); do printf '    b[1.0] is %s.0\n' "$k"; done)
+run_case 'three hundred indexed stores in one function' '3.0
+300.0' "define f(b) as:
+    local i is 0.0
+    local s is 0.0
+    loop while i < 3.0:
+        if i > 5.0:
+            s is s + 100.0
+        s is s + 1.0
+        i is i + 1.0
+$many
+    return s
+b is buf_from_list of ([5.0, 6.0])
+for k in range of 400:
+    f of b
+print of f of b
+print of b[1]" hot
 run_case 'finite controls' '3.5
 3.5' 'define f(d, b, y) as:
     d.x is y
@@ -274,5 +332,5 @@ f of [d, b, 3.5]
 print of b[1]
 print of d.x' hot
 printf 'examined=%s\n' "$examined"
-[ "$examined" -eq 17 ] || status=1
+[ "$examined" -eq 21 ] || status=1
 exit "$status"

@@ -2416,13 +2416,13 @@ jit.c:3919 jit_compile_to_thunk/OP_NEG emit_ucomisd_xmm0_xmm2 EMIT d
 jit.c:3923 jit_compile_to_thunk/OP_NEG emit_cvtsi2sd_rax_xmm0 EMIT d
 jit.c:4042 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_immediate_num_check_rax EMIT d
 jit.c:4045 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_btr_63_rax EMIT d
-jit.c:4182 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rdx EMIT d
-jit.c:4187 jit_compile_to_thunk/OP_INDEX_SET TAG-IMM 0xFFFB EMIT d
-jit.c:4201 jit_compile_to_thunk/OP_INDEX_SET emit_cvttsd2si_xmm0_r8d EMIT d
-jit.c:4202 jit_compile_to_thunk/OP_INDEX_SET emit_cvtsi2sd_r8d_xmm1 EMIT d
-jit.c:4203 jit_compile_to_thunk/OP_INDEX_SET emit_ucomisd_xmm0_xmm1 EMIT d
-jit.c:4211 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rax EMIT d
-jit.c:4541 jit_compile_to_thunk/OP_BINARY_LINE VAL_FLOAT TEST d
+jit.c:4186 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rdx EMIT d
+jit.c:4191 jit_compile_to_thunk/OP_INDEX_SET TAG-IMM 0xFFFB EMIT d
+jit.c:4205 jit_compile_to_thunk/OP_INDEX_SET emit_cvttsd2si_xmm0_r8d EMIT d
+jit.c:4206 jit_compile_to_thunk/OP_INDEX_SET emit_cvtsi2sd_r8d_xmm1 EMIT d
+jit.c:4207 jit_compile_to_thunk/OP_INDEX_SET emit_ucomisd_xmm0_xmm1 EMIT d
+jit.c:4215 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rax EMIT d
+jit.c:4554 jit_compile_to_thunk/OP_BINARY_LINE VAL_FLOAT TEST d
 jit_smoke.c:103 jit_helper_local_idx_get slot_from_f64 PRODUCE d
 jit_smoke.c:138 jit_helper_iter_next SLOT_F64_RAW RAW d
 jit_smoke.c:142 jit_helper_iter_next slot_from_f64 PRODUCE d
