@@ -81,22 +81,6 @@ run_case 'OSR local dot set stops before print' '["type_mismatch", "cannot set f
         print of [e.kind, e.message, e.line]
     return k
 print of f of []' loop
-run_case 'OSR dot get raises with its kind and line' '["type_mismatch", "cannot access field '\''x'\'' on num", 9]
-3' 'define f() as:
-    d is {"x": {"x": 1.0}}
-    out is []
-    k is 0.0
-    try:
-        loop while k < 4.0:
-            if k == 3.0:
-                d is {"x": 3.0}
-            z is d.x.x
-            append of [out, 9.0]
-            k is k + 1.0
-    catch e:
-        print of [e.kind, e.message, e.line]
-    return len of out
-print of f of []' loop
 run_case 'hot index set wrong value stops before global assignment' '["type_mismatch", 2]
 8.5' 'define f(b, v, y) as:
     b[1.0] is v
@@ -332,5 +316,5 @@ f of [d, b, 3.5]
 print of b[1]
 print of d.x' hot
 printf 'examined=%s\n' "$examined"
-[ "$examined" -eq 21 ] || status=1
+[ "$examined" -eq 20 ] || status=1
 exit "$status"

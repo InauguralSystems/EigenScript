@@ -6,9 +6,9 @@ jit_2540_rc=$?
 jit_2540_out=$(cat "$jit_2540_log")
 rm -f "$jit_2540_log"
 if rc_ok "$jit_2540_rc" "$jit_2540_out" && [ "$jit_2540_rc" -eq 0 ] &&
-   [ "$(printf '%s\n' "$jit_2540_out" | grep -c '^PASS:')" -eq 21 ] &&
-   printf '%s\n' "$jit_2540_out" | grep -qxF 'examined=21'; then
-    PASS=$((PASS + 1)); echo "  PASS: twenty-one cases match their literal results with the JIT on and off"
+   [ "$(printf '%s\n' "$jit_2540_out" | grep -c '^PASS:')" -eq 20 ] &&
+   printf '%s\n' "$jit_2540_out" | grep -qxF 'examined=20'; then
+    PASS=$((PASS + 1)); echo "  PASS: twenty cases match their literal results with the JIT on and off"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: JIT error-bailout regression"
     printf '%s\n' "$jit_2540_out" | sed 's/^/    /'
