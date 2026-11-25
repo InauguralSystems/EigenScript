@@ -855,8 +855,8 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
         } else if (op == OP_INDEX_SET) {
             /* Stage 4v: 1-byte op. Helper pops 3 (val, idx, target) and
              * pushes val back (net sp -2); full opcode semantics live in
-             * the helper, so no bail path. Its pending error is handled by
-             * CHECK_ERROR when the thunk returns. Pushed value type is opaque.
+             * the helper. A pending error immediately bails to CHECK_ERROR; native
+             * execution must not continue to the following opcode. Pushed value type is opaque.
              *
              * Stage 5a: the emitter now inlines the buffer-write fast
              * path (guards + store + decref) ahead of the helper call.
@@ -864,7 +864,7 @@ static int jit_supported_prefix(const struct EigsChunk *chunk,
              * size budget — account the overflow explicitly. */
             i += 1; ops++; non_line_ops++;
             *has_bail_op = 1;
-            *extra_size += 192;
+            *extra_size += 224; /* includes slow-path error bailout */
         } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
             /* Stage 4w: 5-byte op [op][exit_offset:16][counter_name:16]. Helper returns
              * 1 when the loop must exit (stall / iteration cap); the
@@ -2542,6 +2542,27 @@ void jit_state_init_thresholds(EigsState *st) {
     if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
 }
 
+#if EIGS_JIT_ENABLED
+/* #2540: the helper, then the pending-error status; the emitted code leaves on
+ * nonzero. They live here because changing the helpers' signatures in vm.c
+ * raised the instruction count of vm_run_ex. */
+static int jit_status_get_name(EigsChunk *chunk, int idx) {
+    jit_helper_get_name(chunk, idx); return g_has_error;
+}
+static int jit_status_dot_get(EigsChunk *chunk, int name_idx) {
+    jit_helper_dot_get(chunk, name_idx); return g_has_error;
+}
+static int jit_status_dot_set(EigsChunk *chunk, int name_idx) {
+    jit_helper_dot_set(chunk, name_idx); return g_has_error;
+}
+static int jit_status_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
+    jit_helper_local_dot_set(chunk, slot, name_idx); return g_has_error;
+}
+static int jit_status_index_set(void) {
+    jit_helper_index_set(); return g_has_error;
+}
+#endif
+
 /* Phase 2b: the body of jit_try_compile_chunk is now this static helper,
  * parameterized on entry_offset and on output pointers for the
  * state/code/advance/stop_op slots so the same emitter can drive both
@@ -2886,6 +2907,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_inc_ecx(w);
             i += 3;
         } else if (op == OP_GET_NAME) {
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             /* Stage 5b: inline EnvIC fast path; helper only on IC miss.
              *
              * Mirrors jit_helper_get_name's hit branch:
@@ -2951,10 +2976,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_get_name);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_get_name);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             patch_rel32(done_p, w);
             i += 3;
         } else if (op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||
@@ -3245,14 +3276,24 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * helper sees TOS; reload after to keep cache honest. */
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_dot_get);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_dot_get);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 3;
         } else if (op == OP_DOT_SET) {
             /* Stage 5g: out-of-line call to
@@ -3262,14 +3303,24 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * OP_DOT_GET. */
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_dot_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_dot_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 3;
         } else if (op == OP_LOCAL_DOT_SET) {
             /* Stage 5d: inline the dict_set_cached_immediate path of
@@ -3284,6 +3335,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
                                            ((uint16_t)chunk->code[i + 4] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) {
@@ -3320,10 +3375,16 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_imm32_esi(w, (uint32_t)slot);
             w = emit_mov_imm32_edx(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_local_dot_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_local_dot_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 5 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_OBSERVE_ASSIGN) {
@@ -4116,6 +4177,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * runtime_error). Register plan: %rdx idx slot → scratch,
              * %rdi tgt Value*, %r8d index int, %rax val slot, %rsi
              * tag-check scratch then buffer base. */
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             uint8_t *slow_p[8];
             int slow_n = 0;
             /* idx slot → %rdx; must be an immediate num. */
@@ -4177,14 +4242,20 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             uint8_t *done_p;
             w = emit_jmp_rel32(w, &done_p);
             /* Slow path: Stage 4v helper call — same ABI as INDEX_GET
-             * (sync sp, aligned call, reload sp; no return value). */
+             * (sync sp, aligned call, reload sp), then tests its error status. */
             for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_index_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_index_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 1 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             patch_rel32(done_p, w);
             i += 1;
         } else if (op == OP_LOOP_STALL_NAMED || op == OP_LOOP_CAP_NAMED) {
@@ -4281,7 +4352,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *
              * r13 is callee-saved in SysV, so the pre-set survives the
              * helper call. */
-            if (bail_count + 2 > (int)(sizeof bail_patches /
+            if (bail_count + 3 > (int)(sizeof bail_patches /
                                        sizeof bail_patches[0])) {
                 JIT_BAIL_AND_RETURN();
             }
@@ -4309,6 +4380,15 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_jmp_rel32(w, &deep_p);
             bail_patches[bail_count++] = deep_p;
             patch_rel32(cont_p, w);
+            /* #2540: a builtin that raised answers 0 like any completed call.
+             * Leave past the CALL; CHECK_ERROR sees the latch. */
+            w = emit_mov_disp32_rbx_to_rax(w, g_layout.off_vm_owner);
+            w = emit_cmpl_imm32_disp32_rax(w, (int32_t)offsetof(EigsThread, has_error), 0);
+            uint8_t *clean_p;
+            w = emit_je_rel32(w, &clean_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(op_start + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(clean_p, w);
             i += 3;
         } else if (op == OP_RETURN) {
             /* Stage 4s: OP_RETURN via helper.
