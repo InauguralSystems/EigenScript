@@ -1409,6 +1409,14 @@ static uint8_t *emit_shr_48_rsi(uint8_t *w) {
     *w++ = 0x48; *w++ = 0xC1; *w++ = 0xEE; *w++ = 0x30; return w;
 }
 
+/* %rsi = the biased exponent of the double in %rsi: add %rsi,%rsi drops the
+ * sign, shr $53 drops the mantissa. 0x7FF means inf or NaN (#2528). */
+static uint8_t *emit_exponent_rsi(uint8_t *w) {
+    *w++ = 0x48; *w++ = 0x01; *w++ = 0xF6;              /* add %rsi, %rsi */
+    *w++ = 0x48; *w++ = 0xC1; *w++ = 0xEE; *w++ = 0x35; /* shr $53, %rsi  */
+    return w;
+}
+
 /* mov %rax, %rsi  (3 bytes) */
 static uint8_t *emit_mov_rax_rsi(uint8_t *w) {
     *w++ = 0x48; *w++ = 0x89; *w++ = 0xC6; return w;
@@ -4099,8 +4107,8 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              *   guards: idx imm-num, tgt heap ptr, tgt->type == VAL_BUFFER,
              *           idx integral ((double)(int)d == d, NaN via PF),
              *           0 <= i < count (one unsigned compare),
-             *           val imm-num
-             *   commit: data[i] = (double)(int)val; stack[sp-3] = val;
+             *           val imm-num and finite
+             *   commit: data[i] = val; stack[sp-3] = val;
              *           sp -= 2; slot_decref(tgt)   [idx/val imm: no-op]
              *
              * Guards all precede mutation, so the slow path re-executes
@@ -4142,6 +4150,11 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             /* val slot → %rax; must be an immediate num. */
             w = emit_load_stack_to_rax(w, g_layout.off_stack - 8);
             w = emit_immediate_num_check_rax(w, &slow_p[slow_n]); slow_n++;
+            /* val must be finite: the helper refuses inf and NaN (#2528). */
+            w = emit_mov_rax_rsi(w);
+            w = emit_exponent_rsi(w);
+            w = emit_cmp_imm32_esi(w, 0x7FF);
+            w = emit_je_rel32(w, &slow_p[slow_n]); slow_n++;
             /* Commit: data[i] = val — the raw double, matching the
              * interpreter and buf_set. (This used to round-trip through
              * cvttsd2si/cvtsi2sd, silently truncating fractional stores
