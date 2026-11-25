@@ -4,7 +4,7 @@
 Each case is its own program, run with EIGS_STRICT unset, 0 and 1 and with the
 JIT on and off. A refused store raises `value` and leaves the old cell.
 """
-import os, pathlib, platform, re, subprocess, sys, tempfile
+import os, pathlib, platform, subprocess, sys, tempfile
 EIGS = pathlib.Path(sys.argv[1]).resolve()
 REFUSED = '["value", "buffer store: expected a finite number"]'
 # A literal reaches the store as an unboxed double (the C and JIT fast paths); a
@@ -81,16 +81,17 @@ with tempfile.TemporaryDirectory() as tmp:
             check(root, f"finite hot b[{index}] is {value}",
                   HOT.format(index=index) + f"put of [b, {value}]\nprint of (b[0] == {value})\nprint of b[1]\n",
                   "true\n6.0\n")
-    # On x86-64 the hot cases above are native code, not only interpreted.
+    # On x86-64 the store itself is native code in the hot and loop cases: the exact chunks
+    # compile, and no scan stops at INDEX_SET (a thunk that ends before it also says compiled).
     if platform.machine() in ("x86_64", "AMD64") and sys.platform == "linux":
-        for what, source, extra in (("function", HOT.format(index="0.0"), {}),
-                                    ("loop", LOOP.format(index="0.0") + "fill of [b, xs, 400.0]\n", OSR)):
+        for what, source, extra, compiled in (("function", HOT.format(index="0.0"), {}, 1),
+                                    ("loop", LOOP.format(index="0.0") + "fill of [b, xs, 400.0]\n", OSR, 2)):
             rows += 1
             program = root / "case.eigs"
             program.write_text(source)
-            q = subprocess.run([str(EIGS), str(program)], env=dict(os.environ, EIGS_JIT_STATS="1", **extra),
+            q = subprocess.run([str(EIGS), str(program)], env=dict(os.environ, EIGS_JIT_STATS="1", EIGS_JIT_STOPS="1", **extra),
                                stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            if not re.search(r"\bcompiled=[1-9]", q.stdout):
+            if f" compiled={compiled} " not in q.stdout or "INDEX_SET" in q.stdout or "=== JIT compile stops ===" not in q.stdout:
                 failures += 1
                 print(f"FAIL: the {what}'s store did not compile: {q.stdout!r}")
     else:
