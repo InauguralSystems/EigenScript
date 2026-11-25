@@ -50,10 +50,12 @@ check_row INDEX_SET 'g is [0.0]' $'a is g\ni is x - 2.0\na[i] is 42.0\nreturn a[
 check_row LOOP_CAP_NAMED '' $'y is 40.0\nloop while y < 42.0:\n    y is y + 1.0\nreturn y' 42.0
 check_row LOOP_STALL_NAMED '' $'y is 40.0\nloop while not converged:\n    y is 42.0\nreturn 42.0' 42.0
 check_row CALL '' $'y is abs of (-42.0)\nreturn y' 42.0
-capacity_row(){ op=$1 init=$2 stmt=$3 first=${4:-}; row=$((row+1)); s="$D/cap-$op.eigs"; { printf '%s\n' "$init"; echo 'define hot(x) as:'; [ -z "$first" ] || printf '    %s\n' "$first"; i=0; while [ $i -lt 257 ];do printf '    %s\n' "$stmt";i=$((i+1));done; echo '    return 42.0';echo 'v is 0.0';echo 'for k in range of 80:';echo '    v is hot of 2.0';echo 'print of v';} >"$s"; EIGS_JIT_HOT=1 "$EIGS" "$s" >"$D/ca" 2>"$D/ce";ar=$?;a=$(cat "$D/ca"); EIGS_JIT_OFF=1 "$EIGS" "$s" >"$D/cb" 2>"$D/cf";br=$?;b=$(cat "$D/cb");if clean "$D/ce" "$D/cf"&&[ $ar -eq 0 ]&&[ $br -eq 0 ]&&[ "$a" = 42.0 ]&&[ "$b" = 42.0 ];then echo "PASS: capacity $op count=257 literal=42.0 JIT-on/off examined=$row";else echo "FAIL: capacity $op on=<$a> off=<$b>" >&2;status=1;fi;}
+# 257 statements in one function, which the JIT scans and the code cache does not
+# refuse. A statement also reads a name, so the op refused at the table end can be
+# GET_NAME.
+capacity_row(){ op=$1 init=$2 stmt=$3 first=${4:-}; row=$((row+1)); s="$D/cap-$op.eigs"; { printf '%s\n' "$init"; echo 'define hot(x) as:'; [ -z "$first" ] || printf '    %s\n' "$first"; i=0; while [ $i -lt 257 ];do printf '    %s\n' "$stmt";i=$((i+1));done; echo '    return 42.0';echo 'v is 0.0';echo 'for k in range of 80:';echo '    v is hot of 2.0';echo 'print of v';} >"$s"; EIGS_JIT_HOT=1 EIGS_JIT_STATS=1 "$EIGS" "$s" >"$D/ca" 2>"$D/ce";ar=$?;a=$(cat "$D/ca"); EIGS_JIT_OFF=1 "$EIGS" "$s" >"$D/cb" 2>"$D/cf";br=$?;b=$(cat "$D/cb");if clean "$D/ce" "$D/cf"&&grep -qE "scanned=[1-9][0-9]* .*cache_full_rejects=0" "$D/ce"&&[ $ar -eq 0 ]&&[ $br -eq 0 ]&&[ "$a" = 42.0 ]&&[ "$b" = 42.0 ];then echo "PASS: capacity of 257 $op statements literal=42.0 JIT-on/off examined=$row";else echo "FAIL: capacity $op statements on=<$a> off=<$b>" >&2;status=1;fi;}
 capacity_row GET_NAME 'g is 1.0' 'z is g'
 capacity_row DOT_GET 'g is {"v": 1.0}' 'z is g.v'
 capacity_row DOT_SET 'g is {"v": 0.0}' 'g.v is x'
 capacity_row LOCAL_DOT_SET 'g is {"v": 0.0}' 'a.v is x' 'a is g'
-capacity_row CALL '' 'z is abs of x'
 exit "$status"

@@ -2727,7 +2727,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
     /* Bail-jump rel32 patch sites collected during body emission and
      * resolved against the epilogue once we know its address. */
     uint8_t *bail_patches[256];
-    JitReservation bail_table = {"bail_patches", 0, 256
+    JitReservation bail_table = {"bail_patches", 0, (int)(sizeof bail_patches / sizeof bail_patches[0])
 #ifdef EIGS_JIT_CHECKED
                                  , 0
 #endif
@@ -2749,7 +2749,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
      * over-allocation is small (a few hundred bytes typical). */
     int *byte_to_native = NULL;
     JitPendingPatch pending[256];
-    JitReservation pending_table = {"pending", 0, 256
+    JitReservation pending_table = {"pending", 0, (int)(sizeof pending / sizeof pending[0])
 #ifdef EIGS_JIT_CHECKED
                                     , 0
 #endif

@@ -852,7 +852,7 @@ jobs:
       # #1665 follow-up: the JIT-tier sections against `make jit-checked`, whose
       # emitter calls a slot witness before every direct env-slot access and
       # aborts with the read site on an out-of-range slot or a stale cached
-      # values base (#1661 was such a read). The plan line pins all six
+      # values base (#1661 was such a read). The plan line pins all seven
       # sections as executed, not merely selected.
       - name: JIT-tier sections under make jit-checked
         env:
