@@ -1,0 +1,46 @@
+# #1646: real TTF render-decode coverage for every printable ASCII byte.
+load_file of "lib/test.eigs"
+
+# The shell pins a proportional CI font.  Refuse a bitmap fallback rather
+# than letting its different rasterizer make this evidence vacuously green.
+if (gfx_text_width of ["iiii", 1]) >= (gfx_text_width of ["WWWW", 1]):
+    print of "SKIP: configured font did not activate proportional TTF metrics"
+    exit of 0
+
+opened is gfx_open of [640, 240, "hex-view-ttf-1646"]
+if (not opened):
+    print of "SKIP: gfx_open failed under the configured display"
+    exit of 0
+
+load_file of "lib/ui.eigs"
+
+define _printable_byte(addr) as:
+    return addr + 32
+
+hv is hex_view of ["ttf-bytes", 4, 4, 620, 190, _printable_byte, 95]
+hv.bytes_per_row is 12
+m is hex_view_metrics of hv
+
+gfx_clear of [1, 2, 3]
+render of [hv, 0, 0]
+gfx_present of null
+
+examined is 0
+for addr in range of [1, 95]:
+    local row is floor of (addr / m.bpr)
+    local col is addr - row * m.bpr
+    local x0 is hv.x + m.ascii_x + col * m.cw
+    local y0 is hv.y + 2 + row * m.row_h
+    local ink is 0
+    for yy in range of [y0, y0 + m.row_h]:
+        for xx in range of [x0, x0 + m.cw]:
+            local px is gfx_read of [xx, yy]
+            if px != null:
+                if px[0] != _theme.hex_bg[0] or px[1] != _theme.hex_bg[1] or px[2] != _theme.hex_bg[2]:
+                    ink is ink + 1
+    assert_true of [ink > 0, f"#1646 TTF ASCII byte {addr + 32} has ink inside its cell"]
+    examined is examined + 1
+
+assert_eq of [examined, 94, "#1646 render-decode examined every non-space printable byte"]
+gfx_close of null
+test_summary of null

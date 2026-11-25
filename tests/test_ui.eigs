@@ -77,6 +77,14 @@ define gfx_ticks(args) as:
 # installed on the machine running the suite.
 define gfx_text_width(text, scale) as:
     _bool_metrics.calls += 1
+    if _proportional_metrics == 2:
+        local total is 0
+        for i in range of (len of text):
+            local advance is 7
+            if (substr of [text, i, 1]) == "W":
+                advance is 11
+            total is total + advance
+        return total * scale
     if _proportional_metrics == 1:
         local total is 0
         for i in range of (len of text):
@@ -2490,8 +2498,18 @@ define _hx_printable_reader(addr) as:
 _proportional_metrics is 1
 hp is hex_view of ["hp", 0, 0, 2600, 20, _hx_printable_reader, 95]
 hp.bytes_per_row is 95
+hp_metric_calls0 is _bool_metrics.calls
 hpm is hex_view_metrics of hp
 assert_eq of [hpm.cw, 9, "#1646 ASCII cell uses the widest printable glyph"]
+assert_eq of [_bool_metrics.calls - hp_metric_calls0, 98, "#1646 cold metrics scan measures width/height signature plus 95 glyphs and row height"]
+hp_metric_calls1 is _bool_metrics.calls
+hex_view_metrics of hp
+assert_eq of [_bool_metrics.calls - hp_metric_calls1, 2, "#1646 cached metrics measure only the width/height font signature"]
+_proportional_metrics is 2
+hpm_changed is hex_view_metrics of hp
+assert_eq of [hpm_changed.cw, 11, "#1646 changed font metrics invalidate cached cell width"]
+_proportional_metrics is 1
+hpm is hex_view_metrics of hp
 _record_render_hex of [hp, 0, 0]
 hp_ascii_draws is 0
 for gi in range of (len of _gfx_log):
@@ -3862,11 +3880,30 @@ assert_eq of [(theme_high_contrast of null).bg[0], 0, "high contrast background"
 assert_true of [(set_theme of (theme_light of null)) == null and (theme of null).bg[0] == 235, "theme setter changes active palette"]
 coverage_theme_roles is ["highlight_bg", "highlight_alt_bg", "highlight_active_bg"]
 coverage_builtin_themes is [theme_dark of null, theme_light of null, theme_high_contrast of null]
+
+define _wcag_channel(v) as:
+    local s is v / 255
+    if s <= 0.04045:
+        return s / 12.92
+    return pow of [((s + 0.055) / 1.055), 2.4]
+
+define _wcag_luminance(c) as:
+    return 0.2126 * (_wcag_channel of c[0]) + 0.7152 * (_wcag_channel of c[1]) + 0.0722 * (_wcag_channel of c[2])
+
+define _wcag_contrast(a, b) as:
+    local la is _wcag_luminance of a
+    local lb is _wcag_luminance of b
+    if lb > la:
+        local swap is la
+        la is lb
+        lb is swap
+    return (la + 0.05) / (lb + 0.05)
+
 for ti in range of (len of coverage_builtin_themes):
     assert_true of [coverage_builtin_themes[ti].hex_sel_text != null, "built-in theme supplies selected hex text role"]
     for ri in range of (len of coverage_theme_roles):
         assert_true of [coverage_builtin_themes[ti][coverage_theme_roles[ri]] != null, "built-in theme supplies generic highlight role"]
-        assert_true of [coverage_builtin_themes[ti].hex_sel_text != coverage_builtin_themes[ti][coverage_theme_roles[ri]], "selected hex text contrasts with highlight fill"]
+        assert_true of [(_wcag_contrast of [coverage_builtin_themes[ti].hex_sel_text, coverage_builtin_themes[ti][coverage_theme_roles[ri]]]) >= 4.5, "#1646 selected ASCII, hex digits and marker meet WCAG contrast over every highlight"]
 coverage_legacy_theme is {"bg": [7, 8, 9]}
 set_theme of coverage_legacy_theme
 assert_eq of [(theme_color of ["highlight_bg", [11, 22, 33]])[1], 22, "legacy theme missing highlight role uses fallback"]

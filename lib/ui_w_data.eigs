@@ -580,18 +580,29 @@ define hex_view(id, x, y, w, h, reader, size) as:
 define hex_set_cursor(hv, addr) as:
     hv.cursor is addr
 
-# Geometry shared by render, hit-testing and the tests: cell/gutter
-# metrics derived from the measured monospace glyph size.
+# The renderer's font is fixed for a process.  Keep the expensive printable
+# ASCII scan once per active font/scale; the one-string signature is also a
+# cheap invalidation seam for metric providers used by embedders and tests.
+_hex_glyph_metrics is {"scale": null, "signature": null, "cw": 0, "row_h": 0}
+
+# Geometry shared by render, hit-testing and the tests: cell/gutter metrics
+# derived from the active font.  Rendering, mousemove, mousedown and scroll
+# each call this at most once per dispatch; only a changed signature rescans.
 define hex_view_metrics(hv) as:
-    # A proportional font can make printable ASCII (notably W/M/@) wider
-    # than "0".  Every ASCII cell must accommodate the widest byte; using
-    # the zero advance here made _draw_text_clipped discard those bytes.
-    local cw is 0
-    for b in range of [32, 127]:
-        local bw is text_width of [(chr of b), 1]
-        if bw > cw:
-            cw is bw
-    local row_h is (text_height of 1) + 4
+    local scale is 1
+    local signature is (text_width of [" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", scale]) + (text_height of scale * 10000)
+    if _hex_glyph_metrics.scale != scale or _hex_glyph_metrics.signature != signature:
+        local cw is 0
+        for b in range of [32, 127]:
+            local bw is text_width of [(chr of b), scale]
+            if bw > cw:
+                cw is bw
+        _hex_glyph_metrics.scale is scale
+        _hex_glyph_metrics.signature is signature
+        _hex_glyph_metrics.cw is cw
+        _hex_glyph_metrics.row_h is (text_height of scale) + 4
+    local cw is _hex_glyph_metrics.cw
+    local row_h is _hex_glyph_metrics.row_h
     local gutter is (hv.addr_nibbles * cw) + 10
     local cell_w is (cw * 2) + 4
     local bpr is hv.bytes_per_row
@@ -704,7 +715,10 @@ define _render_hex_view(widget, ax, ay) as:
                     local cellcol is ascol
                     if selected == 1:
                         cellcol is selcol
-                    _draw_text_clipped of [axx, ry, m.cw, ch, cellcol, 1]
+                    # A cell promises exactly one character.  Let gfx_text
+                    # rasterise it and the widget clip crop any bearing/ink;
+                    # the multi-character clipper must not discard the glyph.
+                    gfx_text of [axx, ry, ch, cellcol[0], cellcol[1], cellcol[2], 1]
     ui_clip_pop of null
     gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
     gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]

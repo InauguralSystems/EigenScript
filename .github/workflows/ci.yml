@@ -1287,6 +1287,10 @@ jobs:
         run: make gfx-x11-regressions
 
       - if: needs.scope.outputs.code == 'true'
+        name: Hex-view printable ASCII under real TTF (#1646)
+        run: bash tests/test_hex_view_ttf.sh
+
+      - if: needs.scope.outputs.code == 'true'
         name: Build consolidated server variant
         run: make server
 

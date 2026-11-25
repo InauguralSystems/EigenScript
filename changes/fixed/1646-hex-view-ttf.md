@@ -1,1 +1,1 @@
-- Draw every printable hex-view ASCII byte under proportional fonts and keep highlighted cell text legible (#1646).
+- The hex view draws every printable ASCII byte under proportional fonts, and highlighted cells draw their text in `hex_sel_text` (#1646).

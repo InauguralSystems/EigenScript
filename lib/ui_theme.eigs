@@ -249,7 +249,7 @@ _theme_high_contrast is {
     "hex_addr": [180, 180, 180],
     "hex_text": [255, 255, 255],
     "hex_ascii": [200, 200, 200],
-    "hex_sel_text": [0, 0, 0],
+    "hex_sel_text": [255, 255, 255],
     "hex_cursor": [255, 255, 0],
     "font_scale": 2,
     "char_w": 12,
