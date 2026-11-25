@@ -1,0 +1,1 @@
+- A buffer store through a float index (`b[0.0] is v`) refuses inf, -inf and nan with `value`, as an int index does, and a refused store leaves the old cell instead of writing 0 (#2528).
