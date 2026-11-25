@@ -19,11 +19,17 @@ INDEXES = ["0", "0.0", "-2.0"]
 FINITE = ["1.5", "-0.25", "3", "0.0", "1.7976931348623157e308", "-1.7976931348623157e308", "5e-324"]
 # 400 finite stores by a function make it hot; the store under test is call 401.
 HOT = "define put(b, x) as:\n    b[{index}] is x\n    return 0\nb is buf_from_list of ([5.0, 6.0])\nfor k in range of 400:\n    put of [b, 7.5]\n"
+# The store inside a loop that enters native code at its back edge (OSR). A float
+# counter keeps the loop native.
+LOOP = ("define fill(b, xs, n) as:\n    k is 0.0\n    loop while k < n:\n        b[{index}] is xs[k]\n        k is k + 1.0\n    return 0\n"
+        "b is buf_from_list of ([5.0, 6.0])\nxs is []\nfor k in range of 400:\n    append of [xs, 7.5]\n")
+OSR = {"EIGS_JIT_OSR_THRESHOLD": "1"}
 failures = rows = 0
 
-def run(root, source, strict, jit):
+def run(root, source, strict, jit, extra=None):
     env = {k: v for k, v in os.environ.items()
            if k not in ("EIGS_STRICT", "EIGS_JIT_OFF", "EIGS_TRACE", "EIGS_REPLAY")}
+    if extra: env.update(extra)
     if strict is not None: env["EIGS_STRICT"] = strict
     if not jit: env["EIGS_JIT_OFF"] = "1"
     program = root / "case.eigs"
@@ -32,12 +38,12 @@ def run(root, source, strict, jit):
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     return q.returncode, q.stdout, q.stderr
 
-def check(root, name, source, want, states=ALL):
+def check(root, name, source, want, states=ALL, extra=None):
     global failures, rows
     for strict in states:
         for jit in (True, False):
             rows += 1
-            got = run(root, source, strict, jit)
+            got = run(root, source, strict, jit, extra)
             if got != (0, want, ""):
                 failures += 1
                 print(f"FAIL: {name} strict={strict or 'unset'} jit={'on' if jit else 'off'}: {got!r} wanted {want!r}")
@@ -64,6 +70,12 @@ with tempfile.TemporaryDirectory() as tmp:
                                  ("hot ", HOT.replace("(b, x)", "(b, x, j)").replace("[{index}]", "[j]").replace("[b, 7.5]", "[b, 7.5, 0.0]") + "try:\n    put of [b, {v}, {i}]\n")):
                 check(root, f"{name}b[{index}] is {value} names the index",
                       source.format(i=index, v=value) + "catch e:\n    print of e.message\nprint of b[1]\n", message + "\n6.0\n")
+    for shown, value, states in VALUES:
+        for index in INDEXES:
+            check(root, f"loop b[{index}] is {value}",
+                  LOOP.format(index=index) + f"append of [xs, {value}]\ntry:\n    fill of [b, xs, 401.0]\n    print of \"stored\"\n"
+                  f"catch e:\n    print of [e.kind, e.message]\nprint of [b[0], b[1]]\n",
+                  REFUSED + "\n[7.5, 6.0]\n", states, OSR)
     for value in FINITE:
         for index in INDEXES:
             check(root, f"finite hot b[{index}] is {value}",
@@ -71,14 +83,16 @@ with tempfile.TemporaryDirectory() as tmp:
                   "true\n6.0\n")
     # On x86-64 the hot cases above are native code, not only interpreted.
     if platform.machine() in ("x86_64", "AMD64") and sys.platform == "linux":
-        rows += 1
-        program = root / "case.eigs"
-        program.write_text(HOT.format(index="0.0"))
-        q = subprocess.run([str(EIGS), str(program)], env=dict(os.environ, EIGS_JIT_STATS="1"), stdin=subprocess.DEVNULL,
-                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-        if not re.search(r"\bcompiled=[1-9]", q.stdout):
-            failures += 1
-            print(f"FAIL: the hot store did not compile: {q.stdout!r}")
+        for what, source, extra in (("function", HOT.format(index="0.0"), {}),
+                                    ("loop", LOOP.format(index="0.0") + "fill of [b, xs, 400.0]\n", OSR)):
+            rows += 1
+            program = root / "case.eigs"
+            program.write_text(source)
+            q = subprocess.run([str(EIGS), str(program)], env=dict(os.environ, EIGS_JIT_STATS="1", **extra),
+                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+            if not re.search(r"\bcompiled=[1-9]", q.stdout):
+                failures += 1
+                print(f"FAIL: the {what}'s store did not compile: {q.stdout!r}")
     else:
         print("SKIP: native-code row (no x86-64 Linux JIT here)")
 print(f"ROWS: buffer store nonfinite examined={rows} failures={failures}")
