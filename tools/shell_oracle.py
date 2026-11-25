@@ -56,6 +56,11 @@ BLIND SPOTS (what no oracle here can see):
     redirections, here-document continuations) and does not compare
     redirection targets; a file whose reprint misplaces a here-document from
     an `if`/`while` header is counted as o3_reprint_unusable, not compared.
+  * not modelled, and not in the tree: an operator split by a line
+    continuation (`<\\<newline><EOF`), posix-mode quoting inside ${...}
+    (`${x:?it's}` in a dash file), a `<<-` delimiter that itself holds a
+    tab, and the ANSI-C edge cases `\\x{}`, `\\c\\'` and `\\UFFFFFFFF`, which
+    were not checked against bash.
   * a here-document opened inside a $( ) that closes on the same line
     (`$(cat <<EOF)`), and a function defined in a pipeline element or a
     backgrounded group (subshells bash discards), are read differently from
@@ -123,15 +128,21 @@ def shape(text, mod=ST, depth=0):
             continue
         # bash's reprint lays `case X in` on its own line and spells an
         # implicit `for NAME` list as `in "$@"`: normalize both readings.
-        if words[0] == "coproc" and len(words) > 3 and words[2] == "{":
+        if words[0] == "function" and len(words) > 2:
+            # bash reprints `function NAME {` as `NAME ()` and `{` on its own line
+            pieces.append((words[:2], subs[:2]))
+            words, subs = words[2:], subs[2:]
+        if words[:2] == ["coproc", "COPROC"]:
+            words, subs = words[:1] + words[2:], subs[:1] + subs[2:]   # bash names it
+        if words and words[0] == "coproc" and len(words) > 3 and words[2] == "{":
             # bash's reprint lays `coproc NAME {` on its own line
             pieces.append((words[:3], subs[:3]))
             words, subs = words[3:], subs[3:]
-        elif words[0] == "case" and "in" in words:
+        elif words and words[0] == "case" and "in" in words:
             k = words.index("in") + 1
             pieces.append((words[:k], subs[:k]))
             words, subs = words[k:], subs[k:]
-        elif words[0] in ("for", "select") and len(words) >= 2 \
+        elif words and words[0] in ("for", "select") and len(words) >= 2 \
                 and (len(words) == 2 or words[2] != "in"):
             words = words[:2] + ["in", '"$@"']
             subs = subs[:2] + [(), ()]
@@ -280,6 +291,8 @@ def _has_expansion(word):
             return True
         elif c in "()" and q is None:
             return True                  # array value / extglob: not an argument
+        elif c == "[" and q is None and re.match(r"^[A-Za-z_]\w*\[", word):
+            return True                  # an assignment's subscript: not an argument
         i += 1
     return word.startswith("~") or word[:2] in ("<(", ">(")
 
@@ -621,7 +634,27 @@ INCIDENTS = [
     # `<<-` strips leading TABS only: a space-indented delimiter does not end it.
     ("cat <<-X\n\tbody\n  X\n\tX\nreal\n", [["cat"], ["real"]], ["\tbody\n  X\n"]),
     # DevBox on #2559: `coproc NAME { ...; }` -- NAME, then a group.
-    ("coproc QP { cat; }\necho x\n", [["coproc", "QP", "{", "cat"], ["}"], ["echo", "x"]], []),
+    ("coproc QP { cat; }\necho x\n", [["coproc", "QP"], ["{"], ["cat"], ["}"], ["echo", "x"]], []),
+    # DevBox r3: command position after a compound command, `function NAME`
+    # and `for (( ))`, with no separator.
+    ("for ((i=0;i<8;i++)) do (( m = m << 1 )); done\neigenscript-full w.eigs\n",
+     [["for"], ["do"], ["done"], ["eigenscript-full", "w.eigs"]], []),
+    ("function f { (( n << 1 )); }\nreal\n", [["function", "f"], ["{"], ["}"], ["real"]], []),
+    ("if [[ x ]] then bash a.sh; fi\n", [["if", "[[", "x", "]]"], ["then", "bash", "a.sh"], ["fi"]], []),
+    ("function f { !(cmd); }\nreal\n",
+     [["function", "f"], ["{"], ["!"], ["cmd"], ["}"], ["real"]], []),
+    ("a[1<<3]=x\nreal\n", [["a[1<<3]=x"], ["real"]], []),
+    ("echo $[1<<3]\nreal\n", [["echo", "$[1<<3]"], ["real"]], []),
+    ("tmp=/tmp/x.$$'\\'\nreal\n", [["tmp=/tmp/x.$$'\\'"], ["real"]], []),
+    ("if a; then b; elif (( n << 1 )); then c; fi\nreal\n",
+     [["if", "a"], ["then", "b"], ["elif"], ["then", "c"], ["fi"], ["real"]], []),
+    ("until (( n << 1 )); do :; done\nreal\n", [["until"], ["do", ":"], ["done"], ["real"]], []),
+    ("case x in a) b;& c) d;; esac\nreal\n", [["case", "x", "in"], ["b"], ["d"], ["esac"], ["real"]], []),
+    ("case x in (a|b) c;; esac\nreal\n", [["case", "x", "in"], ["c"], ["esac"], ["real"]], []),
+    # an expanded here-document body's $( ) runs; a quoted one's does not.
+    ("cat <<EOF\nx $(eigenscript-full a)\nEOF\n", [["cat"]], ["x $(eigenscript-full a)\n"],
+     ["eigenscript-full a"]),
+    ("cat <<\\EOF\n$(x)\nEOF\n", [["cat"]], ["$(x)\n"], []),
     ("coproc cat file\n", [["coproc", "cat", "file"]], []),
     # critic r2: `!(cmd)` at a command position negates a subshell.
     ("if !(eigenscript-gfx --version); then :; fi\n",
@@ -669,6 +702,12 @@ UNQUOTE_INCIDENTS = [
 
 def check_incidents(mod=ST):
     F = []
+    # tokenize_prefix: text the shell rejects is read up to the line where
+    # tokenizing stopped -- not dropped whole (DevBox r3 mutant).
+    got = [[w.text for w in c] for c in mod.simple_commands(
+        mod.tokenize_prefix('bash a.sh\necho "unclosed\nbash b.sh\n'))]
+    if got != [["bash", "a.sh"]]:
+        F.append(f"H tokenize_prefix: {got!r}, want [['bash', 'a.sh']]")
     for word, want in UNQUOTE_INCIDENTS:
         got = mod.unquote(word)
         if got != want:
@@ -701,7 +740,7 @@ def check_incidents(mod=ST):
 PLANTS = [
     ("hash-mid-word-is-comment",
      'METACHARS = frozenset(" \\t\\n;&|()<>")',
-     'METACHARS = frozenset(" \\t\\n;&|()<>#")', {"H", "O3", "O4"}),
+     'METACHARS = frozenset(" \\t\\n;&|()<>#")', {"H", "O4"}),
     ("heredoc-body-read-as-code",
      "                if self.pending:\n                    self.read_heredocs()",
      "                if False:\n                    self.read_heredocs()", {"H", "O1", "O3", "O4"}),
@@ -794,6 +833,70 @@ def incident_items():
     return [(f"incident#{i}", row[0]) for i, row in enumerate(INCIDENTS)]
 
 
+# O5: composed programs.  Every construct inside every wrapper, followed by
+# a marker command.  bash decides whether the marker line is code (a syntax
+# error planted there must be rejected); the tokenizer must read it as the
+# file's last command.  Command position after a compound command is where
+# a lexer goes wrong; this is the population that reaches it (DevBox r3).
+O5_WRAPPERS = [
+    "{C}\n", "if true; then\n{C}\nfi\n", "if (( 1 )) then\n{C}\nfi\n",
+    "if [[ x ]] then\n{C}\nfi\n", "for ((i=0;i<2;i++)) do\n{C}\ndone\n",
+    "for x in a b; do\n{C}\ndone\n", "while false; do\n{C}\ndone\n",
+    "until true; do\n{C}\ndone\n", "function f {\n{C}\n}\n", "f() {\n{C}\n}\n",
+    "g() (\n{C}\n)\n", "{\n{C}\n}\n", "(\n{C}\n)\n",
+    "case x in\n  a)\n{C}\n  ;;\n  (b) :\n  ;;\nesac\n", "x=$(\n{C}\n)\n",
+    "if a; then :; elif (( 1 )); then\n{C}\nfi\n", "while x; do :; done && {\n{C}\n}\n",
+    "! {\n{C}\n}\n", "coproc C1 {\n{C}\n}\n", "for x in a; do :; done\n{C}\n",
+    "[[ a ]] && {\n{C}\n}\n", "time {\n{C}\n}\n",
+]
+O5_CONSTRUCTS = [
+    "(( n = n << 1 ))", "[[ a < b && c ]]", "!(true)", "a[1<<3]=x", "echo $[1<<3]",
+    "tmp=x.$$'\\'", "cat <<EOF\nbody $(x)\nEOF", "cat <<-'E'\n\tbody\n\tE",
+    "tr a b <<< c", "echo \"a\n#b\" # c", "case y in z) : ;; esac", "x=$(( 1 << 2 ))",
+    "echo `echo a`", "arr=(a 'b c')", "for ((j=0;j<1;j++)); do :; done",
+    "echo ${x:-'}'}", "coproc QP { cat; }", "time -p (( 1 << 2 ))", "echo a \\\n b",
+    "if (( 1 )) then (( n << 1 )); fi", "function h { (( n << 1 )); }",
+]
+O5_MARKER = "eigenscript-full end"
+
+
+def composed_items():
+    return [(f"composed#{w}.{c}", O5_WRAPPERS[w].replace("{C}", O5_CONSTRUCTS[c]) + O5_MARKER + "\n")
+            for w in range(len(O5_WRAPPERS)) for c in range(len(O5_CONSTRUCTS))]
+
+
+def composed_findings(mod=ST, locale="C"):
+    """O5 for every composed program bash accepts: bash must read the marker
+    line as code, and so must the tokenizer."""
+    F, kept = [], 0
+
+    def one(item):
+        name, text = item
+        if not bash_accepts(text, locale):
+            return None
+        pos = text.rindex(O5_MARKER)
+        bash_code = not bash_accepts(text[:pos] + MARK + text[pos:], locale)
+        try:
+            lines = list(mod.logical_lines(text))
+            ours = lines and [t.text for t in lines[-1][1]] == O5_MARKER.split()
+        except Exception as e:                # noqa: BLE001 -- reported as a finding
+            return f"{name}: O5 tokenizer raised {type(e).__name__}: {e}"
+        if bash_code and not ours:
+            return f"{name}: O5 bash runs the marker line; the tokenizer does not read it as a command"
+        if not bash_code and ours:
+            return f"{name}: O5 the tokenizer reads the marker line as a command; bash reads it as data"
+        return ""
+
+    with concurrent.futures.ThreadPoolExecutor(min(8, os.cpu_count() or 2)) as ex:
+        for r in ex.map(one, composed_items()):
+            if r is None:
+                continue
+            kept += 1
+            if r:
+                F.append(r)
+    return F, kept
+
+
 ROBUST_N = 4000
 ROBUST_PARTS = ["a", " ", "\n", "'", '"', "\\", "$", "(", ")", "{", "}", "`", "<<", "<<-",
                 "<<<", "EOF", "#", ";", "&&", "|", "[[", "]]", "((", "))", "$(", "${", "$((",
@@ -834,9 +937,20 @@ def selftest():
         print("INSTRUMENT ERROR: shell_oracle needs bash and dash "
               f"(bash={BASH}, dash={DASH})")
         return 2
-    items = load_items(tracked_shell_files()) + incident_items()
+    items = load_items(tracked_shell_files()) + incident_items() + composed_items()
     rc = 0
-    print(f"PLAN: {4 + len(PLANTS)}")
+    print(f"PLAN: {5 + len(PLANTS)}")
+
+    o5, o5_kept = composed_findings()
+    if o5:
+        rc = 1
+        print(f"  FAIL: composed programs: {len(o5)} finding(s) of {o5_kept}")
+        for f in o5[:20]:
+            print("    " + f)
+    else:
+        print(f"  PASS: composed programs: the tokenizer reads the marker as bash does in "
+              f"{o5_kept} of {o5_kept} programs bash accepts "
+              f"({len(O5_WRAPPERS)} wrappers x {len(O5_CONSTRUCTS)} constructs)")
 
     bad = robustness()
     if bad:
@@ -882,6 +996,7 @@ def selftest():
         found, _ = run_corpus(subset, mod=mod)
         found += check_incidents(mod)
         found += [f"R {t!r}: {e}" for t, e in robustness(mod)]
+        found += composed_findings(mod)[0]
         tags = _oracles_of(found)
         if found and expect <= tags:
             print(f"  PASS: plant {name} caught by {','.join(sorted(tags))} "

@@ -84,6 +84,8 @@ RESERVED_OPENERS = frozenset({
     "coproc",
 })
 EXTGLOB_LEADS = frozenset("?*+@!")
+# Closers after which another reserved word may follow with no separator.
+COMPOUND_CLOSERS = frozenset({"fi", "done", "esac", "}"})
 
 
 class _Lexer:
@@ -162,11 +164,42 @@ class _Lexer:
             return self.cmdsub(j + 2, subst, j)
         if nxt == "{":
             return self.param(j + 2, subst, j)
+        if nxt == "[":
+            return self.old_arith(j + 2, subst, j)
+        if nxt and nxt in "$?#!-@*0123456789":
+            return j + 2                      # `$$`, `$?`, `$1`...: the next `'` is a plain quote
         if nxt == "'" and not in_double:
             return self.ansi_c(j)
         if nxt == '"' and not in_double:
             return self.double(j + 1, subst)
         return j + 1
+
+    def old_arith(self, j: int, subst: list, opener: int) -> int:
+        """`$[ expr ]`, bash's obsolete arithmetic: brackets balance, and
+        `<` `>` `(` inside are arithmetic, not shell operators."""
+        depth = 0
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "'":
+                j = self.single(j)
+                continue
+            if c == '"':
+                j = self.double(j, subst)
+                continue
+            if c in "$`":
+                j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if c == "[":
+                depth += 1
+            elif c == "]":
+                if depth == 0:
+                    return j + 1
+                depth -= 1
+            j += 1
+        self.err("unterminated $[...]", opener)
 
     def backtick(self, i: int, subst: list, in_double: bool = False) -> int:
         j = i + 1
@@ -333,6 +366,8 @@ class _Body:
         self.after_time = False        # `time` was just read: its -p keeps cmdpos
         self.assigned = False          # this command began with NAME=value
         self.after_coproc = False      # `coproc` was just read
+        self.after_function = False    # `function` was just read: next is the NAME
+        self.split_next = False        # a word here starts a new command
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -355,6 +390,11 @@ class _Body:
             if c in "$`":
                 j = lx.dollar_or_backtick(j, subst, in_double=False)
                 continue
+            if c == "[" and self.cmdpos and lx.clean(start, j).isidentifier():
+                close = _subscript_end(t, j)  # `a[1<<3]=x`: an assignment's subscript
+                if close is not None and t[close:close + 1] in ("=", "+"):
+                    j = close
+                    continue
             if c == "(":
                 prefix = lx.clean(start, j)
                 if prefix == "!" and self.cmdpos:
@@ -442,7 +482,9 @@ class _Body:
                                 self.i, end, tuple(subst)))
                 self.i = end
                 self.after_for = False
-                self.cmdpos = False
+                # `(( x )) then` / `for ((...)) do`: a reserved word may
+                # follow a compound command with no separator.
+                self.cmdpos = True
                 continue
             self.after_for = False
             op = self.match_op()
@@ -463,13 +505,17 @@ class _Body:
             if end == self.i:                 # defensive: never spin
                 end = self.i + 1
             text = lx.clean(self.i, end)
-            if (text.isdigit() or _is_fd_name(text)) and t[end:end + 1] in ("<", ">") \
+            if ((text.isdigit() and text.isascii()) or _is_fd_name(text)) and t[end:end + 1] in ("<", ">") \
                     and not self.dbracket:
                 self.i = end                  # IO number / {name}: folded into the redirection
                 continue
             # A case pattern is matched against, never run: its own kind.
             kind = "pattern" if self.in_pattern() and text != "esac" \
                 and self.expect_delim is None else "word"
+            if self.split_next and kind == "word":
+                # `[[ x ]] then cmd`, `function f { cmd`: bash ends the
+                # previous command here; a zero-width `;` says so.
+                self.emit(Token("op", ";", lx.line_of(self.i), self.i, self.i))
             self.emit(Token(kind, text, lx.line_of(self.i), self.i, end, tuple(subst)))
             self.i = end
             self.after_word(text)
@@ -537,7 +583,8 @@ class _Body:
                 self.regex_next = True
             if word == "]]":
                 self.dbracket = False
-                self.cmdpos = False
+                self.cmdpos = True                # `[[ x ]] then`: a reserved word may follow
+                self.split_next = True
             return
         if self.case and self.case[-1] == "word":
             self.case[-1] = "in" if word else "word"
@@ -549,9 +596,10 @@ class _Body:
         if self.case and self.case[-1] == "pattern":
             if word == "esac":
                 self.case.pop()
-                self.cmdpos = False
+                self.cmdpos = True
             return
         if word == "{" and self.cmdpos:
+            self.split_next = True
             return                            # a group or function body opens
         if self.cmdpos and self.after_time and word.startswith("-"):
             return                            # `time -p`: still a command position
@@ -570,6 +618,7 @@ class _Body:
             self.after_coproc = False
             rest = self.lx.text[self.i:].lstrip(" \t")
             if _plain_ident(word) and rest[:1] in ("{", "("):
+                self.split_next = True
                 return                        # `coproc NAME { ...; }`: NAME, then a compound
         if self.cmdpos and word == "coproc":
             self.after_coproc = True
@@ -577,6 +626,18 @@ class _Body:
         if self.cmdpos and _is_assignment(word):
             self.assigned = True
             return
+        if self.cmdpos and word == "function":
+            self.after_function = True
+            self.cmdpos = False
+            return
+        if self.after_function:
+            self.after_function = False
+            self.cmdpos = True                # `function NAME {` / `function NAME ()`
+            self.split_next = True
+            return
+        if self.cmdpos and word in COMPOUND_CLOSERS:
+            self.split_next = True
+            return                            # `done then`, `fi }`: still a reserved-word position
         if self.cmdpos:
             if word == "case":
                 self.case.append("word")
@@ -584,7 +645,6 @@ class _Body:
                 return
             if word == "esac" and self.case:
                 self.case.pop()
-                self.cmdpos = False
                 return
             if word == "[[":
                 self.dbracket = True
@@ -595,6 +655,7 @@ class _Body:
             self.cmdpos = False
 
     def emit(self, tok: Token):
+        self.split_next = False
         self.tokens.append(tok)
 
     def read_heredocs(self):
@@ -623,8 +684,56 @@ class _Body:
                 body = t[body_start:lx.n]     # delimited by end of file
             lx.heredocs.append((body_start, body_start + len(body), strip))
             tok = self.tokens[idx]
-            self.tokens[idx] = tok._replace(heredoc=body)
+            # An unquoted delimiter means the body is expanded: its $( ) and
+            # backquotes run when the command does, so they are recorded.
+            subst = tuple(_body_substitutions(body)) if not quoted else ()
+            self.tokens[idx] = tok._replace(heredoc=body, subst=subst)
         self.pending = []
+
+
+def _body_substitutions(body: str) -> list:
+    """$( ) / backquote / ${ } bodies in an expanded here-document body."""
+    lx = _Lexer(body)
+    out: list = []
+    j = 0
+    while j < lx.n:
+        c = body[j]
+        if c == "\\":
+            j += 2
+            continue
+        if c in "$`":
+            try:
+                nxt = body[j + 1:j + 2]
+                if c == "$" and nxt in ("'", '"'):
+                    j += 1                    # no quote removal in a here-document body
+                    continue
+                j = lx.dollar_or_backtick(j, out, in_double=True)
+            except ShellLexError:
+                j += 1
+            continue
+        j += 1
+    return out
+
+
+def _subscript_end(t: str, j: int) -> int | None:
+    """Index after the `]` matching the `[` at j, or None."""
+    depth = 0
+    k = j
+    while k < len(t):
+        c = t[k]
+        if c == "\\":
+            k += 2
+            continue
+        if c == "[":
+            depth += 1
+        elif c == "]":
+            depth -= 1
+            if depth == 0:
+                return k + 1
+        elif c == "\n":
+            return None
+        k += 1
+    return None
 
 
 def _is_fd_name(word: str) -> bool:
@@ -802,13 +911,17 @@ def unquote(word: str) -> str:
             i = j + 1
         elif c == "$" and word[i + 1:i + 2] == "'":
             j = i + 2
+            seg = []
             while j < n and word[j] != "'":
                 if word[j] == "\\" and j + 1 < n:
                     text, j = _ansi_escape(word, j)
-                    out.append(text)
+                    seg.append(text)
                     continue
-                out.append(word[j])
+                seg.append(word[j])
                 j += 1
+            seg_text = "".join(seg)
+            nul = seg_text.find("\0")         # bash ends this $'...' part at a NUL
+            out.append(seg_text if nul < 0 else seg_text[:nul])
             i = j + 1
         elif c == '"' or (c == "$" and word[i + 1:i + 2] == '"'):
             j = i + (2 if c == "$" else 1)
@@ -837,9 +950,7 @@ def unquote(word: str) -> str:
         else:
             out.append(c)
             i += 1
-    text = "".join(out)
-    nul = text.find("\0")                     # bash's words are C strings
-    return text if nul < 0 else text[:nul]
+    return "".join(out)
 
 
 def _byte(b: int) -> str:
