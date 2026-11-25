@@ -1,0 +1,1 @@
+- Draw every printable hex-view ASCII byte under proportional fonts and keep highlighted cell text legible (#1646).

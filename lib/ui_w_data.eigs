@@ -583,7 +583,14 @@ define hex_set_cursor(hv, addr) as:
 # Geometry shared by render, hit-testing and the tests: cell/gutter
 # metrics derived from the measured monospace glyph size.
 define hex_view_metrics(hv) as:
-    local cw is text_width of ["0", 1]
+    # A proportional font can make printable ASCII (notably W/M/@) wider
+    # than "0".  Every ASCII cell must accommodate the widest byte; using
+    # the zero advance here made _draw_text_clipped discard those bytes.
+    local cw is 0
+    for b in range of [32, 127]:
+        local bw is text_width of [(chr of b), 1]
+        if bw > cw:
+            cw is bw
     local row_h is (text_height of 1) + 4
     local gutter is (hv.addr_nibbles * cw) + 10
     local cell_w is (cw * 2) + 4
@@ -636,6 +643,7 @@ define _render_hex_view(widget, ax, ay) as:
     local acol is theme_color of ["hex_addr", _theme.text_dim]
     local tcol is theme_color of ["hex_text", _theme.text_color]
     local ascol is theme_color of ["hex_ascii", _theme.text_dim]
+    local selcol is theme_color of ["hex_sel_text", _theme.text_color]
     local ccol is theme_color of ["hex_cursor", _theme.accent]
     local bcol is theme_color of ["dock_border", (theme_color of ["panel_border", [60, 60, 80]])]
     gfx_rect of [ax, ay, widget.w, widget.h, bg[0], bg[1], bg[2]]
@@ -668,24 +676,35 @@ define _render_hex_view(widget, ax, ay) as:
                     cx is cx + m.half_gap
                 # Highlights under the cell (and mirrored under ASCII).
                 local axx is ax + m.ascii_x + ci * m.cw
+                local selected is 0
                 for hi in range of (len of widget.highlights):
                     local hl is widget.highlights[hi]
                     if addr >= hl.start and addr < hl.end:
                         local hc is _hex_style_color of (hl.style)
                         gfx_rect of [cx - 1, ry - 1, m.cell_w - 2, m.row_h - 1, hc[0], hc[1], hc[2]]
                         gfx_rect of [axx, ry - 1, m.cw, m.row_h - 1, hc[0], hc[1], hc[2]]
+                        selected is 1
                 if widget.cursor != null:
                     if addr == widget.cursor:
                         gfx_rrect of [cx - 2, ry - 2, m.cell_w, m.row_h, 0, ccol[0], ccol[1], ccol[2]]
                 local b is widget.reader of addr
                 if b == null or b < 0:
-                    _draw_text_clipped of [cx, ry, m.cell_w, "..", acol, 1]
+                    local cellcol is acol
+                    if selected == 1:
+                        cellcol is selcol
+                    _draw_text_clipped of [cx, ry, m.cell_w, "..", cellcol, 1]
                 else:
-                    _draw_text_clipped of [cx, ry, m.cell_w, (hex of [b, 2]), tcol, 1]
+                    local cellcol is tcol
+                    if selected == 1:
+                        cellcol is selcol
+                    _draw_text_clipped of [cx, ry, m.cell_w, (hex of [b, 2]), cellcol, 1]
                     local ch is "."
                     if b >= 32 and b <= 126:
                         ch is chr of b
-                    _draw_text_clipped of [axx, ry, m.cw, ch, ascol, 1]
+                    local cellcol is ascol
+                    if selected == 1:
+                        cellcol is selcol
+                    _draw_text_clipped of [axx, ry, m.cw, ch, cellcol, 1]
     ui_clip_pop of null
     gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
     gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
