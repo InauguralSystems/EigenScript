@@ -1,0 +1,1 @@
+- A suite test pins where the JIT scan ends for the hot function and the loop of the non-finite buffer store test, so a scan that stops before those stores is red (#2541).
