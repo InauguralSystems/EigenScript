@@ -56,6 +56,14 @@ with tempfile.TemporaryDirectory() as tmp:
                   HOT.format(index=index) + f"try:\n    put of [b, {value}]\n    print of \"stored\"\n"
                   f"catch e:\n    print of [e.kind, e.message]\nprint of [b[0], b[1]]\n",
                   REFUSED + "\n[7.5, 6.0]\n", states)
+    # A bad index is reported as the bad index, whatever the value is.
+    for value in ("1.5", "1e999"):
+        for index, message in (("0.5", "index must be an integer, got 0.5"), ("1e999", "index must be an integer, got inf"),
+                               ("2.0", "buffer index 2.0 out of range (length 2)")):
+            for name, source in (("", "b is buf_from_list of ([5.0, 6.0])\ntry:\n    b[{i}] is {v}\n"),
+                                 ("hot ", HOT.replace("(b, x)", "(b, x, j)").replace("[{index}]", "[j]").replace("[b, 7.5]", "[b, 7.5, 0.0]") + "try:\n    put of [b, {v}, {i}]\n")):
+                check(root, f"{name}b[{index}] is {value} names the index",
+                      source.format(i=index, v=value) + "catch e:\n    print of e.message\nprint of b[1]\n", message + "\n6.0\n")
     for value in FINITE:
         for index in INDEXES:
             check(root, f"finite hot b[{index}] is {value}",

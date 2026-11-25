@@ -2446,6 +2446,16 @@ static inline int vm_subscript_index_is_int(const Value *v, int *out) {
     return vm_index_is_int(VAL_F64_RAW(v), out);
 }
 
+/* A buffer cell takes a finite number; a refused store leaves it (#2528). */
+static inline void buffer_store_f64(Value *buf, int i, double n) {
+    if (__builtin_expect(isfinite(n), 1)) buf->data.buffer.data[i] = n;
+    else rt_error(EK_VALUE, 0, "buffer store: expected a finite number");
+}
+static inline void buffer_store_number(Value *buf, int i, const Value *val) {
+    if (val->type == VAL_INT) buf->data.buffer.data[i] = (double)VAL_I64_RAW(val);
+    else buffer_store_f64(buf, i, VAL_F64_RAW(val));   /* the caller tested val_is_number */
+}
+
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
  * target), pushes val back (net sp -2). Full opcode semantics including
  * the slot fast paths, so the emitter never bails; errors go through
@@ -2462,11 +2472,9 @@ void jit_helper_index_set(void) {
          * through vm_index_resolve; this is one of the three sites it flags,
          * and the only initialisations kept (callgrind: none costs Ir). */
         int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);
-        double cell;   /* #2528: inf and nan take the arm below, which refuses them */
-        if (target->type == VAL_BUFFER && slot_is_f64(val_s) &&
-            (cell = SLOT_F64_RAW(val_s), isfinite(cell))) {
+        if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                target->data.buffer.data[i] = cell;
+                buffer_store_f64(target, i, SLOT_F64_RAW(val_s));
             } else {
                 if (!_ok) rt_error(EK_VALUE, g_vm.current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
                 else raise_index_range(g_vm.current_line, "buffer index",
@@ -2514,8 +2522,7 @@ void jit_helper_index_set(void) {
             raise_index_range(g_vm.current_line, "buffer index", eigs_number_arg(idx, __func__),
                               "length", target->data.buffer.count);
         } else if (val_is_number(val)) {
-            double n = eigs_float_arg(val, "buffer store");
-            if (!g_has_error) target->data.buffer.data[i] = n;   /* a refused store leaves the cell */
+            buffer_store_number(target, i, val);
         } else {
             /* #1061 -- mirror of CASE(INDEX_SET)'s buffer arm. */
             rt_error(EK_TYPE, g_vm.current_line, "cannot store %s in a buffer (buffers hold numbers)",
@@ -5066,11 +5073,9 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
         if (slot_is_f64(idx_s) && slot_is_ptr(tgt_s)) {
             Value *target = slot_as_ptr(tgt_s);
             int i = 0, _ok = vm_index_is_int(SLOT_F64_RAW(idx_s), &i);   /* #1775, as in jit_helper_index_set */
-            double cell;   /* #2528: inf and nan take the arm below, which refuses them */
-            if (target->type == VAL_BUFFER && slot_is_f64(val_s) &&
-                (cell = SLOT_F64_RAW(val_s), isfinite(cell))) {
+            if (target->type == VAL_BUFFER && slot_is_f64(val_s)) {
                 if (_ok && vm_index_resolve(&i, target->data.buffer.count)) {
-                    target->data.buffer.data[i] = cell;
+                    buffer_store_f64(target, i, SLOT_F64_RAW(val_s));
                 } else {
                     if (!_ok) rt_error(EK_VALUE, current_line, "index must be an integer, got %g", SLOT_F64_RAW(idx_s));
                     else raise_index_range(current_line, "buffer index", eigs_slot_number(idx_s, __func__),
@@ -5117,8 +5122,7 @@ vm_resume_dispatch:   /* #408 resume lands here: ip/frame/chunk restored above *
                 raise_index_range(current_line, "buffer index", eigs_number_arg(idx, __func__),
                                   "length", target->data.buffer.count);
             } else if (val_is_number(val)) {
-                double n = eigs_float_arg(val, "buffer store");
-                if (!g_has_error) target->data.buffer.data[i] = n;   /* a refused store leaves the cell */
+                buffer_store_number(target, i, val);
             } else {
                 /* #1061: the last fail-soft numeric context. A non-number
                  * store was silently DROPPED (the old element stayed), so
