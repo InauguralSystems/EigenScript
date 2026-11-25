@@ -1,1 +1,1 @@
-- JIT-compiled indexed stores and field reads/writes now stop at a raised error instead of executing later statements; programs relying on those later side effects must remove that reliance (#2540).
+- JIT-compiled indexed stores, field reads and writes, and reads of an undefined name now stop at the raised error, as the interpreter does; before, the next statement could still run, or could replace the error. A program that relied on those later effects must stop doing so (#2540).
