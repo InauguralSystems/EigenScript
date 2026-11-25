@@ -132,6 +132,9 @@ def shape(text, mod=ST, depth=0):
             # bash reprints `function NAME {` as `NAME ()` and `{` on its own line
             pieces.append((words[:2], subs[:2]))
             words, subs = words[2:], subs[2:]
+        if words[:2] == ["coproc", "{"]:
+            pieces.append((words[:1], subs[:1]))   # `coproc {`: reprinted on two lines
+            words, subs = words[1:], subs[1:]
         if words[:2] == ["coproc", "COPROC"]:
             words, subs = words[:1] + words[2:], subs[:1] + subs[2:]   # bash names it
         if words and words[0] == "coproc" and len(words) > 3 and words[2] == "{":
@@ -651,6 +654,12 @@ INCIDENTS = [
     ("until (( n << 1 )); do :; done\nreal\n", [["until"], ["do", ":"], ["done"], ["real"]], []),
     ("case x in a) b;& c) d;; esac\nreal\n", [["case", "x", "in"], ["b"], ["d"], ["esac"], ["real"]], []),
     ("case x in (a|b) c;; esac\nreal\n", [["case", "x", "in"], ["c"], ["esac"], ["real"]], []),
+    # DevBox r4: `for NAME do`, `(v=1) then`, `f+()`, a newline inside [[ ]].
+    ("for x do (( n << 1 )); done\nreal\n", [["for", "x", "do"], ["done"], ["real"]], []),
+    ("if (v=1) then (( n << 1 )); fi\nreal\n",
+     [["if"], ["v=1"], ["then"], ["fi"], ["real"]], []),
+    ("f+() { (( n << 1 )); }\nreal\n", [["f+"], ["{"], ["}"], ["real"]], []),
+    ("[[ -n $a &&\n -n $b ]] && go\n", [["[[", "-n", "$a", "&&", "-n", "$b", "]]"], ["go"]], []),
     # an expanded here-document body's $( ) runs; a quoted one's does not.
     ("cat <<EOF\nx $(eigenscript-full a)\nEOF\n", [["cat"]], ["x $(eigenscript-full a)\n"],
      ["eigenscript-full a"]),
@@ -687,6 +696,7 @@ FUNC_INCIDENTS = [
     ("case $p in a) find() { return 7; } ;; esac\n", ["find"]),
     # critic r1: a definition inside a ( ) subshell is gone when it closes.
     ("( f() { :; } )\ng() { :; }\n", ["g"]),
+    ("f+() { :; }\n", ["f+"]),
 ]
 
 
@@ -788,9 +798,9 @@ PLANTS = [
     ("unicode-escape-out-of-range-crashes",
      "        if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF:",
      "        if False:", {"R"}),
-    ("negated-subshell-read-as-extglob",
-     '                if prefix == "!" and self.cmdpos:',
-     '                if False:', {"H"}),
+    ("extglob-at-command-position",
+     "                                                 and not self.cmdpos):",
+     "                                                 ):", {"H"}),
     ("quoted-heredoc-delimiter-not-unquoted",
      "            self.pending.append((idx, unquote(word), strip, quoted))",
      "            self.pending.append((idx, word, strip, quoted))", {"H", "O1", "O3", "O4"}),
@@ -848,6 +858,18 @@ O5_WRAPPERS = [
     "if a; then :; elif (( 1 )); then\n{C}\nfi\n", "while x; do :; done && {\n{C}\n}\n",
     "! {\n{C}\n}\n", "coproc C1 {\n{C}\n}\n", "for x in a; do :; done\n{C}\n",
     "[[ a ]] && {\n{C}\n}\n", "time {\n{C}\n}\n",
+    # DevBox r4: `for NAME do`, `(v=1) then`, `f+()`, and the other
+    # separator-less reserved-word positions bash accepts.
+    "for x do\n{C}\ndone\n", "if (v=1) then\n{C}\nfi\n", "f+() {\n{C}\n}\n",
+    "for ((i=0;i<1;i++)) {\n{C}\n}\n", "for i in a; {\n{C}\n}\n",
+    "for ((i=0;i<1;i++))\ndo\n{C}\ndone\n", "while (( 0 )) do\n{C}\ndone\n",
+    "while [[ '' ]] do\n{C}\ndone\n", "if { :; } then\n{C}\nfi\n",
+    "if ( : ) then :; else\n{C}\nfi\n", "function f() {\n{C}\n}\n",
+    "function f (\n{C}\n)\n", "select i in a; do\n{C}\ndone\n", "coproc {\n{C}\n}\n",
+    "x=\"$(\n{C}\n)\"\n", "cat <(\n{C}\n)\n", "x=`\n{C}\n`\n",
+    "echo ${v:-$(\n{C}\n)}\n", "echo $(( $(\n{C}\n) + 1 ))\n",
+    "cat <<E1\n$( : )\nE1\n{C}\n", "{\n{C}\n} >/dev/null 2>&1 <<E2\nit's\nE2\n",
+    "time -p {\n{C}\n}\n", "! (\n{C}\n)\n",
 ]
 O5_CONSTRUCTS = [
     "(( n = n << 1 ))", "[[ a < b && c ]]", "!(true)", "a[1<<3]=x", "echo $[1<<3]",
@@ -856,6 +878,12 @@ O5_CONSTRUCTS = [
     "echo `echo a`", "arr=(a 'b c')", "for ((j=0;j<1;j++)); do :; done",
     "echo ${x:-'}'}", "coproc QP { cat; }", "time -p (( 1 << 2 ))", "echo a \\\n b",
     "if (( 1 )) then (( n << 1 )); fi", "function h { (( n << 1 )); }",
+    "for y do (( n << 1 )); done", "if (w=1) then (( n << 1 )); fi",
+    "g+() { (( n << 1 )); }", "echo \"it's\"", "cat <<E\nit's\nE",
+    "x=$(cat <<'E'\nit's )\nE\n)", "time -p [[ a < b ]]", "v=1 :",
+    "arr=( a # it's\n 'b' )", "echo <( : )a", "[[ $a =~ ^(a|b)#c$ ]]",
+    "echo $'it\\'s'", "echo $$'a'", "[[ -n $a &&\n -n $b ]]",
+    "trap 'echo \"it'\\''s\"' EXIT", "case $a in (x|y) :;; *) :;; esac",
 ]
 O5_MARKER = "eigenscript-full end"
 

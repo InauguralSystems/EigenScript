@@ -368,6 +368,7 @@ class _Body:
         self.after_coproc = False      # `coproc` was just read
         self.after_function = False    # `function` was just read: next is the NAME
         self.split_next = False        # a word here starts a new command
+        self.for_header = 0            # 1: `for` read; 2: its NAME read
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -397,9 +398,10 @@ class _Body:
                     continue
             if c == "(":
                 prefix = lx.clean(start, j)
-                if prefix == "!" and self.cmdpos:
-                    break                     # `!(cmd)`: negation of a subshell
-                if (prefix and prefix[-1] in EXTGLOB_LEADS) or _is_array_assign(prefix):
+                if _is_array_assign(prefix) or (prefix and prefix[-1] in EXTGLOB_LEADS
+                                                 and not self.cmdpos):
+                    # (at a command position `!(cmd)` negates a subshell and
+                    # `f+()` defines a function: bash scripts run with extglob off)
                     j = lx.paren_group(j + 1, subst, j)
                     continue
                 break
@@ -463,6 +465,9 @@ class _Body:
                 end = lx.n if nl < 0 else nl
                 lx.comments.append((self.i, end))
                 self.i = end
+                continue
+            if c == "\n" and self.dbracket and not self.pending:
+                self.i += 1                   # `[[ a &&<newline> b ]]`: one command
                 continue
             if c == "\n":
                 self.emit(Token("newline", "\n", lx.line_of(self.i), self.i, self.i + 1))
@@ -555,6 +560,8 @@ class _Body:
                 return
             self.parens = max(0, self.parens - 1)
             self.cmdpos = True                # `f()` is followed by its body
+            self.assigned = False             # `(v=1) then`: the subshell's assignment ended
+            self.after_time = False
         elif op in (";;", ";&", ";;&"):
             if self.case:
                 self.case[-1] = "pattern"
@@ -598,6 +605,15 @@ class _Body:
                 self.case.pop()
                 self.cmdpos = True
             return
+        if self.for_header == 1:              # `for NAME`
+            self.for_header = 2
+            return
+        if self.for_header == 2:
+            self.for_header = 0
+            if word == "do":                  # `for NAME do` (implicit "$@")
+                self.cmdpos = True
+                self.split_next = True
+                return
         if word == "{" and self.cmdpos:
             self.split_next = True
             return                            # a group or function body opens
@@ -612,6 +628,7 @@ class _Body:
             return
         if self.cmdpos and word in ("for", "select"):
             self.after_for = True
+            self.for_header = 1
         if self.cmdpos and word == "time":
             self.after_time = True
         if self.cmdpos and self.after_coproc:
