@@ -14,6 +14,8 @@ line or `when` ordinal must be an exact whole number: a fraction, a non-finite
 value or a line outside the C `int` range raises `value` instead of being
 truncated. Audio generators round `duration * rate` half away from zero to get
 their sample count.
+`seed_random` consumes all 64 bits of an int64 seed; its compatibility range
+and 48-bit-state collision limit are specified in [BUILTINS.md](BUILTINS.md).
 
 
 Width arithmetic uses explicit wrapping, checked and saturating builtins.

@@ -70,6 +70,7 @@ void eigs_qsort(void *base, size_t nmemb, size_t size,
 double eigs_drand48(void);
 long   eigs_lrand48(void);
 void   eigs_srand48(long seedval);
+unsigned short *eigs_seed48(unsigned short seed16v[3]);
 int    eigs_rand(void);
 void   eigs_srand(unsigned seed);
 long   eigs_random(void);

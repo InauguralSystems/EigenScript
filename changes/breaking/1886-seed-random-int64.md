@@ -1,0 +1,1 @@
+- Negative seeds and seeds at or above 2^32 now use their whole int64 value for `seed_random`; programs that need their former low-32-bit stream must pass the seed modulo 2^32 (#1886).
