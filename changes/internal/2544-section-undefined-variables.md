@@ -1,0 +1,1 @@
+- Added a precheck that rejects undefined upper-case variables in suite section fragments (#2544).
