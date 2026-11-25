@@ -581,8 +581,7 @@ define hex_view(id, x, y, w, h, reader, size) as:
 define hex_set_cursor(hv, addr) as:
     hv.cursor is addr
 
-# The renderer's font is fixed for a process.  Keep the expensive printable
-# ASCII scan once per active font/scale; the one-string signature is also a
+# Keep the printable ASCII scan once per active font/scale; the one-string signature is also a
 # cheap invalidation seam for metric providers used by embedders and tests.
 _hex_glyph_metrics is {"scale": null, "signature": null, "cw": 0, "hex_cw": 0, "zero_cw": 0, "row_h": 0}
 

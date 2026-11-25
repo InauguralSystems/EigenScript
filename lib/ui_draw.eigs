@@ -113,10 +113,7 @@ define _draw_text_clipped(x, y, w, text, color, scale) as:
         loop while n > 0 and (text_width of [(substr of [display, 0, n]), scale]) > w:
             n is n - 1
         if n < 1:
-            # Draw a one-glyph overflow and let the widget clip crop its ink.
-            if (len of display) != 1:
-                return null
-            n is 1
+            return null
         display is substr of [display, 0, n]
     gfx_text of [x, y, display, color[0], color[1], color[2], scale]
 

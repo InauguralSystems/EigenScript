@@ -4570,12 +4570,6 @@ assert_eq of [_bool_separator_rejected, true, "separator rejects bool orientatio
 assert_eq of [_bool_separator_message, "separator: vertical must be num, got bool", "separator names invalid vertical argument"]
 
 
-# #1646 Box 3: a one-character overflow reaches gfx_text rather than vanishing.
-_gfx_rec is 1
-_gfx_log is []
-_draw_text_clipped of [0, 0, 1, "W", [1, 2, 3], 1]
-assert_eq of [len of _gfx_log, 1, "#1646 one-glyph overflow is drawn and left to the active clip"]
-
 # A spy on the clipper proves the hex ASCII column bypasses it.  Keep this at
 # the end because EigenScript function redefinition is global.
 _hex_ascii_clipper_calls is 0

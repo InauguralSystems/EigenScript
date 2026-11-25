@@ -63,24 +63,6 @@ for addr in range of [0, 95]:
 
 assert_eq of [examined, 95, "#1646 render-decode examined every printable byte"]
 
-# Regression fixture from ui_w_button.eigs:116.  Its one-glyph label is wider
-# than the 12px content width, but the widget clip should crop drawn ink.
-btn is button of ["narrow-W", 4, 210, 16, 20, "W", null]
-render of [btn, 0, 0]
-button_ink is 0
-for yy in range of [212, 228]:
-    for xx in range of [6, 18]:
-        local px is gfx_read of [xx, yy]
-        local family is 1
-        local changed is 0
-        for channel in range of 3:
-            if px[channel] != _theme.btn_bg[channel]:
-                changed is 1
-            if px[channel] < _theme.btn_bg[channel] or px[channel] > _theme.btn_text[channel]:
-                family is 0
-        if family == 1 and changed == 1:
-            button_ink is button_ink + 1
-assert_true of [button_ink > 0, "#1646 narrow one-glyph button draws cropped TTF ink"]
 gfx_present of null
 gfx_close of null
 test_summary of null

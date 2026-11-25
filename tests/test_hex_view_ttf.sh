@@ -46,8 +46,8 @@ fi
 if printf '%s\n' "$OUTPUT" | grep -q '^SKIP:'; then
     fail_or_skip "EigenScript TTF fixture skipped"
 fi
-printf '%s\n' "$OUTPUT" | grep -q 'Tests: 98 | Pass: 98 | Fail: 0' || {
-    echo "FAIL: TTF render-decode did not report all 98 checks"
+printf '%s\n' "$OUTPUT" | grep -q 'Tests: 97 | Pass: 97 | Fail: 0' || {
+    echo "FAIL: TTF render-decode did not report all 97 checks"
     exit 1
 }
 echo "PASS: TTF render-decode found in-cell ink for bytes 33..126"
