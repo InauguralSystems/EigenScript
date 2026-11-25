@@ -513,6 +513,7 @@ hand back a buffer when every tensor operand was one, and `sum`, `mean`,
 `tensor_load` also raises `io` when its path cannot be opened. Unlike NumPy's
 implicit array conversion, the `sgd_update` family refuses a mixed list/buffer
 parameter-gradient pair with `type_mismatch` before mutation.
+`tensor_load`, `sgd_update` and `audio_music_play` also raise the errors given in their BUILTINS.md rows.
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.

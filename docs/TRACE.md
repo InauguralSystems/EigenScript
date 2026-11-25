@@ -381,7 +381,7 @@ Notes on the families:
   records one compact observation: the standard one-string file-I/O error
   record when the path cannot be opened or is a directory, a two-string
   `[kind, message]` for a short header, ndim other than 1 or 2, zero extent, short numeric payload or refused
-  payload allocation, `[rows, cols]` for an over-cap header,
+  numeric payload allocation, `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay re-raises a recorded open or file error
   byte-for-byte.
   For every other structurally valid verdict, replay raises the

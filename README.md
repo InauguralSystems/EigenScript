@@ -483,6 +483,7 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `tensor_load` likewise raises `io` when its path cannot be opened. The
 `sgd_update` family requires both tensor operands to use the same container
 kind; mixing a list and buffer raises `type_mismatch` without updating either.
+`tensor_load`, `sgd_update` and `audio_music_play` also raise the errors given in their BUILTINS.md rows.
 
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating
