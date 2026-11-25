@@ -1,0 +1,1 @@
+- Five calls in suite sections 18d, 18h and 18k pass the binary under test; they passed an empty variable, and the child fell back to its default binary (#2544).
