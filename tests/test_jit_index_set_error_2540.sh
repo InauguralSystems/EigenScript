@@ -3,65 +3,106 @@ set -u
 EIGS=${EIGS:-"$(cd "$(dirname "$0")/../src" && pwd)/eigenscript"}
 tmp=$(mktemp "${TMPDIR:-/tmp}/eigs-2540.XXXXXX") || exit 1
 trap 'rm -f "$tmp"' EXIT
+examined=0
+status=0
 run_case() {
-  name=$1; body=$2
+  name=$1 expected=$2 body=$3
+  examined=$((examined + 1))
   printf '%s\n' "$body" > "$tmp"
-  on=$("$EIGS" "$tmp" 2>&1); on_rc=$?
-  off=$(EIGS_JIT_OFF=1 "$EIGS" "$tmp" 2>&1); off_rc=$?
-  if [ "$on_rc" -eq "$off_rc" ] && [ "$on" = "$off" ]; then
-    printf '  PASS: %s JIT/interpreter error and effects agree\n' "$name"
+  on=$(EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); on_rc=$?
+  off=$(EIGS_JIT_OFF=1 EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); off_rc=$?
+  if [ "$on_rc" -eq 0 ] && [ "$off_rc" -eq 0 ] && [ "$on" = "$expected" ] && [ "$off" = "$expected" ]; then
+    printf 'PASS: %s\n' "$name"
   else
-    printf '  FAIL: %s differs (JIT rc=%s <%s>; interpreter rc=%s <%s>)\n' "$name" "$on_rc" "$on" "$off_rc" "$off"
-    return 1
+    printf 'FAIL: %s expected rc=0 <%s>; JIT rc=%s <%s>; off rc=%s <%s>\n' "$name" "$expected" "$on_rc" "$on" "$off_rc" "$off"
+    status=1
   fi
 }
-common='define put(b, x, y) as:
-    b[0.0] is x
+run_case 'hot local dot set stops before store' '["type_mismatch", "cannot set field '\''x'\'' on num", 2]
+8.5' 'define f(d, b, y) as:
+    d.x is y
     b[1.0] is y
-    return 0
+    return 0.0
 b is buf_from_list of ([5.0, 6.0])
+d is {"x": 1.0}
 for k in range of 400:
-    put of [b, 7.5, 8.5]'
-status=0
-run_case 'hot function wrong value' "$common
+    f of [d, b, 8.5]
 try:
-    put of [b, \"s\", 99.0]
+    f of [3.0, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of [b[0], b[1]]" || status=1
-run_case 'hot function out of range' 'define put(b, i, x, y) as:
-    b[i + 0.0] is x
+print of b[1]'
+run_case 'hot dot get stops before store' '["type_mismatch", "cannot access field '\''x'\'' on num", 2]
+8.5' 'define f(d, b, y) as:
+    b[1.0] is d.x.x
     b[1.0] is y
-    return 0
+    return 0.0
 b is buf_from_list of ([5.0, 6.0])
+d is {"x": {"x": 1.0}}
 for k in range of 400:
-    put of [b, 0.0, 7.5, 8.5]
+    f of [d, b, 8.5]
 try:
-    put of [b, 8.0, 7.5, 99.0]
+    f of [{"x": 3.0}, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of [b[0], b[1]]' || status=1
-run_case 'hot function non-finite at int index' 'define put(b, x, y) as:
-    b[0] is x
-    b[1] is y
-    return 0
+print of b[1]'
+run_case 'hot indexed local dot get stops before store' '["type_mismatch", "cannot access field '\''x'\'' on num", 2]
+8.5' 'define f(l, i, b, y) as:
+    z is l[i].x
+    b[1.0] is y
+    return 0.0
 b is buf_from_list of ([5.0, 6.0])
+d is {"x": 1.0}
 for k in range of 400:
-    put of [b, 7.5, 8.5]
+    f of [[d], 0.0, b, 8.5]
 try:
-    put of [b, 1.0 / 0.0, 99.0]
+    f of [[3.0], 0.0, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of [b[0], b[1]]' || status=1
-run_case 'finite control' "$common
-put of [b, 2.5, 3.5]
-print of [b[0], b[1]]" || status=1
-run_case 'forced OSR wrong value' 'b is buf_from_list of ([5.0, 6.0])
-try:
-    for k in range of 4:
-        b[0.0] is if k < 3 then 7.5 else "s"
-        b[1.0] is 99.0
-catch e:
-    print of [e.kind, e.message, e.line]
-print of [b[0], b[1]]' || status=1
+print of b[1]'
+run_case 'OSR local dot set stops before print' '["type_mismatch", "cannot set field '\''x'\'' on num", 8]
+3.0' 'define f() as:
+    d is {"x": 1.0}
+    k is 0.0
+    try:
+        loop while k < 4.0:
+            if k == 3.0:
+                d is 3.0
+            d.x is 7.0
+            if k == 3.0:
+                print of "BAD"
+            k is k + 1.0
+    catch e:
+        print of [e.kind, e.message, e.line]
+    return k
+print of f of []'
+run_case 'OSR dot get stops before append' '["type_mismatch", "cannot access field '\''x'\'' on num", 9]
+3' 'define f() as:
+    d is {"x": {"x": 1.0}}
+    out is []
+    k is 0.0
+    try:
+        loop while k < 4.0:
+            if k == 3.0:
+                d is {"x": 3.0}
+            z is d.x.x
+            append of [out, 9.0]
+            k is k + 1.0
+    catch e:
+        print of [e.kind, e.message, e.line]
+    return len of out
+print of f of []'
+run_case 'finite controls' '3.5
+3.5' 'define f(d, b, y) as:
+    d.x is y
+    b[1.0] is y
+b is buf_from_list of ([5.0, 6.0])
+d is {"x": 1.0}
+for k in range of 400:
+    f of [d, b, 8.5]
+f of [d, b, 3.5]
+print of b[1]
+print of d.x'
+printf 'examined=%s\n' "$examined"
+[ "$examined" -eq 6 ] || status=1
 exit "$status"

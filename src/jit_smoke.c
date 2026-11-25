@@ -183,14 +183,14 @@ void jit_helper_set_name(struct EigsChunk *chunk, int idx) {
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_local(struct EigsChunk *chunk, int slot) { (void)chunk; (void)slot; }
-void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
-    (void)chunk; (void)slot; (void)name_idx;
+int jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
+    (void)chunk; (void)slot; (void)name_idx; return 0;
 }
-void jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
-    (void)chunk; (void)name_idx;
+int jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
+    (void)chunk; (void)name_idx; return 0;
 }
-void jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
-    (void)chunk; (void)name_idx;
+int jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
+    (void)chunk; (void)name_idx; return 0;
 }
 int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
                                  int list_idx, int name_idx) {

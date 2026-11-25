@@ -3237,6 +3237,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * helper sees TOS; reload after to keep cache honest. */
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
@@ -3245,6 +3249,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 3;
         } else if (op == OP_DOT_SET) {
             /* Stage 5g: out-of-line call to
@@ -3254,6 +3264,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
              * OP_DOT_GET. */
             uint16_t name_idx = (uint16_t)(chunk->code[i + 1] |
                                            ((uint16_t)chunk->code[i + 2] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
@@ -3262,6 +3276,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             i += 3;
         } else if (op == OP_LOCAL_DOT_SET) {
             /* Stage 5d: inline the dict_set_cached_immediate path of
@@ -3276,6 +3296,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
                                        ((uint16_t)chunk->code[i + 2] << 8));
             uint16_t name_idx = (uint16_t)(chunk->code[i + 3] |
                                            ((uint16_t)chunk->code[i + 4] << 8));
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             const char *key = chunk->const_interns[name_idx];
             uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
             if (h == 0) {
@@ -3316,6 +3340,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_p;
+            w = emit_je_rel32(w, &ok_p);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 5 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_p, w);
             if (done_p) patch_rel32(done_p, w);
             i += 5;
         } else if (op == OP_OBSERVE_ASSIGN) {

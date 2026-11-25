@@ -1698,7 +1698,7 @@ int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
  * dispatch loop's CHECK_ERROR picks it up after the thunk returns.
  * This was the last unsupported op in bench_dmg_shape's main loop
  * (`ctx.cycles is ...` / `ctx.pc is ...` on a GET_NAME'd dict). */
-void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
+int jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     const char *key = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
     if (h == 0) {
@@ -1720,7 +1720,7 @@ void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
             g_vm.sp -= 1;
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(tgt_s);
-            return;
+            return g_has_error;
         }
     }
     Value *val = vm_pop(); Value *target = vm_pop();
@@ -1733,9 +1733,10 @@ void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     val_incref(val);
     vm_push(val);
     val_decref(val);
+    return g_has_error;
 }
 
-void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
+int jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     const char *key = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
     if (h == 0) {
@@ -1749,7 +1750,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
             slot_incref(v);
             val_decref(target);
             vm_push_slot(v);
-            return;
+            return g_has_error;
         }
     } else {
         rt_error(EK_TYPE, g_vm.current_line,
@@ -1758,6 +1759,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     }
     val_decref(target);
     vm_push_slot(slot_null());
+    return g_has_error;
 }
 
 /* JIT Stage 4q-d: out-of-line helper for OP_LOCAL_DOT_SET.
@@ -1769,7 +1771,7 @@ void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
  * Helper reads g_vm.stack[g_vm.sp - 1] but does NOT change sp — the
  * JIT emitter must sync %ecx → g_vm.sp before the call but does not
  * need to reload after. */
-void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
+int jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1783,17 +1785,18 @@ void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
         EigsSlot tos = g_vm.stack[g_vm.sp - 1];
         if (slot_is_f64(tos) &&
             dict_set_cached_immediate(target, key, h, SLOT_F64_RAW(tos))) {
-            return;
+            return g_has_error;
         }
         Value *val = vm_slot_lift(g_vm.sp - 1);
         dict_set_cached(target, key, h, val);
-        return;
+        return g_has_error;
     }
     if (target && target->type != VAL_NULL) {
         const char *key = chunk->const_interns[name_idx];
         rt_error(EK_TYPE, g_vm.current_line, "cannot set field '%s' on %s",
             key, val_type_name(target->type));
     }
+    return g_has_error;
 }
 
 /* JIT Stage 4o: out-of-line helpers for OP_OBSERVE_ASSIGN /
