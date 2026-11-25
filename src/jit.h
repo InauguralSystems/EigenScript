@@ -184,7 +184,7 @@ void *eigs_jit_load_eigs_current(void);
  * sites. Doing the IC walk inline would cost ~80 bytes of native
  * code per call site; one funcall fits in ~30 bytes and the IC still
  * lives inside the helper. */
-int jit_helper_get_name(struct EigsChunk *chunk, int idx);
+void jit_helper_get_name(struct EigsChunk *chunk, int idx);
 
 /* Stage 4l: out-of-line helper for OP_LOCAL_IDX_GET. Mirrors the
  * VAL_BUFFER/VAL_LIST/VAL_STR dispatch in CASE(LOCAL_IDX_GET). */
@@ -205,19 +205,19 @@ int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
 /* Stage 4q-f: out-of-line helper for OP_DOT_GET. Pops target,
  * pushes target.name — net sp change zero. Needs chunk for
  * const_interns / const_hashes. */
-int jit_helper_dot_get(struct EigsChunk *chunk, int name_idx);
+void jit_helper_dot_get(struct EigsChunk *chunk, int name_idx);
 
 /* Stage 5g: out-of-line helper for OP_DOT_SET. Pops value + target,
  * pushes value back (net sp -1). Needs chunk for const_interns /
  * const_hashes. */
-int jit_helper_dot_set(struct EigsChunk *chunk, int name_idx);
+void jit_helper_dot_set(struct EigsChunk *chunk, int name_idx);
 
 /* Stage 4q-d: out-of-line helper for OP_LOCAL_DOT_SET. Mirrors
  * CASE(LOCAL_DOT_SET): writes local[slot].name = TOS without popping
  * (next OP_POP clears the stack). Helper reads g_vm.stack[sp-1] so
  * the JIT site must sync %ecx → g_vm.sp before the call; sp is
  * unchanged on return so no reload is required. */
-int jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx);
+void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx);
 
 /* Stage 4o: out-of-line helpers for OP_OBSERVE_ASSIGN /
  * OP_OBSERVE_ASSIGN_LOCAL. Both update observer history on the value
@@ -247,7 +247,7 @@ int jit_helper_iter_next(void);
  * the call and reload after; a nonzero result exits the thunk with
  * post-op advance so CHECK_ERROR runs before another opcode. */
 int jit_helper_index_get(void);
-int jit_helper_index_set(void);
+void jit_helper_index_set(void);
 int  jit_helper_loop_stall_check(uint16_t counter_depth);
 int  jit_helper_loop_cap_check(uint16_t counter_depth);
 void jit_helper_loop_enter(uint16_t counter_depth);

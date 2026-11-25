@@ -2542,6 +2542,25 @@ void jit_state_init_thresholds(EigsState *st) {
     if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
 }
 
+/* #2540: the helper, then the pending-error status; the emitted code leaves on
+ * nonzero. They live here, not in vm.c: a changed helper signature there moved
+ * vm_run_ex's code (bench_buf_mix +1.8% Ir). */
+static int jit_status_get_name(EigsChunk *chunk, int idx) {
+    jit_helper_get_name(chunk, idx); return g_has_error;
+}
+static int jit_status_dot_get(EigsChunk *chunk, int name_idx) {
+    jit_helper_dot_get(chunk, name_idx); return g_has_error;
+}
+static int jit_status_dot_set(EigsChunk *chunk, int name_idx) {
+    jit_helper_dot_set(chunk, name_idx); return g_has_error;
+}
+static int jit_status_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
+    jit_helper_local_dot_set(chunk, slot, name_idx); return g_has_error;
+}
+static int jit_status_index_set(void) {
+    jit_helper_index_set(); return g_has_error;
+}
+
 /* Phase 2b: the body of jit_try_compile_chunk is now this static helper,
  * parameterized on entry_offset and on output pointers for the
  * state/code/advance/stop_op slots so the same emitter can drive both
@@ -2955,7 +2974,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_get_name);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_get_name);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
@@ -3263,7 +3282,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_dot_get);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_dot_get);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
@@ -3290,7 +3309,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_r14_rdi(w);
             w = emit_mov_imm32_esi(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_dot_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_dot_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
@@ -3354,7 +3373,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_mov_imm32_esi(w, (uint32_t)slot);
             w = emit_mov_imm32_edx(w, (uint32_t)name_idx);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_local_dot_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_local_dot_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
@@ -4221,7 +4240,7 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             for (int k = 0; k < slow_n; k++) patch_rel32(slow_p[k], w);
             w = emit_mov_ecx_to_disp32_rbx(w, g_layout.off_sp);
             w = emit_push_rcx(w);
-            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_helper_index_set);
+            w = emit_movabs_rax(w, (uint64_t)(uintptr_t)&jit_status_index_set);
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);

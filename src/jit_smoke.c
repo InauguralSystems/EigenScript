@@ -89,9 +89,8 @@ const char *op_name(uint8_t op) { return op == OP_GET_LOCAL ? "GET_LOCAL" : "?";
  * OP_GET_NAME emitter. Smoke test never invokes that emitter, but
  * the linker needs a definition. */
 struct EigsChunk;
-int jit_helper_get_name(struct EigsChunk *chunk, int idx) {
+void jit_helper_get_name(struct EigsChunk *chunk, int idx) {
     (void)chunk; (void)idx;
-    return 0;
 }
 
 /* Receipt-only helper: controlled statuses test the production emitter's
@@ -155,7 +154,7 @@ int jit_helper_index_get(void) {
     return reader_receipt.status;
 }
 /* Remaining Stage 4q/4v helpers are linker-immediate stubs. */
-int jit_helper_index_set(void) { return 0; }
+void jit_helper_index_set(void) {}
 int jit_helper_loop_stall_check(uint16_t counter_depth) { (void)counter_depth; return 1; }
 int jit_helper_loop_cap_check(uint16_t counter_depth) { (void)counter_depth; return 1; }
 void jit_helper_loop_enter(uint16_t counter_depth) { (void)counter_depth; }
@@ -184,14 +183,14 @@ void jit_helper_set_name(struct EigsChunk *chunk, int idx) {
 void jit_helper_set_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_fn_name_local(struct EigsChunk *chunk, int idx) { (void)chunk; (void)idx; }
 void jit_helper_set_local(struct EigsChunk *chunk, int slot) { (void)chunk; (void)slot; }
-int jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
-    (void)chunk; (void)slot; (void)name_idx; return 0;
+void jit_helper_local_dot_set(struct EigsChunk *chunk, int slot, int name_idx) {
+    (void)chunk; (void)slot; (void)name_idx;
 }
-int jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
-    (void)chunk; (void)name_idx; return 0;
+void jit_helper_dot_get(struct EigsChunk *chunk, int name_idx) {
+    (void)chunk; (void)name_idx;
 }
-int jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
-    (void)chunk; (void)name_idx; return 0;
+void jit_helper_dot_set(struct EigsChunk *chunk, int name_idx) {
+    (void)chunk; (void)name_idx;
 }
 int jit_helper_local_idx_dot_get(struct EigsChunk *chunk, int slot,
                                  int list_idx, int name_idx) {

@@ -1263,7 +1263,7 @@ static const char *vm_missing_module(Env *env, EigsChunk *chunk) {
  * call site (sp sync + arg setup + aligned call + sp reload) instead
  * of trying to emit ~80 bytes of IC-walk-and-incref inline. The IC
  * itself still does its job — the helper just front-ends it. */
-int jit_helper_get_name(EigsChunk *chunk, int idx) {
+void jit_helper_get_name(EigsChunk *chunk, int idx) {
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *start = frame->env;
@@ -1274,7 +1274,7 @@ int jit_helper_get_name(EigsChunk *chunk, int idx) {
             EigsSlot s = target->values[ic->slot_idx];
             slot_incref(s);
             vm_push_slot(s);
-            return g_has_error;
+            return;
         }
     }
     const char *name = chunk->const_interns[idx];
@@ -1291,7 +1291,7 @@ int jit_helper_get_name(EigsChunk *chunk, int idx) {
         eigs_raise_missing_name(name, g_vm.current_line,
                                 vm_missing_module(frame->env, chunk));
         vm_push_slot(slot_null());
-        return g_has_error;
+        return;
     }
     /* #1171: a thunk entered before the first spawn keeps running after it,
      * so its helpers must not refill a cache under MT any more than the
@@ -1304,7 +1304,6 @@ int jit_helper_get_name(EigsChunk *chunk, int idx) {
         ic->walk_depth   = (uint8_t)depth;
     }
     vm_push_slot(s);
-    return g_has_error;
 }
 
 /* JIT Stage 4x: out-of-line helpers for the SET name family. These are
@@ -1699,7 +1698,7 @@ int jit_helper_local_idx_dot_get(EigsChunk *chunk, int slot,
  * dispatch loop's CHECK_ERROR picks it up after the thunk returns.
  * This was the last unsupported op in bench_dmg_shape's main loop
  * (`ctx.cycles is ...` / `ctx.pc is ...` on a GET_NAME'd dict). */
-int jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
+void jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     const char *key = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
     if (h == 0) {
@@ -1721,7 +1720,7 @@ int jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
             g_vm.sp -= 1;
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(tgt_s);
-            return g_has_error;
+            return;
         }
     }
     Value *val = vm_pop(); Value *target = vm_pop();
@@ -1734,10 +1733,9 @@ int jit_helper_dot_set(EigsChunk *chunk, int name_idx) {
     val_incref(val);
     vm_push(val);
     val_decref(val);
-    return g_has_error;
 }
 
-int jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
+void jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     const char *key = chunk->const_interns[name_idx];
     uint32_t h = chunk->const_hashes ? chunk->const_hashes[name_idx] : 0;
     if (h == 0) {
@@ -1751,7 +1749,7 @@ int jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
             slot_incref(v);
             val_decref(target);
             vm_push_slot(v);
-            return g_has_error;
+            return;
         }
     } else {
         rt_error(EK_TYPE, g_vm.current_line,
@@ -1760,7 +1758,6 @@ int jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
     }
     val_decref(target);
     vm_push_slot(slot_null());
-    return g_has_error;
 }
 
 /* JIT Stage 4q-d: out-of-line helper for OP_LOCAL_DOT_SET.
@@ -1772,7 +1769,7 @@ int jit_helper_dot_get(EigsChunk *chunk, int name_idx) {
  * Helper reads g_vm.stack[g_vm.sp - 1] but does NOT change sp — the
  * JIT emitter must sync %ecx → g_vm.sp before the call but does not
  * need to reload after. */
-int jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
+void jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *e = frame->fn_env;
     Value *target = vm_local_lift(e, (uint16_t)slot);
@@ -1786,18 +1783,17 @@ int jit_helper_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
         EigsSlot tos = g_vm.stack[g_vm.sp - 1];
         if (slot_is_f64(tos) &&
             dict_set_cached_immediate(target, key, h, SLOT_F64_RAW(tos))) {
-            return g_has_error;
+            return;
         }
         Value *val = vm_slot_lift(g_vm.sp - 1);
         dict_set_cached(target, key, h, val);
-        return g_has_error;
+        return;
     }
     if (target && target->type != VAL_NULL) {
         const char *key = chunk->const_interns[name_idx];
         rt_error(EK_TYPE, g_vm.current_line, "cannot set field '%s' on %s",
             key, val_type_name(target->type));
     }
-    return g_has_error;
 }
 
 /* JIT Stage 4o: out-of-line helpers for OP_OBSERVE_ASSIGN /
@@ -2462,11 +2458,11 @@ static inline void buffer_store_number(Value *buf, int i, const Value *val) {
 
 /* Stage 4v: out-of-line helper for OP_INDEX_SET. Pops 3 (val, idx,
  * target), pushes val back (net sp -2). Full opcode semantics including
- * the slot fast paths. Errors go through runtime_error; the returned latch
- * makes the emitter bail so CHECK_ERROR handles the unwind. The
+ * the slot fast paths, so the emitter never bails; errors go through
+ * runtime_error and are picked up by CHECK_ERROR after the thunk. The
  * EIGS_JIT_STOPS histogram on the DMG-shaped workload showed INDEX_SET
  * as the only remaining bailout opcode. */
-int jit_helper_index_set(void) {
+void jit_helper_index_set(void) {
     EigsSlot val_s = g_vm.stack[g_vm.sp - 1];
     EigsSlot idx_s = g_vm.stack[g_vm.sp - 2];
     EigsSlot tgt_s = g_vm.stack[g_vm.sp - 3];
@@ -2488,7 +2484,7 @@ int jit_helper_index_set(void) {
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(idx_s);
             slot_decref(tgt_s);
-            return g_has_error;
+            return;
         }
         if (target->type == VAL_LIST && slot_is_f64(val_s)) {
             if (_ok && vm_index_resolve(&i, target->data.list.count)) {
@@ -2503,7 +2499,7 @@ int jit_helper_index_set(void) {
             g_vm.stack[g_vm.sp - 1] = val_s;
             slot_decref(idx_s);
             slot_decref(tgt_s);
-            return g_has_error;
+            return;
         }
     }
     Value *val = vm_pop(); Value *idx = vm_pop(); Value *target = vm_pop();
@@ -2540,7 +2536,6 @@ int jit_helper_index_set(void) {
     }
     val_decref(target); val_decref(idx);
     vm_push(val);
-    return g_has_error;
 }
 
 int jit_helper_index_get(void) {
