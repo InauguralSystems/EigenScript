@@ -466,8 +466,12 @@ def check(root, metadata, candidate_dir=None, baseline_binary=None, binary=None)
     data, frozen = load(root, metadata)
     if candidate_dir:
         paths = list(candidate_dir.rglob('*'))
-        require({p.relative_to(candidate_dir).as_posix() for p in paths} == {Path(p).name for p in data['files']},
-                'candidate file population differs from the derived population')
+        present = {p.relative_to(candidate_dir).as_posix() for p in paths}
+        expected = {Path(p).name for p in data['files']}
+        require(not expected - present,
+                'candidate file population is missing: ' + ', '.join(sorted(expected - present)))
+        require(not present - expected,
+                'candidate file population has extra: ' + ', '.join(sorted(present - expected)))
         actual = {path: (candidate_dir / Path(path).name).read_bytes() for path in data['files']}
     else:
         actual = {p.relative_to(root).as_posix(): p.read_bytes() for p in (root / BAR).rglob('*.branch')}
@@ -507,34 +511,34 @@ def self_test(root, metadata):
         write(good)
         require(invoke().returncode == 0, 'self-test positive complete Python-repr amendment failed')
         plants = {
-            'value': ('fround.branch', lambda b: b.replace(b'0.10000000149011612', b'0.2')),
-            'restored-clamp': ('fround.branch', lambda b: b.replace(b'[inf,', b'[1e+308,', 1)),
-            'kind': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3"')),
-            'integer': ('json_encode.branch', lambda b: b.replace(b'9007199254740993', b'9007199254740992', 1)),
-            'integer-kind': ('json_encode.branch', lambda b: b.replace(b'[3,', b'[3.0,', 1)),
-            'non-float-text': ('json_build.branch', lambda b: b.replace(b'"a"', b'"z"')),
-            'missing-token': ('min.branch', lambda b: b.replace(b'[3, "int"]', b'["int"]', 1)),
-            'extra-token': ('max.branch', lambda b: b.replace(b'[3, "int"]', b'[3, 4, "int"]', 1)),
-            'float-render': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3.00"')),
-            'position': ('json_build.branch', lambda b: b.replace(b'"d": 3.0', b'3.0: "d"')),
+            'value': ('fround.branch', lambda b: b.replace(b'0.10000000149011612', b'0.2'), b'fround.branch:1 token 1: double bits changed'),
+            'restored-clamp': ('fround.branch', lambda b: b.replace(b'[inf,', b'[1e+308,', 1), b'fround.branch:2: numeric token count changed'),
+            'kind': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3"'), b'str.branch:1 token 3: float kind/text is not Python repr'),
+            'integer': ('json_encode.branch', lambda b: b.replace(b'9007199254740993', b'9007199254740992', 1), b'json_encode.branch:1 token 2: integer spelling/value/kind changed'),
+            'integer-kind': ('json_encode.branch', lambda b: b.replace(b'[3,', b'[3.0,', 1), b'json_encode.branch:1 token 1: integer spelling/value/kind changed'),
+            'non-float-text': ('json_build.branch', lambda b: b.replace(b'"a"', b'"z"'), b'json_build.branch:1: non-float text or numeric position changed'),
+            'missing-token': ('min.branch', lambda b: b.replace(b'[3, "int"]', b'["int"]', 1), b'min.branch:2: numeric token count changed'),
+            'extra-token': ('max.branch', lambda b: b.replace(b'[3, "int"]', b'[3, 4, "int"]', 1), b'max.branch:2: numeric token count changed'),
+            'float-render': ('str.branch', lambda b: b.replace(b'"2.5"', b'"2.50"'), b'str.branch:1 token 2: float kind/text is not Python repr'),
+            'position': ('json_build.branch', lambda b: b.replace(b'"b": 2.5', b'2.5: "b"'), b'json_build.branch:1: non-float text or numeric position changed'),
         }
         count = 0
-        for label, (name, mutate) in plants.items():
+        for label, (name, mutate, message) in plants.items():
             bad = dict(good)
             bad[name] = mutate(bad[name])
             require(bad[name] != good[name], 'self-test plant did not take: ' + label)
             write(bad)
             result = invoke()
-            require(result.returncode == 1 and b'FAIL:' in result.stderr, 'self-test plant survived: ' + label)
+            require(result.returncode == 1 and message in result.stderr, 'self-test plant survived: ' + label)
             print('float-amend-self-test: %s rejected PASS' % label)
             count += 1
-        for label, files in [('missing-file', {k: v for k, v in good.items() if k != 'str.branch'}),
-                             ('extra-file', dict(good, extra_branch=b'0\n'))]:
+        for label, files, message in [('missing-file', {k: v for k, v in good.items() if k != 'str.branch'}, b'candidate file population is missing: str.branch'),
+                                      ('extra-file', dict(good, extra_branch=b'0\n'), b'candidate file population has extra: extra.branch')]:
             if label == 'extra-file':
                 files['extra.branch'] = files.pop('extra_branch')
             write(files)
             result = invoke()
-            require(result.returncode == 1 and b'FAIL:' in result.stderr, 'self-test plant survived: ' + label)
+            require(result.returncode == 1 and message in result.stderr, 'self-test plant survived: ' + label)
             print('float-amend-self-test: %s rejected PASS' % label)
             count += 1
         tree = directory / 'tree'
@@ -549,8 +553,9 @@ def self_test(root, metadata):
             branch_path = Path(SIGN_EXTEND_PATH)
             source_path = Path(SIGN_EXTEND_PATH.removesuffix('.branch') + '.eigs')
             hex_path = Path(BAR + 'hex.branch')
-            originals = {path: (tree / path).read_bytes()
-                         for path in (ledger_path, branch_path, source_path, hex_path)}
+            state_paths = (ledger_path, branch_path, source_path, hex_path)
+            originals = {path: git(root, 'show', SIGN_EXTEND_ANCHOR + ':' + path.as_posix())
+                         for path in state_paths}
             old_row = ('| `' + SIGN_EXTEND_PATH + '` | `' + data['sign_extend_amendment']['base_sha256'] +
                        '` | R1.6b-D1 |')
             new_row = ('| `' + SIGN_EXTEND_PATH + '` | `' + data['sign_extend_amendment']['new_sha256'] +
@@ -560,12 +565,17 @@ def self_test(root, metadata):
                     (tree / path).write_bytes(body)
             def select_new(body):
                 ledger = (tree / ledger_path).read_text()
-                require(ledger.count(old_row) == 1, 'self-test sign_extend ledger row moved')
-                (tree / ledger_path).write_text(ledger.replace(old_row, new_row))
+                old_count, new_count = ledger.count(old_row), ledger.count(new_row)
+                require((old_count, new_count) in ((1, 0), (0, 1)),
+                        'self-test sign_extend ledger must contain exactly one selectable row')
+                if old_count:
+                    ledger = ledger.replace(old_row, new_row)
+                (tree / ledger_path).write_text(ledger)
                 (tree / branch_path).write_bytes(body)
-            def state_check():
+            def state_check(selected_metadata=None):
                 return subprocess.run([sys.executable, str(tree / 'tools/phase2_float_amend.py'),
-                                       '--root', str(tree)], capture_output=True)
+                                       '--root', str(tree), '--metadata', str(selected_metadata or
+                                        tree / 'tests/phase2/r17_float_text.json')], capture_output=True)
             reset_state()
             require(state_check().returncode == 0, 'self-test BASE/R1.6b-D1 positive failed')
             before = originals[branch_path]
@@ -578,26 +588,33 @@ def self_test(root, metadata):
             print('float-amend-self-test: sign-extend-states positive PASS')
             state_plants = []
             reset_state(); (tree / branch_path).write_bytes(decided)
-            state_plants.append(('sign-extend-new-with-old-row', state_check()))
+            state_plants.append(('sign-extend-new-with-old-row', state_check(), b'R1.6b-D1 requires the BASE bytes'))
             reset_state(); one_more = decided + b'\n'; select_new(one_more)
-            ledger = (tree / ledger_path).read_text().replace(data['sign_extend_amendment']['new_sha256'], sha(one_more))
-            (tree / ledger_path).write_text(ledger)
-            state_plants.append(('sign-extend-extra-byte-matching-ledger', state_check()))
+            state_plants.append(('sign-extend-extra-byte-matching-ledger', state_check(), b'#1896 requires exactly the two decided replacements'))
             reset_state(); minus128 = decided.replace(b'[-127, "int"]', b'[-128, "int"]'); select_new(minus128)
             ledger = (tree / ledger_path).read_text().replace(data['sign_extend_amendment']['new_sha256'], sha(minus128))
             (tree / ledger_path).write_text(ledger)
-            state_plants.append(('sign-extend-minus-128-matching-ledger', state_check()))
+            planted_metadata = directory / 'planted-metadata.json'
+            planted_data = json.loads(metadata.read_text())
+            planted_data['sign_extend_amendment']['new_sha256'] = sha(minus128)
+            planted_metadata.write_text(json.dumps(planted_data))
+            state_plants.append(('sign-extend-minus-128-matching-records', state_check(planted_metadata),
+                                 b'#1896 recorded hashes do not match the exact two replacements'))
             reset_state(); (tree / source_path).write_bytes(originals[source_path] + b'\n')
-            state_plants.append(('sign-extend-source-edit', state_check()))
+            state_plants.append(('sign-extend-source-edit', state_check(), b'#1896 changed the frozen scenario'))
             reset_state(); (tree / hex_path).write_bytes(originals[hex_path] + b'\n')
-            state_plants.append(('hex-edit-without-row', state_check()))
-            reset_state(); changed_hex = originals[hex_path] + b'\n'; (tree / hex_path).write_bytes(changed_hex)
-            with (tree / ledger_path).open('a') as stream:
-                stream.write('| `' + hex_path.as_posix() + '` | `' + sha(changed_hex) +
-                             '` | #1896 | planted misuse of the decision |\n')
-            state_plants.append(('hex-edit-with-1896-row', state_check()))
-            for label, planted in state_plants:
-                require(planted.returncode == 1 and b'FAIL:' in planted.stderr,
+            state_plants.append(('hex-edit-without-row', state_check(), b'a frozen file outside the derived population changed'))
+            reset_state(); select_new(decided)
+            changed_hex = originals[hex_path] + b'\n'; (tree / hex_path).write_bytes(changed_hex)
+            ledger = (tree / ledger_path).read_text()
+            heading, section = ledger.split('## Frozen .branch amendments\n', 1)
+            table, suffix = section.split('\n## ', 1)
+            table += ('\n| `' + hex_path.as_posix() + '` | `' + sha(changed_hex) +
+                      '` | #1896 | planted misuse of the decision |')
+            (tree / ledger_path).write_text(heading + '## Frozen .branch amendments\n' + table + '\n## ' + suffix)
+            state_plants.append(('hex-edit-with-1896-row', state_check(), b'#1896 must name only sign_extend'))
+            for label, planted, message in state_plants:
+                require(planted.returncode == 1 and message in planted.stderr,
                         'self-test plant survived: ' + label)
                 print('float-amend-self-test: %s rejected PASS' % label)
                 count += 1
