@@ -1,286 +1,353 @@
 #!/usr/bin/env python3
-"""Reject undefined upper-case shell variables in sourced suite fragments."""
+"""Reject undefined upper-case variables in sourced suite fragments.
 
+This is deliberately a shell *lexer*, not a collection of line regular
+expressions.  It understands the quoting constructs which decide whether a
+dollar is active and emits words, separators, and parameter reads.  It is not
+a complete bash parser (notably, function call order is not modelled).
+"""
 from __future__ import annotations
 
+import random
 import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NAME = r"[A-Z][A-Z0-9_]*"
-READ = re.compile(r"\$(?:\{(" + NAME + r")(?:([^}]*))\}|(" + NAME + r"))")
-ASSIGN = re.compile(r"(?<![A-Za-z0-9_])(" + NAME + r")(\+?=)")
-BINDER = re.compile(r"\b(?:local|declare|typeset|export|readonly)\s+(?:-[A-Za-z]+\s+)*(" + NAME + r")(?:\+?=|\b)")
-FOR = re.compile(r"\bfor\s+(" + NAME + r")\s+in\b")
-READ_CMD = re.compile(r"\bread(?:\s+-[A-Za-z]+)*(?:\s+-p\s+\S+)?\s+([^;|&]+)")
-PRINTF_BIND = re.compile(r"\bprintf\s+-v\s+(" + NAME + r")\b")
-UNSET = re.compile(r"\bunset(?:\s+-[a-zA-Z]+)*\s+(" + NAME + r")\b")
+UPPER = re.compile(r"[A-Z][A-Z0-9_]*\Z")
+ASSIGN = re.compile(r"([A-Z][A-Z0-9_]*)\+?=.*\Z", re.S)
+SAFE = (":-", "-", ":+", "+", ":=", "=")
 
 
-def tracked_sections(root: Path) -> list[Path]:
-    out = subprocess.check_output(
-        ["git", "ls-files", "tests/sections/*.sh"], cwd=root, text=True
-    )
-    return [root / line for line in out.splitlines() if line]
+@dataclass
+class Read:
+    line: int
+    name: str
+    operator: str = ""
 
 
-def documented_environment(root: Path) -> set[str]:
-    """Derive environment names from prose that actually calls them environment variables."""
-    result: set[str] = set()
-    for path in [root / "README.md", *sorted((root / "docs").glob("*.md"))]:
-        lines = path.read_text(encoding="utf-8").splitlines()
-        in_env_table = False
-        for line in lines:
-            lower = line.lower()
-            if "environment variable" in lower:
-                result.update(re.findall(r"`(" + NAME + r")(?:=[^`]*)?`", line))
-                in_env_table = line.rstrip().endswith(":")
+@dataclass
+class Tok:
+    text: str
+    line: int
+    depth: int
+    kind: str = "word"
+
+
+class Lexer:
+    """One-character lexer. Context is carried by recursive stack frames."""
+    def __init__(self, text: str):
+        self.s, self.i, self.line = text, 0, 1
+        self.tokens: list[Tok] = []
+        self.reads: list[Read] = []
+        self.word = ""
+        self.word_line = 1
+        self.word_depth = 0
+        self.depth = 0              # assignments at nonzero depth do not escape
+        self.heredocs: list[tuple[str, bool, bool]] = []
+
+    def flush(self):
+        if self.word:
+            self.tokens.append(Tok(self.word, self.word_line, self.word_depth))
+            self.word = ""
+
+    def add(self, c: str):
+        if not self.word:
+            self.word_line = self.line
+            self.word_depth = self.depth
+        self.word += c
+
+    def param(self):
+        """Consume the dollar at i, recording reads and scanning safe WORDs."""
+        start = self.line
+        if self.s.startswith("$(('", self.i):  # impossible sentinel; keep ordering clear
+            return
+        if self.s.startswith("$((", self.i):
+            self.add("$(("); self.i += 3; self.depth += 1
+            self.scan(stop="))", arithmetic=True); self.depth -= 1
+            return
+        if self.s.startswith("$(", self.i):
+            self.add("$("); self.i += 2; self.depth += 1
+            self.scan(stop=")"); self.depth -= 1
+            return
+        if self.s.startswith("${", self.i):
+            self.add("${"); self.i += 2
+            if self.i < len(self.s) and self.s[self.i] in "#!":
+                self.add(self.s[self.i]); self.i += 1
+            m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", self.s[self.i:])
+            if not m:
+                self.scan(stop="}"); return
+            name = m.group(); self.add(name); self.i += len(name)
+            tail = self.s[self.i:]
+            op = next((x for x in (":-", ":+", ":=", "%%", "##", "//", "-", "+", "=", "?", "%", "#", "/") if tail.startswith(x)), "")
+            if UPPER.fullmatch(name): self.reads.append(Read(start, name, op))
+            if op:
+                self.add(op); self.i += len(op)
+            self.scan(stop="}")       # SAFE operators still scan their WORD
+            return
+        m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", self.s[self.i + 1:])
+        if m:
+            name = m.group(); self.add("$" + name); self.i += len(name) + 1
+            if UPPER.fullmatch(name): self.reads.append(Read(start, name))
+        else:
+            self.add("$"); self.i += 1
+
+    def quote(self, q: str):
+        self.add(q); self.i += 1
+        while self.i < len(self.s):
+            c = self.s[self.i]
+            if c == "\n": self.line += 1
+            if c == q:
+                self.add(c); self.i += 1; return
+            if q == '"' and c == "\\" and self.i + 1 < len(self.s):
+                pair=self.s[self.i:self.i+2]; self.add(pair); self.i += 2
+                if pair.endswith("\n"): self.line += 1
                 continue
-            if in_env_table and (line.startswith("|") or not line.strip()):
-                result.update(re.findall(r"`(" + NAME + r")(?:=[^`]*)?`", line))
+            if q == '"' and c == "$": self.param(); continue
+            if q == '"' and c == "`": self.backtick(); continue
+            self.add(c); self.i += 1
+
+    def dollar_quote(self):
+        self.add("$'"); self.i += 2
+        while self.i < len(self.s):
+            if self.s[self.i] == "\\" and self.i + 1 < len(self.s):
+                pair=self.s[self.i:self.i+2]; self.add(pair); self.i += 2
+                if pair.endswith("\n"): self.line += 1
                 continue
-            in_env_table = False
-    return result
+            c = self.s[self.i]; self.add(c); self.i += 1
+            if c == "\n": self.line += 1
+            if c == "'": return
+
+    def backtick(self):
+        self.add("`"); self.i += 1; self.depth += 1
+        self.scan(stop="`"); self.depth -= 1
+
+    def scan(self, stop: str = "", arithmetic: bool = False):
+        word_start = not self.word
+        while self.i < len(self.s):
+            if stop and self.s.startswith(stop, self.i):
+                self.add(stop); self.i += len(stop); return
+            c = self.s[self.i]
+            if c == "\\" and self.i + 1 < len(self.s):
+                pair=self.s[self.i:self.i+2]; self.add(pair); self.i += 2
+                if pair.endswith("\n"): self.line += 1
+                word_start = False; continue
+            if c == "'": self.quote("'"); word_start = False; continue
+            if c == '"': self.quote('"'); word_start = False; continue
+            if self.s.startswith("$'", self.i): self.dollar_quote(); word_start = False; continue
+            if c == "`": self.backtick(); word_start = False; continue
+            if c == "$": self.param(); word_start = False; continue
+            if arithmetic and (c.isalpha() or c == "_"):
+                m = re.match(r"[A-Za-z_][A-Za-z0-9_]*", self.s[self.i:])
+                assert m
+                name = m.group(); self.add(name); self.i += len(name)
+                if UPPER.fullmatch(name): self.reads.append(Read(self.line, name))
+                word_start = False; continue
+            if c == "#" and word_start and not arithmetic:
+                while self.i < len(self.s) and self.s[self.i] != "\n": self.i += 1
+                continue
+            if stop and c == "\n":
+                self.add(c); self.i += 1; self.line += 1; word_start = True; continue
+            if stop and c.isspace():
+                self.add(c); self.i += 1; word_start = True; continue
+            if c == "\n":
+                self.flush(); self.tokens.append(Tok("\n", self.line, self.depth, "sep")); self.i += 1; self.line += 1; word_start = True
+                if not stop and self.heredocs: self.heredoc_bodies()
+                continue
+            if c.isspace(): self.flush(); self.i += 1; word_start = True; continue
+            if self.s.startswith("<<<", self.i) and not arithmetic:
+                self.add("<<<"); self.i += 3; word_start = False; continue
+            if self.s.startswith("<<", self.i) and not arithmetic:
+                self.flush(); dash = self.s.startswith("<<-", self.i); self.i += 3 if dash else 2
+                while self.i < len(self.s) and self.s[self.i] in " \t": self.i += 1
+                quoted = self.i < len(self.s) and self.s[self.i] in "'\""
+                q = self.s[self.i] if quoted else ""; self.i += bool(q); begin = self.i
+                while self.i < len(self.s) and (self.s[self.i] != q if q else self.s[self.i] not in " \t\n;&|") : self.i += 1
+                delim = self.s[begin:self.i]; self.i += bool(q and self.i < len(self.s))
+                self.heredocs.append((delim, not quoted, dash)); word_start = False; continue
+            op = next((x for x in ("&&", "||", ";;", "|&", ";", "|", "&", "(", ")") if self.s.startswith(x, self.i)), "")
+            if op == "(" and self.word and ASSIGN.match(self.word + "x"):
+                self.add(op); self.i += 1; word_start = False; continue
+            if stop and op:
+                self.add(op); self.i += len(op); word_start = True; continue
+            if op and not arithmetic:
+                self.flush(); d = self.depth
+                if op == "(": self.depth += 1
+                elif op == ")": self.depth = max(0, self.depth - 1); d = self.depth
+                self.tokens.append(Tok(op, self.line, d, "sep")); self.i += len(op); word_start = True; continue
+            self.add(c); self.i += 1; word_start = False
+        self.flush()
+
+    def heredoc_bodies(self):
+        while self.heredocs:
+            delim, expand, dash = self.heredocs.pop(0)
+            while self.i < len(self.s):
+                end = self.s.find("\n", self.i); end = len(self.s) if end < 0 else end
+                raw = self.s[self.i:end]; compare = raw.lstrip("\t") if dash else raw
+                if compare == delim:
+                    self.i = end + (end < len(self.s)); self.line += end < len(self.s); break
+                if expand:
+                    # Heredocs expand parameters/substitutions but quotes are ordinary.
+                    while self.i < end:
+                        if self.s[self.i] == "\\": self.i += min(2, end-self.i); continue
+                        if self.s[self.i] == "$": self.param(); continue
+                        if self.s[self.i] == "`": self.backtick(); continue
+                        self.i += 1
+                else: self.i = end
+                if self.i < len(self.s): self.i += 1; self.line += 1
+
+    def run(self):
+        self.scan(); return self.tokens, self.reads
 
 
-def strip_shell(line: str) -> str:
-    """Blank single-quoted text and comments, retaining columns and double quotes."""
-    out = list(line)
-    single = False
-    escaped = False
-    for i, char in enumerate(line):
-        if escaped:
-            escaped = False
-            continue
-        if char == "\\" and not single:
-            escaped = True
-            continue
-        if char == "'":
-            single = not single
-            out[i] = " "
-            continue
-        if single:
-            out[i] = " "
-        elif char == "#" and (i == 0 or line[i - 1].isspace()):
-            for j in range(i, len(out)):
-                out[j] = " "
-            break
-    return "".join(out)
+def lex(text: str): return Lexer(text).run()
 
 
-def iter_code(path: Path):
-    pending: list[tuple[str, bool]] = []
-    for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-        if pending:
-            delimiter, expand = pending[0]
-            if raw.lstrip("\t") == delimiter:
-                pending.pop(0)
-            elif expand:
-                yield number, raw
-            continue
-        code = strip_shell(raw)
-        # Quoted heredocs are literal; unquoted heredocs perform expansions.
-        for match in re.finditer(r"<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1", raw):
-            pending.append((match.group(2), not bool(match.group(1))))
-        yield number, code
+def commands(tokens: list[Tok]):
+    cur: list[Tok] = []
+    for t in tokens + [Tok("\n", 0, 0, "sep")]:
+        if t.kind == "sep" and t.text in ("\n", ";", ";;", "&&", "||", "|", "|&", "&", "(", ")"):
+            if cur: yield cur, t.text; cur = []
+        else: cur.append(t)
 
 
-def definitions(path: Path) -> set[str]:
-    found: set[str] = set()
-    for _, code in iter_code(path):
-        found.update(m.group(1) for m in ASSIGN.finditer(code))
-        for pattern in (BINDER, FOR, PRINTF_BIND):
-            found.update(m.group(1) for m in pattern.finditer(code))
-        for match in READ_CMD.finditer(code):
-            found.update(re.findall(r"\b" + NAME + r"\b", match.group(1)))
-    return found
+def definitions_text(text: str) -> set[str]:
+    toks, reads = lex(text); out: set[str] = set()
+    for words, terminator in commands(toks):
+        if not words or words[0].depth or terminator in ("|", "|&", "&"): continue
+        plain = [w.text.strip("'\"") for w in words]
+        while plain and plain[0] in ("!", "if", "then", "elif", "while", "until", "do"):
+            plain.pop(0); words.pop(0)
+        assigns = []
+        k = 0
+        while k < len(plain) and ASSIGN.fullmatch(plain[k]): assigns.append(ASSIGN.fullmatch(plain[k]).group(1)); k += 1
+        if k == len(plain): out.update(assigns)
+        cmd = plain[k] if k < len(plain) else ""
+        args = plain[k+1:]
+        if cmd in ("export", "local", "declare", "typeset", "readonly"):
+            out.update(m.group(1) for a in args if (m := ASSIGN.match(a)))
+            out.update(a for a in args if UPPER.fullmatch(a))
+        elif cmd == "read": out.update(a for a in args if UPPER.fullmatch(a))
+        elif cmd in ("mapfile", "readarray"):
+            candidates = [a for a in args if not a.startswith("-")]; out.add(candidates[-1] if candidates and UPPER.fullmatch(candidates[-1]) else "MAPFILE")
+        elif cmd == "printf" and "-v" in args:
+            j=args.index("-v")+1
+            if j < len(args) and UPPER.fullmatch(args[j]): out.add(args[j])
+        elif cmd == "getopts" and len(args) > 1 and UPPER.fullmatch(args[1]): out.add(args[1])
+        elif cmd in ("for", "select") and args and UPPER.fullmatch(args[0]): out.add(args[0])
+        elif cmd == "let":
+            out.update(m.group(1) for a in args if (m := ASSIGN.match(a)))
+        if cmd == "[[" and "=~" in plain: out.add("BASH_REMATCH")
+        # A read following while/if and optional assignment words is still a
+        # command-position binder (``while IFS= read -r NAME``).
+        for j, item in enumerate(plain):
+            if item == "read": out.update(a for a in plain[j+1:] if UPPER.fullmatch(a))
+    out.update(r.name for r in reads if r.operator in (":=", "="))
+    return out
 
 
-def runner_context(root: Path) -> set[str]:
-    # run_all_tests.sh sources these before the fragment loop. Resolve the same
-    # literal $TESTS_DIR paths, recursively, rather than maintaining a helper list.
-    queue = [root / "tests/run_all_tests.sh"]
-    seen: set[Path] = set()
-    names: set[str] = set()
-    source_re = re.compile(r"^[ \t]*(?:\.|source)[ \t]+[\"']?([^\"' ;|]+)")
+def tracked_sections(root):
+    p=subprocess.check_output(["git","ls-files","tests/sections/*.sh"],cwd=root,text=True)
+    return [root/x for x in p.splitlines()]
+
+
+def documented_environment(root):
+    out=set()
+    for p in [root/"README.md", *sorted((root/"docs").glob("*.md"))]:
+        for line in p.read_text(errors="replace").splitlines():
+            if "environment variable" in line.lower(): out.update(re.findall(r"`([A-Z][A-Z0-9_]*)",line))
+    return out
+
+
+def runner_context(root):
+    queue=[root/"tests/run_all_tests.sh"]; seen=set(); out=set()
     while queue:
-        path = queue.pop()
-        if path in seen or not path.is_file():
-            continue
-        seen.add(path)
-        names.update(definitions(path))
-        for _, code in iter_code(path):
-            match = source_re.match(code)
-            if not match:
-                continue
-            value = match.group(1).replace("$TESTS_DIR", str(root / "tests"))
-            value = value.replace("${TESTS_DIR}", str(root / "tests"))
-            candidate = Path(value)
-            if candidate.is_absolute() and candidate.is_file():
-                queue.append(candidate.resolve())
-    # Ask bash for the variables it creates itself in a clean environment
-    # (PWD, BASH_VERSION, ...); this is runtime-derived, not an allowlist.
-    builtin = subprocess.check_output(
-        ["env", "-i", "bash", "--noprofile", "--norc", "-c", "compgen -A variable"],
-        text=True,
-    )
-    names.update(name for name in builtin.splitlines() if re.fullmatch(NAME, name))
-    return names
+        p=queue.pop()
+        if p in seen or not p.is_file(): continue
+        seen.add(p); text=p.read_text(); out |= definitions_text(text)
+        for m in re.finditer(r"(?m)^\s*(?:source|\.)\s+['\"]?([^'\" ;|]+)", text):
+            v=m.group(1).replace("${TESTS_DIR}",str(root/"tests")).replace("$TESTS_DIR",str(root/"tests")); q=Path(v)
+            if q.is_file(): queue.append(q.resolve())
+    built=subprocess.check_output(["env","-i","bash","--noprofile","--norc","-c","compgen -A variable"],text=True)
+    out.update(x for x in built.splitlines() if UPPER.fullmatch(x)); return out
 
 
-def safe_parameter_tail(tail: str) -> bool:
-    return tail.startswith((":-", "-", ":+", "+", ":="))
+def scan(root, sections):
+    available=runner_context(root)|documented_environment(root); bad=[]
+    for p in sections:
+        text=p.read_text(); toks, reads=lex(text); defs=definitions_text(text)
+        events=[]
+        for ws, _ in commands(toks):
+            if ws and not ws[0].depth:
+                names=definitions_text(" ".join(w.text for w in ws))
+                events.extend((ws[0].line,n) for n in names)
+        # Definitions are ordered approximately by prefix; this avoids letting a later
+        # assignment satisfy an earlier read while retaining shell fragment ordering.
+        for r in reads:
+            prior={n for line,n in events if line <= r.line}
+            # An assignment's RHS is expanded before that assignment exists.
+            own = re.search(rf"(?m)^\s*{re.escape(r.name)}\+?=.*\${{?{re.escape(r.name)}(?:\W|$)", text)
+            if own and text.count("\n",0,own.start())+1 == r.line: prior.discard(r.name)
+            if r.name not in available|prior and r.operator not in SAFE: bad.append((p,r.line,r.name))
+        available |= defs
+    return bad
 
 
-def scan(root: Path, sections: list[Path]) -> list[tuple[Path, int, str]]:
-    available = runner_context(root) | documented_environment(root)
-    failures: list[tuple[Path, int, str]] = []
-    for path in sections:
-        local_available = set(available)
-        for number, code in iter_code(path):
-            # Assignment words make their name available to expansions after the
-            # word; this conservative ordering also models command environment.
-            line_defs = {m.group(1) for m in ASSIGN.finditer(code)}
-            positioned_defs: list[tuple[int, str]] = []
-            for pattern in (BINDER, FOR, PRINTF_BIND):
-                for match in pattern.finditer(code):
-                    line_defs.add(match.group(1))
-                    positioned_defs.append((match.end(), match.group(1)))
-            for match in READ_CMD.finditer(code):
-                for name in re.findall(r"\b" + NAME + r"\b", match.group(1)):
-                    line_defs.add(name)
-                    positioned_defs.append((match.end(), name))
-            # [[ string =~ regex ]] assigns bash's BASH_REMATCH array.
-            if re.search(r"\[\[.*=~.*\]\]", code):
-                line_defs.add("BASH_REMATCH")
-                local_available.add("BASH_REMATCH")
-            source = re.match(r"^[ \t]*(?:\.|source)[ \t]+[\"']?([^\"' ;|]+)", code)
-            if source:
-                value = source.group(1).replace("$TESTS_DIR", str(root / "tests"))
-                value = value.replace("${TESTS_DIR}", str(root / "tests"))
-                helper = Path(value)
-                if helper.is_file():
-                    line_defs.update(definitions(helper))
-            for match in READ.finditer(code):
-                name = match.group(1) or match.group(3)
-                tail = match.group(2) or ""
-                if match.group(1) and safe_parameter_tail(tail):
-                    if tail.startswith(":="):
-                        line_defs.add(name)
-                    continue
-                defined_earlier_on_line = any(
-                    defined == name and end <= match.start()
-                    for end, defined in positioned_defs
-                )
-                if name not in local_available and not defined_earlier_on_line:
-                    failures.append((path, number, name))
-            local_available.update(line_defs)
-            for match in UNSET.finditer(code):
-                local_available.discard(match.group(1))
-        # Fragments are sourced, in byte order, by one shell. Only earlier
-        # fragment assignments can therefore supply a later fragment.
-        available.update(definitions(path))
-    return failures
+def population_ok(root, sections): return bool(sections) and not scan(root,sections)
 
 
-def population_ok(root: Path, sections: list[Path]) -> bool:
-    return bool(sections) and not scan(root, sections)
-
-
-def selftest() -> int:
-    cases = {
-        "plain-read": ("echo \"$MISSING\"\n", False),
-        "assignment": ("VALUE=ok\necho \"$VALUE\"\n", True),
-        "single-quote": ("echo '$LITERAL'\n", True),
-        "comment": ("# $COMMENT\necho ok\n", True),
-        "quoted-heredoc": ("cat <<'EOF'\n$LITERAL\nEOF\n", True),
-        "expanded-heredoc": ("cat <<EOF\n$MISSING\nEOF\n", False),
-        "default-colon": ("echo \"${OPTIONAL:-x}\"\n", True),
-        "default": ("echo \"${OPTIONAL-x}\"\n", True),
-        "alternate-colon": ("echo \"${OPTIONAL:+x}\"\n", True),
-        "alternate": ("echo \"${OPTIONAL+x}\"\n", True),
-        "required": ("echo \"${REQUIRED?no}\"\n", False),
-        "array": ("ARRAY=(a b)\necho \"${ARRAY[@]}\"\n", True),
-        "local": ("f() { local LOCAL=x; echo \"$LOCAL\"; }\n", True),
-        "read": ("read INPUT\necho \"$INPUT\"\n", True),
-        "for": ("for ITEM in x; do echo \"$ITEM\"; done\n", True),
-        "printf-v": ("printf -v OUTPUT %s x\necho \"$OUTPUT\"\n", True),
-        "export-assignment": ("export EXPORTED=x\necho \"$EXPORTED\"\n", True),
-        "declare": ("declare DECLARED=x\necho \"$DECLARED\"\n", True),
-        "append": ("APPENDED+=x\necho \"$APPENDED\"\n", True),
-        "assign-default": (": \"${DEFAULTED:=x}\"\necho \"$DEFAULTED\"\n", True),
-        "unset": ("GONE=x\nunset GONE\necho \"$GONE\"\n", False),
+def selftest():
+    cases={
+      "apostrophe in double quotes":('echo "don\'t use $TEST_DIR"\n',False), "after multiline single quote":("awk '\n{print}\n' \"$TEST_DIR/x\"\n",False),
+      "assignment text string":('echo "TEST_DIR=unset"\ncat "$TEST_DIR"\n',False), "env prefix":('TEST_DIR=x true\ncat "$TEST_DIR"\n',False), "env command":('env TEST_DIR=x true\ncat "$TEST_DIR"\n',False),
+      "hash in string":('echo "a # $TEST_DIR"\n',False), "nested default":('echo "${A:-$TEST_DIR}"\n',False), "nested substitution":('echo "$(cat "$TEST_DIR/x")"\n',False),
+      "length":('echo "${#TEST_DIR}"\n',False), "suffix":('echo "${TEST_DIR%/*}"\n',False), "arithmetic":('echo $((TEST_DIR+1))\n',False), "same line self":('TEST_DIR="$TEST_DIR/x"\n',False),
+      "python heredoc":("python3 - <<'PY'\nTEST_DIR=1\nPY\necho $TEST_DIR\n",False), "comparison":('[ "x" = "TEST_DIR=1" ]; echo $TEST_DIR\n',False), "subshell":('( TEST_DIR=1 )\necho $TEST_DIR\n',False),
+      "quoted dash heredoc":('cat <<-"EOF"\n\t$Q\n\tEOF\necho "$TEST_DIR"\n',False), "here string":('cat <<<"$TEST_DIR"\n',False), "continuation":('echo a \\\n "$TEST_DIR"\n',False),
+      "two heredocs":("cat <<'X' <<'Y'\n$a\nX\n$b\nY\necho $TEST_DIR\n",False), "escaped":('echo "\\$TEST_DIR"\n',True), "multiline literal":("awk '\n $TEST_DIR\n' f\n",True), "dollar quote":("X=$'a\\'b'; echo \"$TEST_DIR\"\n",False),
+      "assignment":('VALUE=ok\necho "$VALUE"\n',True), "safe word scanned":('echo "${A:-$TEST_DIR}"\n',False), "assign default":(': "${VALUE:=x}"\necho "$VALUE"\n',True),
     }
-    failed = 0
+    failed=0
     with tempfile.TemporaryDirectory() as td:
-        root = Path(td)
-        subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-        (root / "tests/sections").mkdir(parents=True)
-        (root / "docs").mkdir()
-        (root / "README.md").write_text("`DOCUMENTED` environment variable.\n")
-        (root / "tests/run_all_tests.sh").write_text("SUITE_DEFINED=x\n")
-        total = 0
-        for name, (body, want_green) in cases.items():
-            path = root / "tests/sections/one.sh"
-            control = "echo ok\n" if not want_green else body
-            path.write_text(control)
-            control_green = not scan(root, [path])
-            path.write_text(body)
-            green = not scan(root, [path])
-            total += 1
-            if control_green and green == want_green:
-                print(f"PASS: {name}")
-            else:
-                print(f"FAIL: {name} control={control_green} green={green}")
-                failed += 1
-        # Earlier fragments share the shell; later fragments do not travel back.
-        first = root / "tests/sections/a.sh"; second = root / "tests/sections/b.sh"
-        first.write_text("SHARED=x\n"); second.write_text('echo "$SHARED"\n')
-        total += 1
-        if not scan(root, [first, second]) and scan(root, [second, first]):
-            print("PASS: fragment source order")
-        else:
-            print("FAIL: fragment source order"); failed += 1
-        # The historical typo is planted only in a copy of a real fragment.
-        real = ROOT / "tests/sections/73x-jit-index-set-error-2540.sh"
-        planted = root / "tests/sections/planted.sh"
-        planted.write_text(real.read_text() + '\nprintf "%s\\n" "$TEST_DIR"\n')
-        findings = scan(root, [planted])
-        total += 1
-        if any(p == planted and n > 0 and v == "TEST_DIR" for p, n, v in findings):
-            print(f"PASS: planted TEST_DIR named {planted.name}:{findings[-1][1]}:TEST_DIR")
-        else:
-            print("FAIL: planted TEST_DIR was not attributed"); failed += 1
-        total += 1
-        if population_ok(root, []):
-            print("FAIL: vacuous run was accepted")
-            failed += 1
-        else:
-            print("PASS: vacuous run is refused")
-    print(f"section-undefined-vars selftest: {total - failed}/{total} passed, {failed} failed")
-    return 1 if failed else 0
+      root=Path(td); subprocess.run(["git","init","-q"],cwd=root,check=True); (root/"tests/sections").mkdir(parents=True); (root/"docs").mkdir(); (root/"README.md").write_text(""); (root/"tests/run_all_tests.sh").write_text("A=1\n")
+      for name,(body,want) in cases.items():
+        p=root/"tests/sections/o.sh"; p.write_text("echo ok\n"); control=not scan(root,[p]); p.write_text(body); got=not scan(root,[p])
+        if control and got==want: print("PASS:",name)
+        else: print(f"FAIL: {name} control={control} green={got}"); failed+=1
+      a=root/"tests/sections/a.sh"; b=root/"tests/sections/b.sh"; a.write_text("SHARED=x\n"); b.write_text("echo $SHARED\n")
+      if not scan(root,[a,b]) and scan(root,[b,a]): print("PASS: fragment order")
+      else: print("FAIL: fragment order"); failed+=1
+      if not population_ok(root,[]): print("PASS: vacuous run")
+      else: print("FAIL: vacuous run"); failed+=1
+      real=ROOT/"tests/sections/73x-jit-index-set-error-2540.sh"; p=root/"tests/sections/plant.sh"; p.write_text(real.read_text()+'\necho "$TEST_DIR"\n')
+      if any(x[2]=="TEST_DIR" for x in scan(root,[p])): print("PASS: planted real fragment")
+      else: print("FAIL: planted real fragment"); failed+=1
+      # Seeded nested expansions use bash itself as the expectation oracle.
+      rng=random.Random(2544); generated_ok=True
+      for i in range(200):
+        red='echo "$TEST_DIR"'
+        for _ in range(rng.randrange(4)):
+          red=rng.choice(['echo "$('+red+')"', 'echo "${A:-$('+red+')}"', '{ '+red+'; }'])
+        green=red.replace('$TEST_DIR', '\\$TEST_DIR')
+        for body,want in ((red,False),(green,True)):
+          run=subprocess.run(["env","-i","TEST_DIR=MARKER_2544","bash","--noprofile","--norc","-c",body],text=True,capture_output=True)
+          bash_expands="MARKER_2544" in run.stdout
+          p.write_text(body+"\n"); scanner_green=not scan(root,[p])
+          if run.returncode or bash_expands == want or scanner_green != want: generated_ok=False; break
+        if not generated_ok: break
+      if generated_ok: print("PASS: 200 seeded nested expansion/literal pairs (bash oracle)")
+      else: print(f"FAIL: generated nesting {i}"); failed+=1
+    total=len(cases)+4; print(f"section-undefined-vars selftest: {total-failed}/{total} passed, {failed} failed"); return bool(failed)
 
 
-def main() -> int:
-    if sys.argv[1:] == ["--selftest"]:
-        return selftest()
-    if sys.argv[1:]:
-        print("usage: tools/section_undefined_vars.py [--selftest]", file=sys.stderr)
-        return 2
-    sections = tracked_sections(ROOT)
-    if not sections:
-        print("section-undefined-vars: FAIL: examined=0 (no tracked fragments)")
-        return 1
-    failures = scan(ROOT, sections)
-    for path, line, name in failures:
-        print(f"{path.relative_to(ROOT)}:{line}: undefined upper-case variable {name}")
-    status = "PASS" if not failures else "FAIL"
-    print(f"section-undefined-vars: {status}: examined={len(sections)} undefined={len(failures)}")
-    return 1 if failures else 0
+def main():
+    if sys.argv[1:]==["--selftest"]: return selftest()
+    if sys.argv[1:]: print("usage: tools/section_undefined_vars.py [--selftest]",file=sys.stderr); return 2
+    sections=tracked_sections(ROOT); failures=scan(ROOT,sections) if sections else []
+    for p,line,name in failures: print(f"{p.relative_to(ROOT)}:{line}: undefined upper-case variable {name}")
+    ok=bool(sections) and not failures; print(f"section-undefined-vars: {'PASS' if ok else 'FAIL'}: examined={len(sections)} undefined={len(failures)}"); return not ok
 
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=="__main__": raise SystemExit(main())
