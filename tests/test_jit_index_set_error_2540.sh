@@ -248,6 +248,20 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of len of out' loop
+run_case 'OSR index set wrong value stops before buffer store' '["type_mismatch", "cannot store str in a buffer (buffers hold numbers)", 4]
+1.0' 'define f(b, xs, n) as:
+    k is 0.0
+    loop while k < n:
+        b[0.0] is xs[k]
+        b[1.0] is k
+        k is k + 1.0
+    return 0
+b is buf_from_list of ([5.0, 6.0])
+try:
+    f of [b, [7.5, 7.5, "s"], 3.0]
+catch e:
+    print of [e.kind, e.message, e.line]
+print of b[1]' loop
 run_case 'finite controls' '3.5
 3.5' 'define f(d, b, y) as:
     d.x is y
@@ -260,5 +274,5 @@ f of [d, b, 3.5]
 print of b[1]
 print of d.x' hot
 printf 'examined=%s\n' "$examined"
-[ "$examined" -eq 16 ] || status=1
+[ "$examined" -eq 17 ] || status=1
 exit "$status"
