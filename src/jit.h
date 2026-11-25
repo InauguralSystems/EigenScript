@@ -184,7 +184,7 @@ void *eigs_jit_load_eigs_current(void);
  * sites. Doing the IC walk inline would cost ~80 bytes of native
  * code per call site; one funcall fits in ~30 bytes and the IC still
  * lives inside the helper. */
-void jit_helper_get_name(struct EigsChunk *chunk, int idx);
+int jit_helper_get_name(struct EigsChunk *chunk, int idx);
 
 /* Stage 4l: out-of-line helper for OP_LOCAL_IDX_GET. Mirrors the
  * VAL_BUFFER/VAL_LIST/VAL_STR dispatch in CASE(LOCAL_IDX_GET). */

@@ -89,8 +89,9 @@ const char *op_name(uint8_t op) { return op == OP_GET_LOCAL ? "GET_LOCAL" : "?";
  * OP_GET_NAME emitter. Smoke test never invokes that emitter, but
  * the linker needs a definition. */
 struct EigsChunk;
-void jit_helper_get_name(struct EigsChunk *chunk, int idx) {
+int jit_helper_get_name(struct EigsChunk *chunk, int idx) {
     (void)chunk; (void)idx;
+    return 0;
 }
 
 /* Receipt-only helper: controlled statuses test the production emitter's

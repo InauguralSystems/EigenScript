@@ -6,11 +6,16 @@ trap 'rm -f "$tmp"' EXIT
 examined=0
 status=0
 run_case() {
-  name=$1 expected=$2 body=$3
+  name=$1 expected=$2 body=$3 tier=$4
   examined=$((examined + 1))
   printf '%s\n' "$body" > "$tmp"
-  on=$(EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); on_rc=$?
-  off=$(EIGS_JIT_OFF=1 EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); off_rc=$?
+  if [ "$tier" = loop ]; then
+    on=$(EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); on_rc=$?
+    off=$(EIGS_JIT_OFF=1 EIGS_JIT_OSR_THRESHOLD=1 "$EIGS" "$tmp" 2>&1); off_rc=$?
+  else
+    on=$("$EIGS" "$tmp" 2>&1); on_rc=$?
+    off=$(EIGS_JIT_OFF=1 "$EIGS" "$tmp" 2>&1); off_rc=$?
+  fi
   if [ "$on_rc" -eq 0 ] && [ "$off_rc" -eq 0 ] && [ "$on" = "$expected" ] && [ "$off" = "$expected" ]; then
     printf 'PASS: %s\n' "$name"
   else
@@ -31,7 +36,7 @@ try:
     f of [3.0, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of b[1]'
+print of b[1]' hot
 run_case 'hot dot get stops before store' '["type_mismatch", "cannot access field '\''x'\'' on num", 2]
 8.5' 'define f(d, b, y) as:
     b[1.0] is d.x.x
@@ -45,7 +50,7 @@ try:
     f of [{"x": 3.0}, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of b[1]'
+print of b[1]' hot
 run_case 'hot indexed local dot get stops before store' '["type_mismatch", "cannot access field '\''x'\'' on num", 2]
 8.5' 'define f(l, i, b, y) as:
     z is l[i].x
@@ -59,7 +64,7 @@ try:
     f of [[3.0], 0.0, b, 99.0]
 catch e:
     print of [e.kind, e.message, e.line]
-print of b[1]'
+print of b[1]' hot
 run_case 'OSR local dot set stops before print' '["type_mismatch", "cannot set field '\''x'\'' on num", 8]
 3.0' 'define f() as:
     d is {"x": 1.0}
@@ -75,7 +80,7 @@ run_case 'OSR local dot set stops before print' '["type_mismatch", "cannot set f
     catch e:
         print of [e.kind, e.message, e.line]
     return k
-print of f of []'
+print of f of []' loop
 run_case 'OSR dot get stops before append' '["type_mismatch", "cannot access field '\''x'\'' on num", 9]
 3' 'define f() as:
     d is {"x": {"x": 1.0}}
@@ -91,7 +96,158 @@ run_case 'OSR dot get stops before append' '["type_mismatch", "cannot access fie
     catch e:
         print of [e.kind, e.message, e.line]
     return len of out
-print of f of []'
+print of f of []' loop
+run_case 'hot index set wrong value stops before global assignment' '["type_mismatch", 2]
+8.5' 'define f(b, v, y) as:
+    b[1.0] is v
+    changed is y
+    return 0.0
+changed is 8.5
+b is buf_from_list of ([5.0, 6.0])
+for k in range of 400:
+    f of [b, 8.5, 8.5]
+try:
+    f of [b, "bad", 99.0]
+catch e:
+    print of [e.kind, e.line]
+print of changed' hot
+run_case 'OSR index set out of range stops before print' '["index_range", 9]
+3.0' 'define f() as:
+    b is buf_from_list of ([5.0, 6.0])
+    k is 0.0
+    try:
+        loop while k < 4.0:
+            i is 1.0
+            if k == 3.0:
+                i is 9.0
+            b[i] is k
+            if k == 3.0:
+                print of "BAD"
+            k is k + 1.0
+    catch e:
+        print of [e.kind, e.line]
+    return k
+print of f of []' loop
+run_case 'hot get name stops before append' '["undefined_name", 3]
+400' 'define f(c) as:
+    if c > 0.0:
+        z is nosuchname
+    append of [out, "BAD"]
+    return 0.0
+out is []
+for k in range of 400:
+    f of 0.0
+try:
+    f of 1.0
+catch e:
+    print of [e.kind, e.line]
+print of len of out' hot
+run_case 'OSR get name stops before buffer store' '["undefined_name", 7]
+8.5' 'define f() as:
+    b is buf_from_list of ([5.0, 8.5])
+    k is 0.0
+    try:
+        loop while k < 4.0:
+            if k == 3.0:
+                z is nosuchname
+            b[1.0] is 8.5
+            k is k + 1.0
+    catch e:
+        print of [e.kind, e.line]
+    print of b[1]
+f of []' loop
+run_case 'hot dot set stops before print' '["type_mismatch", 3]
+8.5' 'g is {"x": 1.0}
+define f(v, b, y) as:
+    g.x is v
+    b[1.0] is y
+    return 0.0
+b is buf_from_list of ([5.0, 8.5])
+for k in range of 400:
+    f of [2.0, b, 8.5]
+g is 3.0
+try:
+    f of [4.0, b, 99.0]
+catch e:
+    print of [e.kind, e.line]
+print of b[1]' hot
+run_case 'OSR dot set stops before append' '["type_mismatch", 9]
+3' 'g is {"x": 1.0}
+define f() as:
+    out is []
+    k is 0.0
+    try:
+        loop while k < 4.0:
+            if k == 3.0:
+                g is 3.0
+            g.x is 7.0
+            append of [out, 9.0]
+            k is k + 1.0
+    catch e:
+        print of [e.kind, e.line]
+    return len of out
+print of f of []' loop
+run_case 'OSR index set planted status stops before print' '["type_mismatch", 7]
+3.0' 'define f(b) as:
+    k is 0.0
+    loop while k < 4.0:
+        v is 8.5
+        if k == 3.0:
+            v is "bad"
+        b[1.0] is v
+        k is k + 1.0
+    return k
+b is buf_from_list of ([5.0, 6.0])
+try:
+    print of f of b
+catch e:
+    print of [e.kind, e.line]
+print of 3.0' loop
+run_case 'OSR local dot set planted status stops before append' '["type_mismatch", 6]
+3' 'define f(d, out) as:
+    k is 0.0
+    loop while k < 4.0:
+        if k == 3.0:
+            d is 3.0
+        d.x is 7.0
+        append of [out, 9.0]
+        k is k + 1.0
+out is []
+try:
+    f of [{"x": 1.0}, out]
+catch e:
+    print of [e.kind, e.line]
+print of len of out' loop
+run_case 'OSR get name planted status stops before global assignment' '["undefined_name", 6]
+2.0' 'changed is 3.0
+define f() as:
+    k is 0.0
+    loop while k < 4.0:
+        if k == 3.0:
+            z is nosuchname
+        changed is k
+        k is k + 1.0
+try:
+    f of []
+catch e:
+    print of [e.kind, e.line]
+print of changed' loop
+run_case 'OSR dot get planted status stops before buffer store' '["type_mismatch", 7]
+3' 'g is {"x": {"x": 1.0}}
+define f(out) as:
+    k is 0.0
+    loop while k < 4.0:
+        if k == 3.0:
+            g.x is 3.0
+        z is g.x.x
+        append of [out, 99.0]
+        k is k + 1.0
+out is []
+try:
+    f of out
+catch e:
+    print of [e.kind, e.line]
+print of len of out' loop
 run_case 'finite controls' '3.5
 3.5' 'define f(d, b, y) as:
     d.x is y
@@ -102,7 +258,7 @@ for k in range of 400:
     f of [d, b, 8.5]
 f of [d, b, 3.5]
 print of b[1]
-print of d.x'
+print of d.x' hot
 printf 'examined=%s\n' "$examined"
-[ "$examined" -eq 6 ] || status=1
+[ "$examined" -eq 16 ] || status=1
 exit "$status"

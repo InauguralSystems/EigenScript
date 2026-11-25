@@ -2878,6 +2878,10 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_inc_ecx(w);
             i += 3;
         } else if (op == OP_GET_NAME) {
+            if (bail_count + 1 > (int)(sizeof bail_patches /
+                                       sizeof bail_patches[0])) {
+                JIT_BAIL_AND_RETURN();
+            }
             /* Stage 5b: inline EnvIC fast path; helper only on IC miss.
              *
              * Mirrors jit_helper_get_name's hit branch:
@@ -2947,6 +2951,12 @@ static void jit_compile_to_thunk(struct EigsChunk *chunk,
             w = emit_call_rax(w);
             w = emit_pop_rcx(w);
             w = emit_mov_disp32_rbx_to_ecx(w, g_layout.off_sp);
+            w = emit_cmp_imm8_eax(w, 0);
+            uint8_t *ok_patch;
+            w = emit_je_rel32(w, &ok_patch);
+            w = emit_mov_imm32_r13d(w, (uint32_t)(i + 3 - entry_offset));
+            w = emit_jmp_rel32(w, &bail_patches[bail_count++]);
+            patch_rel32(ok_patch, w);
             patch_rel32(done_p, w);
             i += 3;
         } else if (op == OP_SET_NAME || op == OP_SET_NAME_LOCAL ||

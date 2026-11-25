@@ -1263,7 +1263,7 @@ static const char *vm_missing_module(Env *env, EigsChunk *chunk) {
  * call site (sp sync + arg setup + aligned call + sp reload) instead
  * of trying to emit ~80 bytes of IC-walk-and-incref inline. The IC
  * itself still does its job — the helper just front-ends it. */
-void jit_helper_get_name(EigsChunk *chunk, int idx) {
+int jit_helper_get_name(EigsChunk *chunk, int idx) {
     EnvIC *ic = &chunk->env_ic[idx];
     CallFrame *frame = &g_vm.frames[g_vm.frame_count - 1];
     Env *start = frame->env;
@@ -1274,7 +1274,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
             EigsSlot s = target->values[ic->slot_idx];
             slot_incref(s);
             vm_push_slot(s);
-            return;
+            return g_has_error;
         }
     }
     const char *name = chunk->const_interns[idx];
@@ -1291,7 +1291,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
         eigs_raise_missing_name(name, g_vm.current_line,
                                 vm_missing_module(frame->env, chunk));
         vm_push_slot(slot_null());
-        return;
+        return g_has_error;
     }
     /* #1171: a thunk entered before the first spawn keeps running after it,
      * so its helpers must not refill a cache under MT any more than the
@@ -1304,6 +1304,7 @@ void jit_helper_get_name(EigsChunk *chunk, int idx) {
         ic->walk_depth   = (uint8_t)depth;
     }
     vm_push_slot(s);
+    return g_has_error;
 }
 
 /* JIT Stage 4x: out-of-line helpers for the SET name family. These are
