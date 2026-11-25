@@ -123,7 +123,11 @@ def shape(text, mod=ST, depth=0):
             continue
         # bash's reprint lays `case X in` on its own line and spells an
         # implicit `for NAME` list as `in "$@"`: normalize both readings.
-        if words[0] == "case" and "in" in words:
+        if words[0] == "coproc" and len(words) > 3 and words[2] == "{":
+            # bash's reprint lays `coproc NAME {` on its own line
+            pieces.append((words[:3], subs[:3]))
+            words, subs = words[3:], subs[3:]
+        elif words[0] == "case" and "in" in words:
             k = words.index("in") + 1
             pieces.append((words[:k], subs[:k]))
             words, subs = words[k:], subs[k:]
@@ -301,7 +305,7 @@ def collect_commands(text, mod=ST, depth=0):
                 try:
                     out.extend(collect_commands(body, mod, depth + 1))
                 except ST.ShellLexError:
-                    pass
+                    pass                  # a body bash also rejects: O1 covers the file
     return out
 
 
@@ -476,7 +480,7 @@ def bash_accepts_many(text, positions, locale="C"):
             p.stdin.write(raw[:off] + mark + raw[off:] + b"\0")
         p.stdin.close()
     except BrokenPipeError:
-        pass
+        pass                              # bash exited early; the length check below decides
     out = p.stdout.read().decode()
     p.wait(timeout=300)
     if len(out) != len(positions) + 1:
@@ -616,6 +620,9 @@ INCIDENTS = [
     ("cat <<'EOF'\nline \\\nEOF\nreal\n", [["cat"], ["real"]], ["line \\\n"]),
     # `<<-` strips leading TABS only: a space-indented delimiter does not end it.
     ("cat <<-X\n\tbody\n  X\n\tX\nreal\n", [["cat"], ["real"]], ["\tbody\n  X\n"]),
+    # DevBox on #2559: `coproc NAME { ...; }` -- NAME, then a group.
+    ("coproc QP { cat; }\necho x\n", [["coproc", "QP", "{", "cat"], ["}"], ["echo", "x"]], []),
+    ("coproc cat file\n", [["coproc", "cat", "file"]], []),
     # critic r2: `!(cmd)` at a command position negates a subshell.
     ("if !(eigenscript-gfx --version); then :; fi\n",
      [["if", "!"], ["eigenscript-gfx", "--version"], ["then", ":"], ["fi"]], []),
@@ -816,7 +823,7 @@ def robustness(mod=ST):
                 mod.unquote(tok.text)
             mod.function_definitions(mod.tokenize_prefix(text))
         except ST.ShellLexError:
-            pass
+            pass                          # rejecting is allowed; crashing is not
         except Exception as e:            # noqa: BLE001 -- the finding itself
             bad.append((text, f"{type(e).__name__}: {e}"))
     return bad

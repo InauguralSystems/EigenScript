@@ -75,4 +75,34 @@ if grep -Fq $'tests/test_importer.py\ttools/orphan.py' "$WORK/edges"; then
 else
     echo "  PASS: print string is not an execution edge"
 fi
+# A whole shell file the tokenizer stops on while `bash -n` accepts it must
+# fail the gate, naming file and line -- never pass on the prefix (#2559).
+# SHELL_TOKENS_PLANT_GAP makes the tokenizer stop at the marker.
+printf 'bash tools/phase2_cost.sh\n: PLANT_GAP_MARK\nbash tools/indented_check.sh\n' >"$WORK/tests/gap.sh"
+gap_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/enrolment_edges.py" "$WORK" \
+    >"$WORK/gap.out" 2>"$WORK/gap.err" || gap_rc=$?
+if [ "$gap_rc" -eq 2 ] && grep -Fq 'INSTRUMENT ERROR: tests/gap.sh:2: ' "$WORK/gap.err"; then
+    echo "  PASS: plant: enrolment edges refuse a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: enrolment edges passed on a prefix (rc=$gap_rc)"; cat "$WORK/gap.err"; bad=1
+fi
+dv_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/_derive_variants.py" --shell "$WORK/tests/gap.sh" \
+    >"$WORK/dv.out" 2>"$WORK/dv.err" || dv_rc=$?
+if [ "$dv_rc" -eq 2 ] && grep -Fq 'INSTRUMENT ERROR: gap.sh:2: ' "$WORK/dv.err"; then
+    echo "  PASS: plant: variant deriver refuses a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: variant deriver derived from a prefix (rc=$dv_rc)"; cat "$WORK/dv.err"; bad=1
+fi
+# Control: a file bash rejects too is read up to the line where it stops.
+printf 'bash tools/phase2_cost.sh\n: PLANT_GAP_MARK "unclosed\n' >"$WORK/tests/gap.sh"
+ctl_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/enrolment_edges.py" "$WORK" \
+    >"$WORK/gap.out" 2>"$WORK/gap.err" || ctl_rc=$?
+if [ "$ctl_rc" -eq 0 ] && grep -Fxq $'tests/gap.sh\ttools/phase2_cost.sh' "$WORK/gap.out"; then
+    echo "  PASS: control: a file bash rejects is read up to where it stops"
+else
+    echo "  FAIL: control: rc=$ctl_rc for a file bash rejects"; cat "$WORK/gap.err"; bad=1
+fi
 exit "$bad"

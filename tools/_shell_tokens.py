@@ -332,6 +332,7 @@ class _Body:
         self.after_for = False         # `for` was just read: `((` is arithmetic
         self.after_time = False        # `time` was just read: its -p keeps cmdpos
         self.assigned = False          # this command began with NAME=value
+        self.after_coproc = False      # `coproc` was just read
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -518,6 +519,7 @@ class _Body:
     def after_separator(self):
         self.cmdpos = True
         self.assigned = False
+        self.after_coproc = False
         self.after_time = False
 
     def in_pattern(self) -> bool:
@@ -564,6 +566,14 @@ class _Body:
             self.after_for = True
         if self.cmdpos and word == "time":
             self.after_time = True
+        if self.cmdpos and self.after_coproc:
+            self.after_coproc = False
+            rest = self.lx.text[self.i:].lstrip(" \t")
+            if _plain_ident(word) and rest[:1] in ("{", "("):
+                return                        # `coproc NAME { ...; }`: NAME, then a compound
+        if self.cmdpos and word == "coproc":
+            self.after_coproc = True
+            return
         if self.cmdpos and _is_assignment(word):
             self.assigned = True
             return
@@ -670,6 +680,48 @@ def tokenize_prefix(text: str) -> list[Token]:
             if cut <= 0:
                 return []
             text = text[:cut]
+
+
+class TokenizerGap(RuntimeError):
+    """The tokenizer stopped early on a whole file the shell accepts: a gate
+    reading only the prefix would check less without saying so."""
+
+
+# Test seam, like EIGS_PLAN_PLANT: a whole file holding this marker is treated
+# as if the tokenizer stopped there, so a gate's refusal can be shown red.
+_GAP_PLANT = "SHELL_TOKENS_PLANT_GAP"
+
+
+def tokenize_file(text: str, name: str) -> list[Token]:
+    """Tokens of a WHOLE tracked file, for a gate.  Text the shell rejects too
+    is read up to the line where tokenizing stopped (tokenize_prefix); text
+    `bash -n` accepts but the tokenizer stops on raises TokenizerGap naming
+    the file and line, so the gate fails instead of passing on a prefix."""
+    import os
+    marker = os.environ.get(_GAP_PLANT)
+    try:
+        if marker and marker in text:
+            line = text[:text.index(marker)].count("\n") + 1
+            raise ShellLexError(f"planted gap ({_GAP_PLANT})", line)
+        return tokenize(text)
+    except ShellLexError as e:
+        if _bash_accepts(text):
+            raise TokenizerGap(f"{name}:{e.line}: the shell tokenizer stopped ({e.reason}) "
+                               "on a file `bash -n` accepts; everything after that line "
+                               "would go unread") from None
+        return tokenize_prefix(text)
+
+
+def _bash_accepts(text: str) -> bool:
+    import shutil
+    import subprocess
+    bash = shutil.which("bash")
+    if bash is None:
+        return True          # cannot confirm the shell rejects it: refuse to read a prefix
+    r = subprocess.run([bash, "--norc", "--noprofile", "-n"], input=text.encode(
+        errors="surrogateescape"), capture_output=True, env={"PATH": "", "LC_ALL": "C"},
+        timeout=60)
+    return r.returncode == 0
 
 
 def parsed_prefix(text: str):

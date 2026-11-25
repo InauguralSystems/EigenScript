@@ -95,7 +95,7 @@ import re
 import sys
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _shell_tokens import REDIRECTIONS, parsed_prefix, tokenize_prefix
+from _shell_tokens import REDIRECTIONS, TokenizerGap, parsed_prefix, tokenize_file, tokenize_prefix
 
 NAME_RE = re.compile(r"eigenscript(?:-[a-z0-9]+)*")
 FULL_NAME_RE = re.compile(r"^eigenscript(?:-[a-z0-9]+)*$")
@@ -170,6 +170,17 @@ def _unquote(word):
 # Each of those is now an incident row the oracle replays (INCIDENTS), not a
 # local patch.  Text the shell cannot tokenize is read up to the line where it
 # stops, as bash executes what it parsed before a syntax error.
+
+
+def _require_tokenizable(text, name):
+    """A whole shell file bash accepts but the tokenizer stops on would be
+    derived from a prefix only: stop the derivation (consumer_acceptance
+    then marks the row variant-derivation) instead of passing on less."""
+    try:
+        tokenize_file(text, name)
+    except TokenizerGap as gap:
+        print(f"derive-variants: INSTRUMENT ERROR: {gap}", file=sys.stderr)
+        sys.exit(2)
 
 
 def shell_lines(text):
@@ -633,6 +644,7 @@ def derive(root):
                     for m in NAME_RE.finditer(line):
                         occurrences.append((m.group(0), rel, i + 1))
                 if kind == "shell":
+                    _require_tokenizable(text, rel)
                     scan_shell(text, hits, rel)
                 elif kind == "python":
                     scan_python(text, hits, rel)
@@ -976,6 +988,7 @@ def main(argv):
         except OSError:
             return 1
         base = os.path.basename(argv[2])
+        _require_tokenizable(text, base)
         scan_shell(text, hits, base)
         scan_path_edits(text, edits, base)
         seen = set()

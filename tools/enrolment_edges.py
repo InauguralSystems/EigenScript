@@ -17,7 +17,8 @@ from pathlib import Path
 import yaml
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _shell_tokens import function_definitions, simple_commands, tokenize_prefix, unquote
+from _shell_tokens import (TokenizerGap, function_definitions, simple_commands,
+                           tokenize_file, tokenize_prefix, unquote)
 
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
@@ -401,8 +402,16 @@ if github.exists():
     sources.update(p.relative_to(ROOT) for p in github.rglob("*.yml"))
     sources.update(p.relative_to(ROOT) for p in github.rglob("*.yaml"))
 
+GAPS: list[str] = []
 for source in sorted(sources):
     text = (ROOT / source).read_text(errors="replace")
+    if source.suffix == ".sh":
+        # A whole shell file the tokenizer stops on while bash accepts it
+        # would be read only up to that line: refuse instead of passing.
+        try:
+            tokenize_file(text, source.as_posix())
+        except TokenizerGap as gap:
+            GAPS.append(str(gap))
     if source.parts and source.parts[0] == ".github":
         for command in yaml_run_commands(source):
             shell_edges(source, command)
@@ -473,3 +482,8 @@ for workflow in sorted(p for p in sources if p.parts[:2] == (".github", "workflo
             for word in words[1:]:
                 if "=" not in word and not word.startswith("-"):
                     emit(workflow.as_posix(), f"@make:{word}")
+
+if GAPS:
+    for gap in GAPS:
+        print(f"enrolment-edges: INSTRUMENT ERROR: {gap}", file=sys.stderr)
+    sys.exit(2)
