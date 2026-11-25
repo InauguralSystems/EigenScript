@@ -11,7 +11,8 @@ case "${1:-}" in
         # lacked it, so that gate measured nothing in every container lane.
         apt-get update
         apt-get install -y --no-install-recommends \
-            libsdl2-dev libsdl2-mixer-2.0-0 xvfb xauth x11-utils xdotool \
+            libsdl2-dev libsdl2-mixer-2.0-0 libsdl2-ttf-2.0-0 libsdl2-ttf-dev \
+            fonts-dejavu-core xvfb xauth x11-utils xdotool \
             python3-pil zlib1g-dev time
         ;;
     macos)
