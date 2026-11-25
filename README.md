@@ -67,6 +67,8 @@ line or `when` ordinal must be an exact whole number: a fraction, a non-finite
 value or a line outside the C `int` range raises `value` instead of being
 truncated. Audio generators round `duration * rate` half away from zero to get
 their sample count.
+`seed_random` consumes all 64 bits of an int64 seed; its compatibility range
+and 48-bit-state collision limit are specified in [the builtin reference](docs/BUILTINS.md).
 
 See [Argument guards and arithmetic traps](docs/SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states; wrong-typed builtin arguments raise `type_mismatch` in all three.
 
