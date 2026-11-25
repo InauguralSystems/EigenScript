@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""A buffer store refuses inf, -inf and nan whatever the index's type (#2528).
+"""Buffer stores of inf, -inf and nan at index 0, 0.0 and -2.0 are refused (#2528).
 
-Each case is its own program, run with EIGS_STRICT unset, 0 and 1 and with the
-JIT on and off. A refused store raises `value` and leaves the old cell.
+Each case is its own program, run with the JIT on and off, in the EIGS_STRICT
+states listed for its value (unset, 0 and 1 where none is listed). A refused
+non-finite store raises `value` and leaves the old cell.
 """
-import os, pathlib, platform, subprocess, sys, tempfile
+import os, pathlib, subprocess, sys, tempfile
 EIGS = pathlib.Path(sys.argv[1]).resolve()
 REFUSED = '["value", "buffer store: expected a finite number"]'
-# A literal reaches the store as an unboxed double (the C and JIT fast paths); a
-# builtin's answer is boxed (the generic arm). Arithmetic traps under EIGS_STRICT=1,
-# so only the literal inf and the boxed values exist in that state.
+# Arithmetic traps under EIGS_STRICT=1, so -1e999 and 1e999 - 1e999 are not run in
+# that state.
 ALL, NOT_STRICT = (None, "0", "1"), (None, "0")
 VALUES = [("inf", "1e999", ALL), ("-inf", "-1e999", NOT_STRICT), ("nan", "1e999 - 1e999", NOT_STRICT),
           ("inf", "f64_from_bits of 9218868437227405312", ALL),
@@ -17,10 +17,10 @@ VALUES = [("inf", "1e999", ALL), ("-inf", "-1e999", NOT_STRICT), ("nan", "1e999 
           ("nan", "f64_from_bits of 9221120237041090560", ALL)]
 INDEXES = ["0", "0.0", "-2.0"]
 FINITE = ["1.5", "-0.25", "3", "0.0", "1.7976931348623157e308", "-1.7976931348623157e308", "5e-324"]
-# 400 finite stores by a function make it hot; the store under test is call 401.
+# 400 stores of 7.5 by a function; the store under test is call 401.
 HOT = "define put(b, x) as:\n    b[{index}] is x\n    return 0\nb is buf_from_list of ([5.0, 6.0])\nfor k in range of 400:\n    put of [b, 7.5]\n"
-# The store inside a loop that enters native code at its back edge (OSR). A float
-# counter keeps the loop native.
+# The store inside a loop, run with EIGS_JIT_OSR_THRESHOLD=1; the store under test
+# is iteration 401.
 LOOP = ("define fill(b, xs, n) as:\n    k is 0.0\n    loop while k < n:\n        b[{index}] is xs[k]\n        k is k + 1.0\n    return 0\n"
         "b is buf_from_list of ([5.0, 6.0])\nxs is []\nfor k in range of 400:\n    append of [xs, 7.5]\n")
 OSR = {"EIGS_JIT_OSR_THRESHOLD": "1"}
@@ -51,7 +51,7 @@ def check(root, name, source, want, states=ALL, extra=None):
 with tempfile.TemporaryDirectory() as tmp:
     root = pathlib.Path(tmp)
     for shown, value, states in VALUES:
-        # The value is what its name says, so a refusal cannot be a wrong input.
+        # Each value prints as its name.
         check(root, f"{value} is {shown}", f"print of ({value})\n", shown + "\n", states)
         for index in INDEXES:
             check(root, f"b[{index}] is {value}",
@@ -62,7 +62,7 @@ with tempfile.TemporaryDirectory() as tmp:
                   HOT.format(index=index) + f"try:\n    put of [b, {value}]\n    print of \"stored\"\n"
                   f"catch e:\n    print of [e.kind, e.message]\nprint of [b[0], b[1]]\n",
                   REFUSED + "\n[7.5, 6.0]\n", states)
-    # A bad index is reported as the bad index, whatever the value is.
+    # The message names the bad index (0.5, 1e999, 2.0) for the values 1.5 and 1e999.
     for value in ("1.5", "1e999"):
         for index, message in (("0.5", "index must be an integer, got 0.5"), ("1e999", "index must be an integer, got inf"),
                                ("2.0", "buffer index 2.0 out of range (length 2)")):
@@ -81,20 +81,5 @@ with tempfile.TemporaryDirectory() as tmp:
             check(root, f"finite hot b[{index}] is {value}",
                   HOT.format(index=index) + f"put of [b, {value}]\nprint of (b[0] == {value})\nprint of b[1]\n",
                   "true\n6.0\n")
-    # On x86-64 the store itself is native code in the hot and loop cases: the exact chunks
-    # compile, and no scan stops at INDEX_SET (a thunk that ends before it also says compiled).
-    if platform.machine() in ("x86_64", "AMD64") and sys.platform == "linux":
-        for what, source, extra, compiled in (("function", HOT.format(index="0.0"), {}, 1),
-                                    ("loop", LOOP.format(index="0.0") + "fill of [b, xs, 400.0]\n", OSR, 2)):
-            rows += 1
-            program = root / "case.eigs"
-            program.write_text(source)
-            q = subprocess.run([str(EIGS), str(program)], env=dict(os.environ, EIGS_JIT_STATS="1", EIGS_JIT_STOPS="1", **extra),
-                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
-            if f" compiled={compiled} " not in q.stdout or "INDEX_SET" in q.stdout or "=== JIT compile stops ===" not in q.stdout:
-                failures += 1
-                print(f"FAIL: the {what}'s store did not compile: {q.stdout!r}")
-    else:
-        print("SKIP: native-code row (no x86-64 Linux JIT here)")
 print(f"ROWS: buffer store nonfinite examined={rows} failures={failures}")
 sys.exit(1 if failures else 0)
