@@ -29,7 +29,8 @@ measured resolution and blind spots.
 
 Tokens are (kind, text, line, start, end, subst, heredoc):
 
-  kind     'word' | 'pattern' (a case pattern) | 'op' | 'redir' | 'newline'
+  kind     'word' | 'pattern' (a case pattern) | 'arith' (a `(( ))` command or
+           `for (( ))` header) | 'op' | 'redir' | 'newline'
   text     a word's source text with line continuations removed (quotes kept;
            unquote() removes them), or the operator text without IO number
   line     1-based line of the token's first character
@@ -155,7 +156,7 @@ class _Lexer:
             return self.backtick(j, subst)
         nxt = t[j + 1:j + 2]
         if t.startswith("$((", j) and self.arith_closes(j + 3):
-            return self.arith(j + 3, j)
+            return self.arith(j + 3, j, subst)
         if nxt == "(":
             return self.cmdsub(j + 2, subst, j)
         if nxt == "{":
@@ -206,36 +207,51 @@ class _Lexer:
         subst.append(self.clean(body_start, end))
         return end + 1
 
+    def arith_scan(self, j: int, subst: list) -> int | None:
+        """End (after `))`) of an arithmetic body starting at j, or None if
+        its parentheses do not close as `))`.  Quotes, ${...}, $(...) and
+        backquotes inside are read as such; their bodies go to SUBST."""
+        depth = 0
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                if self.text[j + 1:j + 2] == "\n":
+                    self.cuts.add(j)
+                j += 2
+                continue
+            if c == "'":
+                j = self.single(j)
+                continue
+            if c == '"':
+                j = self.double(j, subst)
+                continue
+            if c in "$`":
+                j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                if depth == 0:
+                    return j + 2 if self.text[j + 1:j + 2] == ")" else None
+                depth -= 1
+            j += 1
+        return None
+
     def arith_closes(self, j: int) -> bool:
         """Whether `$((` at j-3 is arithmetic: its parens close as `))`."""
-        depth = 0
-        while j < self.n:
-            c = self.text[j]
-            if c in "'\"":
-                return False
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                if depth == 0:
-                    return self.text[j + 1:j + 2] == ")"
-                depth -= 1
-            j += 1
-        return False
+        cuts = set(self.cuts)
+        try:
+            return self.arith_scan(j, []) is not None
+        except ShellLexError:
+            return False
+        finally:
+            self.cuts = cuts
 
-    def arith(self, j: int, opener: int) -> int:
-        depth = 0
-        while j < self.n:
-            c = self.text[j]
-            if c == "(":
-                depth += 1
-            elif c == ")":
-                if depth == 0:
-                    if self.text[j + 1:j + 2] != ")":
-                        self.err("unterminated $((...))", opener)
-                    return j + 2
-                depth -= 1
-            j += 1
-        self.err("unterminated $((...))", opener)
+    def arith(self, j: int, opener: int, subst: list) -> int:
+        end = self.arith_scan(j, subst)
+        if end is None:
+            self.err("unterminated $((...))", opener)
+        return end
 
     def param(self, j: int, subst: list, opener: int) -> int:   # after ${
         while j < self.n:
@@ -304,13 +320,14 @@ class _Body:
         self.i = start
         self.closer = closer
         self.tokens: list[Token] = []
-        self.pending: list[tuple[int, str, bool]] = []   # token idx, delim, strip
+        self.pending: list[tuple[int, str, bool, bool]] = []  # idx, delim, strip, quoted
         self.parens = 0
         self.cmdpos = True
         self.case: list[str] = []      # per open case: 'word' | 'in' | 'pattern' | 'body'
         self.dbracket = False
         self.expect_delim = None       # (token idx, strip) awaiting the delimiter word
         self.regex_next = False        # the word after `=~` inside [[ ]]
+        self.after_for = False         # `for` was just read: `((` is arithmetic
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -410,6 +427,17 @@ class _Body:
             if self.closer and c == ")" and self.parens == 0 and not self.in_pattern() \
                     and not self.dbracket:
                 return self.i
+            if t.startswith("((", self.i) and not self.dbracket and \
+                    (self.cmdpos or self.after_for) and lx.arith_closes(self.i + 2):
+                subst: list = []
+                end = lx.arith(self.i + 2, self.i, subst)
+                self.emit(Token("arith", lx.clean(self.i, end), lx.line_of(self.i),
+                                self.i, end, tuple(subst)))
+                self.i = end
+                self.after_for = False
+                self.cmdpos = False
+                continue
+            self.after_for = False
             op = self.match_op()
             if op and not (self.dbracket and op not in (";", "\n")):
                 self.handle_op(op)
@@ -491,7 +519,8 @@ class _Body:
         if self.expect_delim is not None:
             idx, strip = self.expect_delim
             self.expect_delim = None
-            self.pending.append((idx, unquote(word), strip))
+            quoted = any(c in word for c in "'\"\\")
+            self.pending.append((idx, unquote(word), strip, quoted))
             return
         if self.dbracket:
             if word == "=~":
@@ -515,6 +544,8 @@ class _Body:
         if word == "{":
             self.cmdpos = True                # a group or function body opens
             return
+        if self.cmdpos and word in ("for", "select"):
+            self.after_for = True
         if self.cmdpos:
             if word == "case":
                 self.case.append("word")
@@ -537,12 +568,20 @@ class _Body:
 
     def read_heredocs(self):
         lx, t = self.lx, self.lx.text
-        for idx, delim, strip in self.pending:
+        for idx, delim, strip, quoted in self.pending:
             body_start = self.i
             while self.i < lx.n:
                 nl = t.find("\n", self.i)
                 line_end = lx.n if nl < 0 else nl
                 line = t[self.i:line_end]
+                # With an unquoted delimiter, backslash-newline joins body
+                # lines before the delimiter is looked for (bash and dash).
+                while not quoted and nl >= 0 and \
+                        (len(line) - len(line.rstrip("\\"))) % 2 == 1:
+                    nl = t.find("\n", line_end + 1)
+                    nxt_end = lx.n if nl < 0 else nl
+                    line = line[:-1] + t[line_end + 1:nxt_end]
+                    line_end = nxt_end
                 cmp = line.lstrip("\t") if strip else line
                 if cmp == delim:
                     body = t[body_start:self.i]
@@ -692,20 +731,8 @@ def unquote(word: str) -> str:
             j = i + 2
             while j < n and word[j] != "'":
                 if word[j] == "\\" and j + 1 < n:
-                    e = word[j + 1]
-                    if e in _ANSI:
-                        out.append(_ANSI[e])
-                        j += 2
-                        continue
-                    if e in "01234567":
-                        k = j + 1
-                        while k < n and k < j + 4 and word[k] in "01234567":
-                            k += 1
-                        out.append(chr(int(word[j + 1:k], 8)))
-                        j = k
-                        continue
-                    out.append(word[j:j + 2])
-                    j += 2
+                    text, j = _ansi_escape(word, j)
+                    out.append(text)
                     continue
                 out.append(word[j])
                 j += 1
@@ -740,6 +767,40 @@ def unquote(word: str) -> str:
     return "".join(out)
 
 
+def _byte(b: int) -> str:
+    """A byte as str: ASCII as itself, others as surrogate escapes (so they
+    encode back to the same byte, as bash emits it)."""
+    b &= 0xFF
+    return chr(b) if b < 0x80 else chr(0xDC00 + b)
+
+
+def _ansi_escape(word: str, j: int) -> tuple[str, int]:
+    """Decode the escape at word[j] (a backslash) inside $'...' as bash does."""
+    n = len(word)
+    e = word[j + 1]
+    if e in _ANSI:
+        return _ANSI[e], j + 2
+    if e in "01234567":
+        k = j + 1
+        while k < n and k < j + 4 and word[k] in "01234567":
+            k += 1
+        return _byte(int(word[j + 1:k], 8)), k
+    hexd = "0123456789abcdefABCDEF"
+    if e in "xuU":
+        width = {"x": 2, "u": 4, "U": 8}[e]
+        k = j + 2
+        while k < n and k < j + 2 + width and word[k] in hexd:
+            k += 1
+        if k == j + 2:
+            return word[j:j + 2], j + 2
+        value = int(word[j + 2:k], 16)
+        return (_byte(value) if e == "x" else chr(value)), k
+    if e == "c" and j + 2 < n:
+        x = word[j + 2]
+        return ("\x7f" if x == "?" else chr(ord(x.upper()) & 0x1F)), j + 3
+    return word[j:j + 2], j + 2
+
+
 def _skip_expansion(word: str, i: int) -> int:
     """End of the expansion at word[i] ($(..), ${..}, `..`), kept literal."""
     lx = _Lexer(word)
@@ -757,13 +818,24 @@ def function_definitions(tokens):
     or a $(...) body (a subshell) is not one."""
     names = []
     prev = None
+    depth = 0                         # open ( ) subshells
     for i, tok in enumerate(tokens):
+        if tok.kind == "op" and tok.text in ("(", ")"):
+            nxt = tokens[i + 1] if i + 1 < len(tokens) else None
+            fn_parens = (tok.text == "(" and prev is not None and prev.kind == "word"
+                         and nxt is not None and nxt.text == ")") or \
+                        (tok.text == ")" and prev is not None and prev.text == "(")
+            pattern = (tok.text == "(" and nxt is not None and nxt.kind == "pattern") or \
+                      (tok.text == ")" and prev is not None and prev.kind == "pattern")
+            if not fn_parens and not pattern:
+                depth += 1 if tok.text == "(" else -1
+                depth = max(depth, 0)
         closes_pattern = prev is not None and prev.text == ")" and i >= 2 \
             and tokens[i - 2].kind == "pattern"
         at_start = prev is None or prev.kind in ("op", "newline") and prev.text != ")" \
             or closes_pattern \
             or (prev.kind == "word" and prev.text in RESERVED_OPENERS)
-        if tok.kind == "word" and at_start:
+        if tok.kind == "word" and at_start and depth == 0:
             nxt = tokens[i + 1:i + 3]
             if tok.text == "function" and nxt and nxt[0].kind == "word" \
                     and _plain_name(nxt[0].text):

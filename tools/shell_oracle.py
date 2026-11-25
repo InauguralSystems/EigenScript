@@ -48,6 +48,18 @@ BLIND SPOTS (what no oracle here can see):
     known classes; the plant table shows which.
   * bash-only acceptance: dash is consulted only for `#!/bin/sh` files.
   * runtime-decided commands (eval, bash -c "$v", aliases) are not lexical.
+  * O4 samples: at most PROBE_CAP comment and code probes per file, code
+    probes only in files holding `<<`, and each here-document's first and
+    last body line (--full lifts the caps).
+  * O3 normalizes what bash's reprint rewrites (spacing, `-n` inside [[ ]],
+    $'...' spelling, `case X in` layout, an implicit `for` list, the order of
+    redirections, here-document continuations) and does not compare
+    redirection targets; a file whose reprint misplaces a here-document from
+    an `if`/`while` header is counted as o3_reprint_unusable, not compared.
+  * a here-document opened inside a $( ) that closes on the same line
+    (`$(cat <<EOF)`), and a function defined in a pipeline element (a
+    subshell bash discards), are read differently from bash; neither occurs
+    in the tree.  The plants run on every 4th file plus the incidents.
 """
 from __future__ import annotations
 
@@ -92,6 +104,10 @@ def shape(text, mod=ST, depth=0):
                 body = tok.heredoc
                 if tok.text == "<<-":
                     body = "\n".join(l.lstrip("\t") for l in body.split("\n"))
+                if not any(c in nxt for c in "'\"\\"):
+                    # unquoted delimiter: bash's reprint has already joined
+                    # backslash-newline continuations in the body
+                    body = re.sub(r"(?<!\\)((?:\\\\)*)\\\n", r"\1", body)
                 docs.append(body)
     pieces = []
     for cmd in mod.simple_commands(toks):
@@ -124,6 +140,12 @@ def shape(text, mod=ST, depth=0):
             continue
         cmds.append(tuple(_word_shape(w, s, mod, depth) for w, s in zip(words, subs)))
     funcs = tuple(mod.function_definitions(toks)) if hasattr(mod, "function_definitions") else ()
+    # Arithmetic commands, spacing ignored (bash's reprint respaces them),
+    # with the shapes of any substitutions inside.
+    arith = tuple((re.sub(r"\s+", "", t.text),
+                   tuple(shape(b, mod, depth + 1) for b in t.subst))
+                  for t in toks if t.kind == "arith")
+    funcs = funcs + (("arith",) + arith if arith else ())
     # Redirections as a multiset: bash's reprint may move a compound
     # command's redirections relative to the ones inside it.
     return (tuple(cmds), tuple(sorted(redirs)), tuple(docs), funcs)
@@ -578,6 +600,21 @@ INCIDENTS = [
     # held out (DMG): a `#` inside the =~ regex is not a comment.
     ('[[ "$l" =~ ^[[:space:]]*(#|$) ]] && continue\nnext\n',
      [["[[", '"$l"', "=~", "^[[:space:]]*(#|$)", "]]"], ["continue"], ["next"]], []),
+    # critic r1: `<<` inside (( )) is a shift, not a here-document.
+    ("(( n = n << 1 ))\neigenscript-full a.eigs\n", [["eigenscript-full", "a.eigs"]], []),
+    ("for (( i=0; i<n; i++ )); do x; done\n", [["for"], ["do", "x"], ["done"]], []),
+    # critic r1: a $( ) inside $(( )) is run; a quote inside $(( )) is not a $( ).
+    ("n=$(( $(eigenscript-full a.eigs) + 1 ))\n",
+     [["n=$(( $(eigenscript-full a.eigs) + 1 ))"]], [], ["eigenscript-full a.eigs"]),
+    ('x=$(( "1" + 2 ))\n', [['x=$(( "1" + 2 ))']], [], []),
+    # critic r1: backquote bodies are recorded (the deriver scans them).
+    ("echo `c a` \"$(d)\"\n", [["echo", "`c a`", '"$(d)"']], [], ["c a", "d"]),
+    # critic r1: unquoted delimiter -- backslash-newline joins body lines first.
+    ("cat <<EOF\nline \\\nEOF\nprose\nEOF\nreal\n", [["cat"], ["real"]],
+     ["line \\\nEOF\nprose\n"]),
+    ("cat <<'EOF'\nline \\\nEOF\nreal\n", [["cat"], ["real"]], ["line \\\n"]),
+    # `<<-` strips leading TABS only: a space-indented delimiter does not end it.
+    ("cat <<-X\n\tbody\n  X\n\tX\nreal\n", [["cat"], ["real"]], ["\tbody\n  X\n"]),
     # ${x:-...} with a nested substitution and a `}` in quotes.
     ('echo ${x:-"}"$(y)} t\n', [["echo", '${x:-"}"$(y)}', "t"]], []),
 ]
@@ -590,16 +627,31 @@ FUNC_INCIDENTS = [
     ("if true; then k() { :; }; fi; a && m() { :; }\n", ["k", "m"]),
     # held out (EigenMiniSat): a stub defined in a case branch.
     ("case $p in a) find() { return 7; } ;; esac\n", ["find"]),
+    # critic r1: a definition inside a ( ) subshell is gone when it closes.
+    ("( f() { :; } )\ng() { :; }\n", ["g"]),
+]
+
+
+UNQUOTE_INCIDENTS = [
+    # critic r1: ANSI-C escapes as bash decodes them (bash 5.2, C.UTF-8).
+    ("$'\\x41'", "A"), ("$'\\101'", "A"), ("$'\\cA'", "\x01"), ("$'\\c?'", "\x7f"),
+    ("$'\\x4g'", "\x04g"), ("$'\\u00e9'", "\u00e9"), ("$'\\777'", "\udcff"),
+    ("a\\ b'c'\"d\\\"e\"", 'a bcd"e'),
 ]
 
 
 def check_incidents(mod=ST):
     F = []
+    for word, want in UNQUOTE_INCIDENTS:
+        got = mod.unquote(word)
+        if got != want:
+            F.append(f"H unquote {word!r}: {got!r}, want {want!r}")
     for text, want in FUNC_INCIDENTS:
         got = mod.function_definitions(mod.tokenize(text))
         if got != want:
             F.append(f"H {text!r}: function definitions {got!r}, want {want!r}")
-    for text, want_cmds, want_docs in INCIDENTS:
+    for row in INCIDENTS:
+        text, want_cmds, want_docs = row[:3]
         try:
             toks = mod.tokenize(text)
         except Exception as e:
@@ -609,6 +661,10 @@ def check_incidents(mod=ST):
         docs = [t.heredoc for t in toks if t.heredoc is not None]
         if got != want_cmds or docs != want_docs:
             F.append(f"H {text!r}: got {got!r} docs {docs!r}")
+        if len(row) > 3:
+            subs = [b for t in toks for b in t.subst]
+            if subs != row[3]:
+                F.append(f"H {text!r}: substitution bodies {subs!r}, want {row[3]!r}")
     return F
 
 
@@ -643,9 +699,29 @@ PLANTS = [
     ("dbracket-operands-as-operators",
      "                self.dbracket = True\n",
      "                self.dbracket = False\n", {"H"}),
+    ("arith-expansion-read-as-command-substitution",
+     'if t.startswith("$((", j) and self.arith_closes(j + 3):',
+     'if False:', {"H"}),
+    ("arith-command-read-as-subshells",
+     '            if t.startswith("((", self.i) and not self.dbracket and \\',
+     '            if False and \\', {"H"}),
+    ("backquote-bodies-dropped",
+     '                subst.append("".join(body))\n                return j + 1',
+     '                return j + 1', {"H"}),
+    ("heredoc-delimiter-compared-stripped",
+     '                cmp = line.lstrip("\\t") if strip else line',
+     '                cmp = line.strip()', {"H"}),
+    ("heredoc-continuation-ignored",
+     '                while not quoted and nl >= 0 and \\',
+     '                while False and \\', {"H"}),
+    ("ansi-hex-escape-literal",
+     '    if e in "xuU":', '    if False:', {"H"}),
+    ("subshell-definitions-counted",
+     '        if tok.kind == "word" and at_start and depth == 0:',
+     '        if tok.kind == "word" and at_start:', {"H"}),
     ("quoted-heredoc-delimiter-not-unquoted",
-     "            self.pending.append((idx, unquote(word), strip))",
-     "            self.pending.append((idx, word, strip))", {"H", "O1", "O3", "O4"}),
+     "            self.pending.append((idx, unquote(word), strip, quoted))",
+     "            self.pending.append((idx, word, strip, quoted))", {"H", "O1", "O3", "O4"}),
 ]
 
 
@@ -680,7 +756,7 @@ def load_items(paths):
 
 
 def incident_items():
-    return [(f"incident#{i}", t) for i, (t, _, _) in enumerate(INCIDENTS)]
+    return [(f"incident#{i}", row[0]) for i, row in enumerate(INCIDENTS)]
 
 
 def selftest():
