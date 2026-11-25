@@ -17,30 +17,70 @@ load_file of "lib/ui.eigs"
 define _printable_byte(addr) as:
     return addr + 32
 
-hv is hex_view of ["ttf-bytes", 4, 4, 620, 190, _printable_byte, 95]
-hv.bytes_per_row is 12
+hv is hex_view of ["ttf-bytes", 4, 4, 460, 190, _printable_byte, 95]
+hv.bytes_per_row is 16
 m is hex_view_metrics of hv
+assert_eq of [m.ascii_x + 16 * m.cw, 396, "#1646 a 16-byte row under DejaVu needs 396px"]
 
 gfx_clear of [1, 2, 3]
 render of [hv, 0, 0]
-gfx_present of null
 
 examined is 0
-for addr in range of [1, 95]:
+for addr in range of [0, 95]:
     local row is floor of (addr / m.bpr)
     local col is addr - row * m.bpr
     local x0 is hv.x + m.ascii_x + col * m.cw
     local y0 is hv.y + 2 + row * m.row_h
+    # Cell 95 is intentionally empty and supplies the actual rendered
+    # background.  Count only pixels on the bg->ASCII-text colour family.
+    local empty_x is hv.x + m.ascii_x + 15 * m.cw
+    local empty_y is hv.y + 2 + 5 * m.row_h
+    local bg is gfx_read of [empty_x, empty_y]
+    local fg is _theme.hex_ascii
     local ink is 0
     for yy in range of [y0, y0 + m.row_h]:
         for xx in range of [x0, x0 + m.cw]:
             local px is gfx_read of [xx, yy]
             if px != null:
-                if px[0] != _theme.hex_bg[0] or px[1] != _theme.hex_bg[1] or px[2] != _theme.hex_bg[2]:
+                local family is 1
+                local changed is 0
+                for channel in range of 3:
+                    if px[channel] != bg[channel]:
+                        changed is 1
+                    if fg[channel] >= bg[channel]:
+                        if px[channel] < bg[channel] or px[channel] > fg[channel]:
+                            family is 0
+                    else:
+                        if px[channel] > bg[channel] or px[channel] < fg[channel]:
+                            family is 0
+                if family == 1 and changed == 1:
                     ink is ink + 1
-    assert_true of [ink > 0, f"#1646 TTF ASCII byte {addr + 32} has ink inside its cell"]
+    if addr == 0:
+        assert_eq of [ink, 0, "#1646 TTF space control has no ink"]
+    else:
+        assert_true of [ink > 0, f"#1646 TTF ASCII byte {addr + 32} has text-colour ink inside its cell"]
     examined is examined + 1
 
-assert_eq of [examined, 94, "#1646 render-decode examined every non-space printable byte"]
+assert_eq of [examined, 95, "#1646 render-decode examined every printable byte"]
+
+# Regression fixture from ui_w_button.eigs:116.  Its one-glyph label is wider
+# than the 12px content width, but the widget clip should crop drawn ink.
+btn is button of ["narrow-W", 4, 210, 16, 20, "W", null]
+render of [btn, 0, 0]
+button_ink is 0
+for yy in range of [212, 228]:
+    for xx in range of [6, 18]:
+        local px is gfx_read of [xx, yy]
+        local family is 1
+        local changed is 0
+        for channel in range of 3:
+            if px[channel] != _theme.btn_bg[channel]:
+                changed is 1
+            if px[channel] < _theme.btn_bg[channel] or px[channel] > _theme.btn_text[channel]:
+                family is 0
+        if family == 1 and changed == 1:
+            button_ink is button_ink + 1
+assert_true of [button_ink > 0, "#1646 narrow one-glyph button draws cropped TTF ink"]
+gfx_present of null
 gfx_close of null
 test_summary of null

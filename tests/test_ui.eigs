@@ -2501,7 +2501,12 @@ hp.bytes_per_row is 95
 hp_metric_calls0 is _bool_metrics.calls
 hpm is hex_view_metrics of hp
 assert_eq of [hpm.cw, 9, "#1646 ASCII cell uses the widest printable glyph"]
-assert_eq of [_bool_metrics.calls - hp_metric_calls0, 98, "#1646 cold metrics scan measures width/height signature plus 95 glyphs and row height"]
+assert_eq of [hpm.hex_cw, 6, "#1646 hex geometry uses the widest hex digit, not the widest printable glyph"]
+hp16 is hex_view of ["hp16", 0, 0, 460, 20, _hx_printable_reader, 16]
+hp16m is hex_view_metrics of hp16
+assert_eq of [hp16m.ascii_x + 16 * hp16m.cw, 448, "#1646 full 16-byte row width is pinned"]
+assert_true of [hp16m.ascii_x + 16 * hp16m.cw <= 460, "#1646 all 16 ASCII cells fit a 460px widget"]
+assert_eq of [_bool_metrics.calls - hp_metric_calls0, 117, "#1646 cold metrics scan measures signature, printable ASCII, hex digits, the zero and row height"]
 hp_metric_calls1 is _bool_metrics.calls
 hex_view_metrics of hp
 assert_eq of [_bool_metrics.calls - hp_metric_calls1, 2, "#1646 cached metrics measure only the width/height font signature"]
@@ -2524,9 +2529,10 @@ hp_selected_text is 0
 for gi in range of (len of _gfx_log):
     call is _gfx_log[gi]
     if call[0] == "text" and call[1][0] >= hpm.ascii_x and call[1][2] == " ":
-        if call[1][3] == _theme.hex_sel_text[0] and call[1][4] == _theme.hex_sel_text[1] and call[1][5] == _theme.hex_sel_text[2]:
+        local expected is _hex_contrast_text of _theme.highlight_bg
+        if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
             hp_selected_text is 1
-assert_eq of [hp_selected_text, 1, "#1646 highlighted ASCII uses selected-text contrast"]
+assert_eq of [hp_selected_text, 1, "#1646 highlighted ASCII chooses contrast from its drawn fill"]
 _proportional_metrics is 0
 
 # ---- Consumer contract 2: a record-inspector shape (tidelog-like) ----
@@ -3900,10 +3906,10 @@ define _wcag_contrast(a, b) as:
     return (la + 0.05) / (lb + 0.05)
 
 for ti in range of (len of coverage_builtin_themes):
-    assert_true of [coverage_builtin_themes[ti].hex_sel_text != null, "built-in theme supplies selected hex text role"]
     for ri in range of (len of coverage_theme_roles):
         assert_true of [coverage_builtin_themes[ti][coverage_theme_roles[ri]] != null, "built-in theme supplies generic highlight role"]
-        assert_true of [(_wcag_contrast of [coverage_builtin_themes[ti].hex_sel_text, coverage_builtin_themes[ti][coverage_theme_roles[ri]]]) >= 4.5, "#1646 selected ASCII, hex digits and marker meet WCAG contrast over every highlight"]
+        local chosen is _hex_contrast_text of coverage_builtin_themes[ti][coverage_theme_roles[ri]]
+        assert_true of [(_wcag_contrast of [chosen, coverage_builtin_themes[ti][coverage_theme_roles[ri]]]) >= 4.5, "#1646 black/white chooser meets WCAG contrast for built-in highlight fills"]
 coverage_legacy_theme is {"bg": [7, 8, 9]}
 set_theme of coverage_legacy_theme
 assert_eq of [(theme_color of ["highlight_bg", [11, 22, 33]])[1], 22, "legacy theme missing highlight role uses fallback"]
@@ -4562,5 +4568,59 @@ catch _bool_separator_error:
     _bool_separator_message is _bool_separator_error
 assert_eq of [_bool_separator_rejected, true, "separator rejects bool orientation"]
 assert_eq of [_bool_separator_message, "separator: vertical must be num, got bool", "separator names invalid vertical argument"]
+
+
+# #1646 Box 3: a one-character overflow reaches gfx_text rather than vanishing.
+_gfx_rec is 1
+_gfx_log is []
+_draw_text_clipped of [0, 0, 1, "W", [1, 2, 3], 1]
+assert_eq of [len of _gfx_log, 1, "#1646 one-glyph overflow is drawn and left to the active clip"]
+
+# A spy on the clipper proves the hex ASCII column bypasses it.  Keep this at
+# the end because EigenScript function redefinition is global.
+_hex_ascii_clipper_calls is 0
+define _draw_text_clipped(x, y, w, text, color, scale) as:
+    if text == "W":
+        _hex_ascii_clipper_calls is _hex_ascii_clipper_calls + 1
+    gfx_text of [x, y, text, color[0], color[1], color[2], scale]
+
+_proportional_metrics is 1
+define _hex_spy_reader(addr) as:
+    if addr == 0:
+        return 87
+    return 0 - 1
+spy_hv is hex_view of ["contrast-spy", 0, 0, 460, 20, _hex_spy_reader, 2]
+spy_m is hex_view_metrics of spy_hv
+spy_themes is [theme_dark of null, theme_light of null, theme_high_contrast of null]
+spy_fills is ["highlight_bg", "highlight_alt_bg", "highlight_active_bg", "focus_ring"]
+for sti in range of (len of spy_themes):
+    set_theme of spy_themes[sti]
+    for sfi in range of (len of spy_fills):
+        spy_hv.cursor is null
+        spy_hv.highlights is [{"start": 0, "end": 2, "style": spy_fills[sfi]}]
+        _record_render_hex of [spy_hv, 0, 0]
+        local fill is spy_themes[sti][spy_fills[sfi]]
+        local expected is _hex_contrast_text of fill
+        local matched is 0
+        for si in range of (len of _gfx_log):
+            local call is _gfx_log[si]
+            if call[0] == "text" and (call[1][2] == "57" or call[1][2] == "W" or call[1][2] == ".."):
+                if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
+                    matched is matched + 1
+        assert_eq of [matched, 3, "#1646 drawn ASCII, hex digits and marker contrast with each highlight fill"]
+    spy_hv.highlights is []
+    spy_hv.cursor is 0
+    _record_render_hex of [spy_hv, 0, 0]
+    local expected is _hex_contrast_text of spy_themes[sti].hex_cursor
+    local matched is 0
+    for si in range of (len of _gfx_log):
+        local call is _gfx_log[si]
+        if call[0] == "text" and (call[1][2] == "57" or call[1][2] == "W"):
+            if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
+                matched is matched + 1
+    assert_eq of [matched, 2, "#1646 drawn ASCII and hex digits contrast with the cursor fill"]
+assert_eq of [_hex_ascii_clipper_calls, 0, "#1646 hex ASCII column never routes through _draw_text_clipped"]
+set_theme of saved_theme
+_proportional_metrics is 0
 
 test_summary of null

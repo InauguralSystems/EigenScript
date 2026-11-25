@@ -14,13 +14,19 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 FONT=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf
-if [ ! -r "$FONT" ]; then
-    echo "SKIP: CI TTF font is not installed: $FONT"
+fail_or_skip() {
+    echo "SKIP: $1"
+    if [ "${EIGS_FAIL_ON_SKIP:-0}" = 1 ]; then
+        echo "FAIL: hosted TTF check may not skip"
+        exit 1
+    fi
     exit 0
+}
+if [ ! -r "$FONT" ]; then
+    fail_or_skip "CI TTF font is not installed: $FONT"
 fi
 if ! command -v Xvfb >/dev/null 2>&1 || ! command -v xdpyinfo >/dev/null 2>&1; then
-    echo "SKIP: Xvfb or xdpyinfo is unavailable"
-    exit 0
+    fail_or_skip "Xvfb or xdpyinfo is unavailable"
 fi
 
 . "$ROOT/tests/xvfb.sh" || exit 1
@@ -30,12 +36,18 @@ OUTPUT=$(DISPLAY="$DISPLAY_NUM" SDL_VIDEODRIVER=x11 EIGS_GFX_FONT="$FONT" \
     "$ROOT/src/eigenscript" "$ROOT/tests/test_hex_view_ttf.eigs" 2>&1)
 RC=$?
 printf '%s\n' "$OUTPUT"
+. "$ROOT/tests/lsan_classify.sh" || exit 1
+lsan_classify "$OUTPUT"; SAN_CLASS=$?
+if [ "$SAN_CLASS" -eq 1 ]; then
+    echo "FAIL: sanitizer diagnostic in TTF render output"
+    exit 1
+fi
 [ "$RC" -eq 0 ] || exit "$RC"
 if printf '%s\n' "$OUTPUT" | grep -q '^SKIP:'; then
-    exit 0
+    fail_or_skip "EigenScript TTF fixture skipped"
 fi
-printf '%s\n' "$OUTPUT" | grep -q 'Tests: 95 | Pass: 95 | Fail: 0' || {
-    echo "FAIL: TTF render-decode did not report all 95 checks"
+printf '%s\n' "$OUTPUT" | grep -q 'Tests: 98 | Pass: 98 | Fail: 0' || {
+    echo "FAIL: TTF render-decode did not report all 98 checks"
     exit 1
 }
 echo "PASS: TTF render-decode found in-cell ink for bytes 33..126"
