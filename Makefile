@@ -897,7 +897,7 @@ pool-off-callenv: build/pool-off-callenv/eigenscript
 	@echo "EigenScript $(VERSION) (pool-off C3: call-env recycling off) built. Binary: $(BINARY)"
 
 # JIT slot witnesses (see FLAGS_jit-checked). Run the JIT-tier sections:
-#   make jit-checked && cd tests && EIGS_SUITE_SECTIONS='82 100 129 130 0fd 0fe' bash run_all_tests.sh
+#   make jit-checked && cd tests && EIGS_SUITE_SECTIONS='82 100 129 130 0fd 0fe 73y' bash run_all_tests.sh
 jit-checked: build/jit-checked/eigenscript
 	$(call RELINK,jit-checked)
 	@echo "EigenScript $(VERSION) (jit-checked: emitted slot witnesses) built. Binary: $(BINARY)"
