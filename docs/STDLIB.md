@@ -2135,6 +2135,7 @@ Internal names below are implementation contracts for maintainers, not a stable 
 | `hex_view_metrics(hv)` | Returns measured glyph, gutter, cell and row dimensions. |
 | `hex_view_addr_at(hv, mx, my)` | Maps screen coordinates to byte address or -1 for a miss. |
 | `_hex_style_color(st)` | Internal: Resolves a theme-key color or preserves literal RGB. |
+| `_hex_contrast_text(fill)` | Internal: Returns black or white, whichever contrasts more with the RGB fill. |
 | `_render_hex_view(widget, ax, ay)` | Internal: Renders visible data rows/cells with measured geometry, palette and containment. |
 | `_mousemove_hex_view(hit, root, mx, my)` | Internal: Updates data-specific hover position from absolute pointer and scroll offsets. |
 | `_mousedown_hex_view(hit, root, mx, my, ev)` | Internal: Selects or toggles a valid data target and reports its configured callback. |

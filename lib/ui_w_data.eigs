@@ -713,7 +713,10 @@ define _render_hex_view(widget, ax, ay) as:
                     cx is cx + m.half_gap
                 # Highlights under the cell (and mirrored under ASCII).
                 local axx is ax + m.ascii_x + ci * m.cw
+                # The highlight is behind both columns, the cursor only behind
+                # the hex digits.
                 local text_fill is null
+                local ascii_fill is null
                 for hi in range of (len of widget.highlights):
                     local hl is widget.highlights[hi]
                     if addr >= hl.start and addr < hl.end:
@@ -721,6 +724,7 @@ define _render_hex_view(widget, ax, ay) as:
                         gfx_rect of [cx - 1, ry - 1, m.cell_w - 2, m.row_h - 1, hc[0], hc[1], hc[2]]
                         gfx_rect of [axx, ry - 1, m.cw, m.row_h - 1, hc[0], hc[1], hc[2]]
                         text_fill is hc
+                        ascii_fill is hc
                 if widget.cursor != null:
                     if addr == widget.cursor:
                         gfx_rrect of [cx - 2, ry - 2, m.cell_w, m.row_h, 0, ccol[0], ccol[1], ccol[2]]
@@ -740,8 +744,8 @@ define _render_hex_view(widget, ax, ay) as:
                     if b >= 32 and b <= 126:
                         ch is chr of b
                     local cellcol is ascol
-                    if text_fill != null:
-                        cellcol is _hex_contrast_text of text_fill
+                    if ascii_fill != null:
+                        cellcol is _hex_contrast_text of ascii_fill
                     # A cell promises exactly one character.  Let gfx_text
                     # rasterise it and the widget clip crop any bearing/ink;
                     # the multi-character clipper must not discard the glyph.
