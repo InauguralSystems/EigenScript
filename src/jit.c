@@ -2542,9 +2542,10 @@ void jit_state_init_thresholds(EigsState *st) {
     if (st->jit_osr_threshold < 1) st->jit_osr_threshold = 1;
 }
 
+#if EIGS_JIT_ENABLED
 /* #2540: the helper, then the pending-error status; the emitted code leaves on
- * nonzero. They live here, not in vm.c: a changed helper signature there moved
- * vm_run_ex's code (bench_buf_mix +1.8% Ir). */
+ * nonzero. They live here because changing the helpers' signatures in vm.c
+ * raised the instruction count of vm_run_ex. */
 static int jit_status_get_name(EigsChunk *chunk, int idx) {
     jit_helper_get_name(chunk, idx); return g_has_error;
 }
@@ -2560,6 +2561,7 @@ static int jit_status_local_dot_set(EigsChunk *chunk, int slot, int name_idx) {
 static int jit_status_index_set(void) {
     jit_helper_index_set(); return g_has_error;
 }
+#endif
 
 /* Phase 2b: the body of jit_try_compile_chunk is now this static helper,
  * parameterized on entry_offset and on output pointers for the

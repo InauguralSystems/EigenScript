@@ -8,7 +8,7 @@ rm -f "$jit_2540_log"
 if rc_ok "$jit_2540_rc" "$jit_2540_out" && [ "$jit_2540_rc" -eq 0 ] &&
    [ "$(printf '%s\n' "$jit_2540_out" | grep -c '^PASS:')" -eq 21 ] &&
    printf '%s\n' "$jit_2540_out" | grep -qxF 'examined=21'; then
-    PASS=$((PASS + 1)); echo "  PASS: twenty-one JIT error-bailout cases match literal interpreter results"
+    PASS=$((PASS + 1)); echo "  PASS: twenty-one cases match their literal results with the JIT on and off"
 else
     FAIL=$((FAIL + 1)); echo "  FAIL: JIT error-bailout regression"
     printf '%s\n' "$jit_2540_out" | sed 's/^/    /'

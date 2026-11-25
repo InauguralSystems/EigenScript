@@ -81,7 +81,7 @@ run_case 'OSR local dot set stops before print' '["type_mismatch", "cannot set f
         print of [e.kind, e.message, e.line]
     return k
 print of f of []' loop
-run_case 'OSR dot get stops before append' '["type_mismatch", "cannot access field '\''x'\'' on num", 9]
+run_case 'OSR dot get raises with its kind and line' '["type_mismatch", "cannot access field '\''x'\'' on num", 9]
 3' 'define f() as:
     d is {"x": {"x": 1.0}}
     out is []
@@ -142,7 +142,7 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of len of out' hot
-run_case 'OSR get name stops before buffer store' '["undefined_name", 7]
+run_case 'OSR get name raises with its kind and line' '["undefined_name", 7]
 8.5' 'define f() as:
     b is buf_from_list of ([5.0, 8.5])
     k is 0.0
@@ -232,7 +232,7 @@ try:
 catch e:
     print of [e.kind, e.line]
 print of changed' loop
-run_case 'OSR dot get raised stops before buffer store' '["type_mismatch", 7]
+run_case 'OSR dot get raised stops before append' '["type_mismatch", 7]
 3' 'g is {"x": {"x": 1.0}}
 define f(out) as:
     k is 0.0
