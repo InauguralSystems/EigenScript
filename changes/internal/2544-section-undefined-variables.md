@@ -1,1 +1,1 @@
-- Added a precheck that rejects undefined upper-case variables in suite section fragments (#2544).
+- A precheck refuses a suite fragment that reads an upper-case variable which neither the fragment, its sourced helpers nor the runner sets (#2544).
