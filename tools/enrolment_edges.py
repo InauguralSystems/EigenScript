@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import ast
 import re
-import shlex
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -18,7 +17,7 @@ from pathlib import Path
 import yaml
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _derive_variants import _subst_bodies, shell_lines
+from _shell_tokens import function_definitions, simple_commands, tokenize_prefix, unquote
 
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
@@ -78,64 +77,45 @@ def eigs_program_path(word: str, source: Path) -> str | None:
 
 
 def shell_commands(text: str):
-    """Yield fresh command lists; heredoc state belongs to this text scan."""
-    logical = re.sub(r"\\\n\s*", " ", text)
-    for _, raw in shell_lines(logical):
-        for words in shell_line_commands(raw):
-            yield list(words)
+    """Yield fresh command lists: every simple command TEXT runs, substitution
+    bodies included, read by the shared tokenizer (tools/_shell_tokens.py,
+    checked against bash by tools/shell_oracle.py).  Here-document bodies,
+    comments and redirection targets are not command words."""
+    for words in _commands(text):
+        yield list(words)
 
 
 @lru_cache(maxsize=8192)
-def shell_line_commands(raw: str) -> tuple[tuple[str, ...], ...]:
+def _commands(text: str) -> tuple[tuple[str, ...], ...]:
     """Cache only pure parsing, never filesystem lookups or mutable generators.
 
-    Suite recovery windows overlap and repeat command lines. shell_lines still
-    decides which lines are executable in each window; the same resulting raw
-    line always parses identically. Callers receive fresh lists so removing
+    Suite recovery windows overlap and repeat command text; the same text
+    always parses identically.  Callers receive fresh lists so removing
     launcher options cannot mutate a later cache hit.
     """
     commands = []
-    # Extract before shlex removes single-quote provenance. Only balanced
-    # executable bodies are commands; suffix path text is an outer operand.
-    for body in _subst_bodies(raw):
-        commands.extend(tuple(words) for words in shell_commands(body))
-    try:
-        parts, start, quote, escaped = [], 0, None, False
-        i = 0
-        while i < len(raw):
-            char = raw[i]
-            if escaped:
-                escaped = False
-            elif char == "\\" and quote != "'":
-                escaped = True
-            elif quote:
-                if char == quote:
-                    quote = None
-            elif char in "'\"":
-                quote = char
-            elif char in ";|`" or raw[i:i + 2] == "&&":
-                parts.append(raw[start:i]); i += 1 if raw[i:i + 2] == "&&" else 0; start = i + 1
-            i += 1
-        parts.append(raw[start:])
-        for part in parts:
-            words = shlex.split(part, comments=True)
-            while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+    tokens = tokenize_prefix(text)
+    # A substitution body is shell wherever it sits, quoted or not.
+    for tok in tokens:
+        for body in tok.subst:
+            commands.extend(_commands(body))
+    for cmd in simple_commands(tokens):
+        words = [unquote(t.text) for t in cmd]
+        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+            words.pop(0)
+        if words and words[0] == "env":
+            words.pop(0)
+            while words and (words[0].startswith("-")
+                             or re.match(r"^[A-Za-z_]\w*=", words[0])
+                             or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
+                                 and words[0] not in {"$EIGS", "${EIGS}"})):
                 words.pop(0)
-            if words and words[0] == "env":
+        if words and words[0] == "timeout":
+            words.pop(0)
+            while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
                 words.pop(0)
-                while words and (words[0].startswith("-")
-                                 or re.match(r"^[A-Za-z_]\w*=", words[0])
-                                 or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
-                                     and words[0] not in {"$EIGS", "${EIGS}"})):
-                    words.pop(0)
-            if words and words[0] == "timeout":
-                words.pop(0)
-                while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
-                    words.pop(0)
-            if words:
-                commands.append(tuple(words))
-    except ValueError:
-        pass
+        if words:
+            commands.append(tuple(words))
     return tuple(commands)
 
 
@@ -182,9 +162,6 @@ def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
     return i
 
 
-_FUNCTION_DEFINITION = re.compile(
-    r"^[ \t]*(?:function[ \t]+([A-Za-z_][A-Za-z0-9_]*)\b|([A-Za-z_][A-Za-z0-9_]*)[ \t]*\([ \t]*\))", re.M)
-_SOURCING_LINE = re.compile(r"(?:^|[\s;&|{(])(?:\.|source)[ \t]+\S")
 _file_info: dict[Path, tuple[frozenset[str], tuple[Path, ...]]] = {}
 _sourced_by: dict[Path, set[Path]] | None = None
 _scope: dict[Path, frozenset[str]] = {}
@@ -197,9 +174,10 @@ def _info(path: Path) -> tuple[frozenset[str], tuple[Path, ...]]:
         sourced: list[Path] = []
         if (ROOT / path).is_file():
             text = (ROOT / path).read_text(errors="replace")
-            defs.update(a or b for a, b in _FUNCTION_DEFINITION.findall(text))
-            lines = "\n".join(line for line in text.splitlines() if _SOURCING_LINE.search(line))
-            for words in shell_commands(lines):
+            # Definitions the shell executes: not ones inside a here-document,
+            # a string or a comment (the line regex this replaced read those).
+            defs.update(function_definitions(tokenize_prefix(text)))
+            for words in shell_commands(text):
                 if len(words) > 1 and words[0] in {".", "source"}:
                     target = executable_path(words[1], path)
                     if target:
@@ -282,6 +260,22 @@ def shell_edges(source: Path, text: str, src_name: str | None = None) -> None:
             dst = executable_path(words[0], source)
             if dst:
                 emit(src, dst)
+
+
+def precheck_table_edges(source: Path, text: str) -> None:
+    """tools/precheck.sh runs every row of its GATES table ("class|command",
+    one row per line) through a loop: the table is a quoted string the shell
+    executes indirectly, so its commands are read from the value of the
+    top-level GATES assignment.  (The line scanner this replaced read each
+    row as a pipeline `class | command` -- the right edges by accident.)"""
+    for cmd in simple_commands(tokenize_prefix(text)):
+        for tok in cmd:
+            if not tok.text.startswith("GATES="):
+                continue
+            for row in unquote(tok.text[len("GATES="):]).splitlines():
+                _cls, sep, command = row.partition("|")
+                if sep:
+                    shell_edges(source, command)
 
 
 def python_edges(source: Path, text: str) -> None:
@@ -412,12 +406,22 @@ for source in sorted(sources):
     if source.parts and source.parts[0] == ".github":
         for command in yaml_run_commands(source):
             shell_edges(source, command)
+    elif source.suffix == ".py":
+        # Python is not shell.  The line scanner this replaced read every .py
+        # line as a shell command; measured on the tree, the only edges that
+        # produced and python_edges() (the AST's exec calls) does not were
+        # self-loops and one prose mention in a docstring.  A tokenizer
+        # reading a module as shell pairs its apostrophes across lines, so
+        # .py files are read only through the AST.
+        pass
     else:
         shell_edges(source, text)
         # A malformed/unusual heredoc elsewhere in a large suite driver must
         # not hide later commands from enrolment extraction.  Re-run the same
         # command parser on short source windows; this is intentionally the
         # same matcher, not a filename grep (plain mentions still emit no edge).
+        if source == Path("tools/precheck.sh"):
+            precheck_table_edges(source, text)
         if source == Path("tests/run_all_tests.sh"):
             source_lines = text.splitlines()
             for i in range(len(source_lines)):

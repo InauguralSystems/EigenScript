@@ -1,0 +1,779 @@
+#!/usr/bin/env python3
+"""A quoting-aware shell tokenizer for the repository's shell-reading gates.
+
+The gates used to read shell one physical line at a time with regexes and a
+hand-copied quote tracker per tool (tools/_derive_variants.py,
+tools/enrolment_edges.py).  That shape cannot see a quoted string, a `$(...)`
+or a `[[ ]]` that spans lines, and every copy of the quote tracker drifted
+from the others.  This module is the one lexer they share.  It reads WHOLE
+TEXT, not lines, and knows:
+
+  * quoting: '...', "...", $'...', $"...", backslash, and backslash-newline
+    line continuation (removed outside single quotes, as bash does);
+  * nesting: $(...), `...`, ${...}, $((...)), <(...) / >(...), extglob
+    groups, `name=(...)` array values -- each is part of the word it sits in,
+    and the bodies of $(...), `...` and <(...)/>(...) are recorded on the
+    word because they are shell, wherever they sit;
+  * comments: `#` at the start of a word, to end of line;
+  * operators: control operators and redirections (with an IO number such as
+    the `2` of `2>&1` folded into the redirection);
+  * here-documents: the body after the opener's line is consumed and attached
+    to the `<<` / `<<-` token, so it is never read as commands;
+  * `case` patterns (`a)` closes a pattern, not a substitution) and `[[ ]]`
+    (whose `<`, `&&`, `(` are operands, not shell operators).
+
+The expected answers come from outside this file: tools/shell_oracle.py checks
+the tokenizer against `bash -n`, `dash -n`, bash's own reprint of a parsed
+function (`declare -f`), and bash's own quote removal.  See that file for the
+measured resolution and blind spots.
+
+Tokens are (kind, text, line, start, end, subst, heredoc):
+
+  kind     'word' | 'pattern' (a case pattern) | 'op' | 'redir' | 'newline'
+  text     a word's source text with line continuations removed (quotes kept;
+           unquote() removes them), or the operator text without IO number
+  line     1-based line of the token's first character
+  subst    for a word: the bodies of $(...), `...`, <(...), >(...) found at
+           any quoting depth of that word (not nested inside each other --
+           a consumer recurses by tokenizing a body)
+  heredoc  for a `<<`/`<<-` redirection: the body text, else None
+
+tokenize() raises ShellLexError for text the shell would reject lexically:
+an unterminated quote, substitution, expansion or `[[`.  A here-document with
+no delimiter line is NOT an error: bash and dash accept it (bash warns) and
+read the body to end of file.
+"""
+from __future__ import annotations
+
+import bisect
+from typing import NamedTuple
+
+
+class ShellLexError(ValueError):
+    def __init__(self, message: str, line: int):
+        super().__init__(f"line {line}: {message}")
+        self.line = line
+        self.reason = message
+
+
+class Token(NamedTuple):
+    kind: str
+    text: str
+    line: int
+    start: int
+    end: int
+    subst: tuple = ()
+    heredoc: str | None = None
+
+
+# Longest first: the scanner takes the first that matches.
+OPERATORS = (
+    ";;&", "<<<", "<<-", "&>>",
+    ";;", ";&", "&&", "||", "|&", "&>", "<<", "<>", "<&", ">&", ">>", ">|",
+    "<", ">", "|", "&", ";", "(", ")",
+)
+REDIRECTIONS = frozenset({
+    "<<<", "<<-", "&>>", "&>", "<<", "<>", "<&", ">&", ">>", ">|", "<", ">",
+})
+HEREDOC_OPS = frozenset({"<<", "<<-"})
+METACHARS = frozenset(" \t\n;&|()<>")
+# Words after which the next word is again in command position.
+RESERVED_OPENERS = frozenset({
+    "if", "then", "else", "elif", "while", "until", "do", "!", "{", "time",
+})
+EXTGLOB_LEADS = frozenset("?*+@!")
+
+
+class _Lexer:
+    def __init__(self, text: str):
+        self.text = text
+        self.n = len(text)
+        self.cuts: set[int] = set()       # positions of removed `\`+newline
+        self.comments: list[tuple[int, int]] = []        # [start, end) spans
+        self.heredocs: list[tuple[int, int, bool]] = []  # body spans, <<- flag
+        self.line_starts = [0]
+        for i, c in enumerate(text):
+            if c == "\n":
+                self.line_starts.append(i + 1)
+
+    def line_of(self, pos: int) -> int:
+        return bisect.bisect_right(self.line_starts, pos)
+
+    def err(self, message: str, pos: int):
+        raise ShellLexError(message, self.line_of(min(pos, max(self.n - 1, 0))))
+
+    def clean(self, start: int, end: int) -> str:
+        """Source slice with line continuations removed."""
+        end = min(end, self.n)
+        if not self.cuts:
+            return self.text[start:end]
+        return "".join(
+            self.text[i] for i in range(start, end)
+            if i not in self.cuts and i - 1 not in self.cuts)
+
+    # ---- quoted and nested word parts.  Each takes the position of the
+    # ---- opening character(s) and returns the position after the close.
+
+    def single(self, i: int) -> int:
+        j = self.text.find("'", i + 1)
+        if j < 0:
+            self.err("unterminated single quote", i)
+        return j + 1
+
+    def ansi_c(self, i: int) -> int:          # $'...' ; i at the $
+        j = i + 2
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "'":
+                return j + 1
+            j += 1
+        self.err("unterminated $'...' quote", i)
+
+    def double(self, i: int, subst: list) -> int:   # i at the opening "
+        j = i + 1
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                if self.text[j + 1:j + 2] == "\n":
+                    self.cuts.add(j)
+                j += 2
+                continue
+            if c == '"':
+                return j + 1
+            if c == "$" or c == "`":
+                j = self.dollar_or_backtick(j, subst, in_double=True)
+                continue
+            j += 1
+        self.err("unterminated double quote", i)
+
+    def dollar_or_backtick(self, j: int, subst: list, in_double: bool) -> int:
+        t = self.text
+        if t[j] == "`":
+            return self.backtick(j, subst)
+        nxt = t[j + 1:j + 2]
+        if t.startswith("$((", j) and self.arith_closes(j + 3):
+            return self.arith(j + 3, j)
+        if nxt == "(":
+            return self.cmdsub(j + 2, subst, j)
+        if nxt == "{":
+            return self.param(j + 2, subst, j)
+        if nxt == "'" and not in_double:
+            return self.ansi_c(j)
+        if nxt == '"' and not in_double:
+            return self.double(j + 1, subst)
+        return j + 1
+
+    def backtick(self, i: int, subst: list) -> int:
+        j = i + 1
+        body = []
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\" and j + 1 < self.n:
+                nxt = self.text[j + 1]
+                # Inside backquotes a backslash keeps its literal meaning
+                # except before $ ` \ (POSIX 2.6.3); newline is a continuation.
+                if nxt == "\n":
+                    self.cuts.add(j)
+                elif nxt in "$`\\":
+                    body.append(nxt)
+                else:
+                    body.append(c + nxt)
+                j += 2
+                continue
+            if c == "`":
+                subst.append("".join(body))
+                return j + 1
+            body.append(c)
+            j += 1
+        self.err("unterminated backquote", i)
+
+    def cmdsub(self, body_start: int, subst: list, opener: int) -> int:
+        sub = _Body(self, body_start, closer=")")
+        end = sub.run()
+        if end is None:
+            self.err("unterminated $(...)", opener)
+        subst.append(self.clean(body_start, end))
+        return end + 1
+
+    def procsub(self, body_start: int, subst: list, opener: int) -> int:
+        sub = _Body(self, body_start, closer=")")
+        end = sub.run()
+        if end is None:
+            self.err("unterminated process substitution", opener)
+        subst.append(self.clean(body_start, end))
+        return end + 1
+
+    def arith_closes(self, j: int) -> bool:
+        """Whether `$((` at j-3 is arithmetic: its parens close as `))`."""
+        depth = 0
+        while j < self.n:
+            c = self.text[j]
+            if c in "'\"":
+                return False
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                if depth == 0:
+                    return self.text[j + 1:j + 2] == ")"
+                depth -= 1
+            j += 1
+        return False
+
+    def arith(self, j: int, opener: int) -> int:
+        depth = 0
+        while j < self.n:
+            c = self.text[j]
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                if depth == 0:
+                    if self.text[j + 1:j + 2] != ")":
+                        self.err("unterminated $((...))", opener)
+                    return j + 2
+                depth -= 1
+            j += 1
+        self.err("unterminated $((...))", opener)
+
+    def param(self, j: int, subst: list, opener: int) -> int:   # after ${
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                if self.text[j + 1:j + 2] == "\n":
+                    self.cuts.add(j)
+                j += 2
+                continue
+            if c == "}":
+                return j + 1
+            if c == "'":
+                j = self.single(j)
+                continue
+            if c == '"':
+                j = self.double(j, subst)
+                continue
+            if c in "$`":
+                j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            j += 1
+        self.err("unterminated ${...}", opener)
+
+    def paren_group(self, j: int, subst: list, opener: int) -> int:
+        """A balanced ( ... ) that is part of a word: an extglob group or an
+        array value `name=( ... )`.  j is after the `(`."""
+        depth = 0
+        while j < self.n:
+            c = self.text[j]
+            if c == "\\":
+                if self.text[j + 1:j + 2] == "\n":
+                    self.cuts.add(j)
+                j += 2
+                continue
+            if c == "'":
+                j = self.single(j)
+                continue
+            if c == '"':
+                j = self.double(j, subst)
+                continue
+            if c in "$`":
+                j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if c == "#" and (self.text[j - 1] in " \t\n("):
+                nl = self.text.find("\n", j)
+                end = self.n if nl < 0 else nl
+                self.comments.append((j, end))
+                j = end
+                continue
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                if depth == 0:
+                    return j + 1
+                depth -= 1
+            j += 1
+        self.err("unterminated ( ... ) inside a word", opener)
+
+
+class _Body:
+    """Tokenizes a list of commands: the whole text, or a $( ) / <( ) body
+    ending at an unmatched `)`."""
+
+    def __init__(self, lx: _Lexer, start: int, closer: str | None):
+        self.lx = lx
+        self.i = start
+        self.closer = closer
+        self.tokens: list[Token] = []
+        self.pending: list[tuple[int, str, bool]] = []   # token idx, delim, strip
+        self.parens = 0
+        self.cmdpos = True
+        self.case: list[str] = []      # per open case: 'word' | 'in' | 'pattern' | 'body'
+        self.dbracket = False
+        self.expect_delim = None       # (token idx, strip) awaiting the delimiter word
+        self.regex_next = False        # the word after `=~` inside [[ ]]
+
+    # ------------------------------------------------------------------ words
+    def read_word(self, start: int) -> tuple[int, list]:
+        lx, t = self.lx, self.lx.text
+        subst: list = []
+        j = start
+        while j < lx.n:
+            c = t[j]
+            if c == "\\":
+                if t[j + 1:j + 2] == "\n":
+                    lx.cuts.add(j)
+                j += 2
+                continue
+            if c == "'":
+                j = lx.single(j)
+                continue
+            if c == '"':
+                j = lx.double(j, subst)
+                continue
+            if c in "$`":
+                j = lx.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if c == "(":
+                prefix = lx.clean(start, j)
+                if (prefix and prefix[-1] in EXTGLOB_LEADS) or _is_array_assign(prefix):
+                    j = lx.paren_group(j + 1, subst, j)
+                    continue
+                break
+            if c in "<>" and t[j + 1:j + 2] == "(" and j == start:
+                j = lx.procsub(j + 2, subst, j)
+                continue
+            if c in METACHARS:
+                if self.dbracket and c in "<>()" and j == start:
+                    j += 1
+                    continue
+                break
+            j += 1
+        return min(j, lx.n), subst
+
+    def read_regex(self, start: int) -> tuple[int, list]:
+        """The right operand of `=~` in [[ ]]: bash reads ( ) | < > as part
+        of the regex word; only unparenthesised blanks end it."""
+        lx, t = self.lx, self.lx.text
+        subst: list = []
+        depth = 0
+        j = start
+        while j < lx.n:
+            c = t[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "'":
+                j = lx.single(j)
+                continue
+            if c == '"':
+                j = lx.double(j, subst)
+                continue
+            if c in "$`":
+                j = lx.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if c == "(":
+                depth += 1
+            elif c == ")" and depth:
+                depth -= 1
+            elif c in " \t\n" and depth == 0:
+                break
+            elif c in ";&" and depth == 0:
+                break
+            j += 1
+        return min(j, lx.n), subst
+
+    # -------------------------------------------------------------- the loop
+    def run(self) -> int | None:
+        lx, t = self.lx, self.lx.text
+        while self.i < lx.n:
+            c = t[self.i]
+            if c in " \t":
+                self.i += 1
+                continue
+            if c == "\\" and t[self.i + 1:self.i + 2] == "\n":
+                lx.cuts.add(self.i)
+                self.i += 2
+                continue
+            if c == "#":
+                nl = t.find("\n", self.i)
+                end = lx.n if nl < 0 else nl
+                lx.comments.append((self.i, end))
+                self.i = end
+                continue
+            if c == "\n":
+                self.emit(Token("newline", "\n", lx.line_of(self.i), self.i, self.i + 1))
+                self.i += 1
+                if self.pending:
+                    self.read_heredocs()
+                self.after_separator()
+                continue
+            if self.closer and c == ")" and self.parens == 0 and not self.in_pattern() \
+                    and not self.dbracket:
+                return self.i
+            op = self.match_op()
+            if op and not (self.dbracket and op not in (";", "\n")):
+                self.handle_op(op)
+                continue
+            # A word (or, inside [[ ]], an operator-looking operand).
+            if self.dbracket and op:
+                end = self.i + len(op)
+                self.emit(Token("word", op, lx.line_of(self.i), self.i, end))
+                self.i = end
+                continue
+            if self.dbracket and self.regex_next:
+                end, subst = self.read_regex(self.i)
+            else:
+                end, subst = self.read_word(self.i)
+            self.regex_next = False
+            if end == self.i:                 # defensive: never spin
+                end = self.i + 1
+            text = lx.clean(self.i, end)
+            if (text.isdigit() or _is_fd_name(text)) and t[end:end + 1] in ("<", ">") \
+                    and not self.dbracket:
+                self.i = end                  # IO number / {name}: folded into the redirection
+                continue
+            # A case pattern is matched against, never run: its own kind.
+            kind = "pattern" if self.in_pattern() and text != "esac" \
+                and self.expect_delim is None else "word"
+            self.emit(Token(kind, text, lx.line_of(self.i), self.i, end, tuple(subst)))
+            self.i = end
+            self.after_word(text)
+        if self.closer:
+            return None
+        if self.dbracket:
+            lx.err("unterminated [[", lx.n - 1)
+        return lx.n
+
+    def match_op(self) -> str | None:
+        t, i = self.lx.text, self.i
+        for op in OPERATORS:
+            if t.startswith(op, i):
+                if op in ("<", ">") and t[i + 1:i + 2] == "(" :
+                    return None               # process substitution: a word
+                return op
+        return None
+
+    def handle_op(self, op: str):
+        lx = self.lx
+        start = self.i
+        self.i += len(op)
+        kind = "redir" if op in REDIRECTIONS else "op"
+        self.emit(Token(kind, op, lx.line_of(start), start, self.i))
+        if kind == "redir":
+            if op in HEREDOC_OPS:
+                self.expect_delim = (len(self.tokens) - 1, op == "<<-")
+            return
+        if op == "(":
+            if not self.in_pattern():         # `(a)` pattern: the optional lead
+                self.parens += 1
+            self.after_separator()
+        elif op == ")":
+            if self.in_pattern():
+                self.case[-1] = "body"
+                self.cmdpos = True
+                return
+            self.parens = max(0, self.parens - 1)
+            self.cmdpos = True                # `f()` is followed by its body
+        elif op in (";;", ";&", ";;&"):
+            if self.case:
+                self.case[-1] = "pattern"
+            self.after_separator()
+        else:
+            self.after_separator()
+
+    def after_separator(self):
+        self.cmdpos = True
+
+    def in_pattern(self) -> bool:
+        return bool(self.case) and self.case[-1] == "pattern"
+
+    def after_word(self, word: str):
+        if self.expect_delim is not None:
+            idx, strip = self.expect_delim
+            self.expect_delim = None
+            self.pending.append((idx, unquote(word), strip))
+            return
+        if self.dbracket:
+            if word == "=~":
+                self.regex_next = True
+            if word == "]]":
+                self.dbracket = False
+                self.cmdpos = False
+            return
+        if self.case and self.case[-1] == "word":
+            self.case[-1] = "in" if word else "word"
+            return
+        if self.case and self.case[-1] == "in":
+            if word == "in":
+                self.case[-1] = "pattern"
+            return
+        if self.case and self.case[-1] == "pattern":
+            if word == "esac":
+                self.case.pop()
+                self.cmdpos = False
+            return
+        if word == "{":
+            self.cmdpos = True                # a group or function body opens
+            return
+        if self.cmdpos:
+            if word == "case":
+                self.case.append("word")
+                self.cmdpos = False
+                return
+            if word == "esac" and self.case:
+                self.case.pop()
+                self.cmdpos = False
+                return
+            if word == "[[":
+                self.dbracket = True
+                self.cmdpos = False
+                return
+            if word in RESERVED_OPENERS or _is_assignment(word):
+                return                        # still a command position
+            self.cmdpos = False
+
+    def emit(self, tok: Token):
+        self.tokens.append(tok)
+
+    def read_heredocs(self):
+        lx, t = self.lx, self.lx.text
+        for idx, delim, strip in self.pending:
+            body_start = self.i
+            while self.i < lx.n:
+                nl = t.find("\n", self.i)
+                line_end = lx.n if nl < 0 else nl
+                line = t[self.i:line_end]
+                cmp = line.lstrip("\t") if strip else line
+                if cmp == delim:
+                    body = t[body_start:self.i]
+                    self.i = line_end + 1 if nl >= 0 else lx.n
+                    break
+                self.i = line_end + 1 if nl >= 0 else lx.n
+            else:
+                body = t[body_start:lx.n]     # delimited by end of file
+            lx.heredocs.append((body_start, body_start + len(body), strip))
+            tok = self.tokens[idx]
+            self.tokens[idx] = tok._replace(heredoc=body)
+        self.pending = []
+
+
+def _is_fd_name(word: str) -> bool:
+    """`{name}` before a redirection: bash's named file descriptor."""
+    return len(word) > 2 and word[0] == "{" and word[-1] == "}" and _plain_ident(word[1:-1])
+
+
+def _plain_ident(name: str) -> bool:
+    return name.isidentifier() and name.isascii()
+
+
+def _is_assignment(word: str) -> bool:
+    eq = word.find("=")
+    if eq <= 0:
+        return False
+    name = word[:eq]
+    if name.endswith("+"):
+        name = name[:-1]
+    if "[" in name and name.endswith("]"):
+        name = name[:name.index("[")]
+    return name.isidentifier() and name.isascii()
+
+
+def _is_array_assign(prefix: str) -> bool:
+    return prefix.endswith("=") and _is_assignment(prefix)
+
+
+def tokenize(text: str) -> list[Token]:
+    return scan(text)[0]
+
+
+def scan(text: str):
+    """(tokens, comment spans, here-document body spans) for whole text."""
+    lx = _Lexer(text)
+    body = _Body(lx, 0, closer=None)
+    body.run()
+    return body.tokens, sorted(lx.comments), sorted(lx.heredocs)
+
+
+# ------------------------------------------------------------- consumers' API
+
+def tokenize_prefix(text: str) -> list[Token]:
+    """tokenize(), or -- for text the shell rejects -- the tokens of the text
+    before the line where tokenizing stopped.  bash executes the commands it
+    parsed before a syntax error, so that prefix is what the text runs."""
+    while True:
+        try:
+            return tokenize(text)
+        except ShellLexError as e:
+            cut = 0
+            for _ in range(e.line - 1):
+                cut = text.index("\n", cut) + 1
+            if cut <= 0:
+                return []
+            text = text[:cut]
+
+
+def parsed_prefix(text: str):
+    """logical_lines() over tokenize_prefix(text)."""
+    return _group_lines(tokenize_prefix(text))
+
+
+def logical_lines(text: str):
+    """Yield (line, [tokens]) per top-level newline-terminated command line.
+
+    Comments, line continuations and here-document bodies are gone; a quoted
+    string or substitution spanning several physical lines stays in the
+    line it started on."""
+    return _group_lines(tokenize(text))
+
+
+def _group_lines(tokens):
+    group: list[Token] = []
+    for tok in tokens:
+        if tok.kind == "newline":
+            if group:
+                yield group[0].line, group
+            group = []
+            continue
+        group.append(tok)
+    if group:
+        yield group[0].line, group
+
+
+def simple_commands(tokens):
+    """Split a token list into simple commands: lists of WORD tokens, with
+    redirections (and each redirection's target word) removed."""
+    out: list[list[Token]] = []
+    cur: list[Token] = []
+    skip_target = False
+    for tok in tokens:
+        if tok.kind == "redir":
+            skip_target = True
+            continue
+        if tok.kind == "word":
+            if skip_target:
+                skip_target = False
+                continue
+            cur.append(tok)
+            continue
+        skip_target = False
+        if cur:
+            out.append(cur)
+        cur = []
+    if cur:
+        out.append(cur)
+    return out
+
+
+def all_substitutions(text: str):
+    """Bodies of $(...), `...`, <(...), >(...) in a fragment of shell text."""
+    out = []
+    for tok in tokenize(text):
+        out.extend(tok.subst)
+    return out
+
+
+_ANSI = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
+         "n": "\n", "r": "\r", "t": "\t", "v": "\v", "\\": "\\",
+         "'": "'", '"': '"', "?": "?"}
+
+
+def unquote(word: str) -> str:
+    """Quote removal (POSIX 2.6.7) with expansions left as literal text."""
+    out = []
+    i, n = 0, len(word)
+    while i < n:
+        c = word[i]
+        if c == "'":
+            j = word.find("'", i + 1)
+            j = n if j < 0 else j
+            out.append(word[i + 1:j])
+            i = j + 1
+        elif c == "$" and word[i + 1:i + 2] == "'":
+            j = i + 2
+            while j < n and word[j] != "'":
+                if word[j] == "\\" and j + 1 < n:
+                    e = word[j + 1]
+                    if e in _ANSI:
+                        out.append(_ANSI[e])
+                        j += 2
+                        continue
+                    if e in "01234567":
+                        k = j + 1
+                        while k < n and k < j + 4 and word[k] in "01234567":
+                            k += 1
+                        out.append(chr(int(word[j + 1:k], 8)))
+                        j = k
+                        continue
+                    out.append(word[j:j + 2])
+                    j += 2
+                    continue
+                out.append(word[j])
+                j += 1
+            i = j + 1
+        elif c == '"' or (c == "$" and word[i + 1:i + 2] == '"'):
+            j = i + (2 if c == "$" else 1)
+            while j < n and word[j] != '"':
+                if word[j] == "\\" and j + 1 < n and word[j + 1] in '$`"\\\n':
+                    if word[j + 1] != "\n":
+                        out.append(word[j + 1])
+                    j += 2
+                    continue
+                if word[j] in "$`":
+                    k = _skip_expansion(word, j)
+                    out.append(word[j:k])
+                    j = k
+                    continue
+                out.append(word[j])
+                j += 1
+            i = j + 1
+        elif c == "\\" and i + 1 < n:
+            if word[i + 1] != "\n":
+                out.append(word[i + 1])
+            i += 2
+        elif c in "$`":
+            k = _skip_expansion(word, i)
+            out.append(word[i:k])
+            i = k
+        else:
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
+def _skip_expansion(word: str, i: int) -> int:
+    """End of the expansion at word[i] ($(..), ${..}, `..`), kept literal."""
+    lx = _Lexer(word)
+    try:
+        return lx.dollar_or_backtick(i, [], in_double=False) if word[i] == "`" or \
+            word[i + 1:i + 2] in ("(", "{") else i + 1
+    except ShellLexError:
+        return len(word)
+
+
+def function_definitions(tokens):
+    """Names of the shell functions TOKENS define at their own level:
+    `name ( )` or `function name` where the name is the first word of a
+    command.  A definition inside a here-document, a quoted string, a comment
+    or a $(...) body (a subshell) is not one."""
+    names = []
+    prev = None
+    for i, tok in enumerate(tokens):
+        closes_pattern = prev is not None and prev.text == ")" and i >= 2 \
+            and tokens[i - 2].kind == "pattern"
+        at_start = prev is None or prev.kind in ("op", "newline") and prev.text != ")" \
+            or closes_pattern \
+            or (prev.kind == "word" and prev.text in RESERVED_OPENERS)
+        if tok.kind == "word" and at_start:
+            nxt = tokens[i + 1:i + 3]
+            if tok.text == "function" and nxt and nxt[0].kind == "word" \
+                    and _plain_name(nxt[0].text):
+                names.append(nxt[0].text)
+            elif len(nxt) == 2 and nxt[0].kind == "op" and nxt[0].text == "(" \
+                    and nxt[1].kind == "op" and nxt[1].text == ")" and _plain_name(tok.text):
+                names.append(tok.text)
+        prev = tok
+    return names
+
+
+def _plain_name(word: str) -> bool:
+    return bool(word) and not any(c in word for c in "'\"\\$`=/") and not word[0].isdigit()

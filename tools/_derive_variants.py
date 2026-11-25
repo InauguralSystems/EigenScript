@@ -95,6 +95,7 @@ import re
 import sys
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
+from _shell_tokens import REDIRECTIONS, parsed_prefix, tokenize_prefix
 
 NAME_RE = re.compile(r"eigenscript(?:-[a-z0-9]+)*")
 FULL_NAME_RE = re.compile(r"^eigenscript(?:-[a-z0-9]+)*$")
@@ -160,250 +161,40 @@ def _unquote(word):
     return "".join(out)
 
 
-def _strip_comment(line):
-    """Drop a `#` comment outside quotes. A `#` inside a word (foo#bar) is
-    not a comment, matching the shell."""
-    out = []
-    quote = None
-    prev = ""
-    i = 0
-    n = len(line)
-    while i < n:
-        c = line[i]
-        if quote:
-            out.append(c)
-            if c == "\\" and quote == '"' and i + 1 < n:
-                out.append(line[i + 1])
-                i += 2
-                prev = ""
-                continue
-            if c == quote:
-                quote = None
-        elif c in "'\"":
-            quote = c
-            out.append(c)
-        elif c == "\\" and i + 1 < n:
-            out.append(c)
-            out.append(line[i + 1])
-            i += 2
-            prev = ""
-            continue
-        elif c == "#" and (prev == "" or prev in " \t;&|()<>"):
-            break
-        else:
-            out.append(c)
-        prev = c
-        i += 1
-    return "".join(out)
-
-
-HEREDOC_RE = re.compile(r"<<[-~]?\s*([\"']?)([A-Za-z_][A-Za-z0-9_]*)\1")
-
-
-# CA-GUARD:heredoc-opener
-# ROUND 8, finding 4 (measured by /code-review on 21daf05): a bare
-# HEREDOC_RE.search() over the line called `tr a-z A-Z <<< hello` a heredoc
-# opener with delimiter `hello`, and `echo "see <<EOF above"` an opener with
-# delimiter `EOF`. shell_lines then SKIPPED every following line until one
-# equal to that word -- usually to EOF -- so `eigenscript-full work.eigs`
-# below either line derived NOTHING and the deriver's own witness said the
-# file held no invocation. Two rules, both from the shell grammar:
-#   `<<<` is a HERE-STRING, not a heredoc (the `<<` is followed by `<`);
-#   `<<` inside quotes is text, so the scan tracks quote state.
-# ROUND 9 (critic r8 ledger 4, MEASURED): tracking only the OUTER quote
-# over-corrected. In `msg="$(cat <<EOF" ... EOF ... ")"` the body of a
-# command substitution is SHELL, not string data, however the substitution
-# itself is quoted -- so that `<<` is a real opener and the lines under it
-# are a heredoc BODY. Round 8 called it text and DERIVED the body line, so a
-# consumer whose usage text is built with `$(cat <<EOF ...)` went
-# UNRUNNABLE|prereq:variant:<word-from-prose>. The `$(` nesting is the same
-# one _subst_bodies already tracks; inside it the quote state resets, and a
-# depth counter keeps an ordinary `( )` from closing the substitution early.
-def _heredoc_delim(line):
-    """The delimiter word of an UNQUOTED heredoc opener on this line, or None."""
-    i = 0
-    n = len(line)
-    quote = None
-    # CA-GUARD:heredoc-subst-nesting
-    subst = []  # one [saved_quote, paren_depth] per open $( ... )
-    while i < n:
-        c = line[i]
-        if quote != "'" and c == "$" and line[i + 1:i + 2] == "(":
-            subst.append([quote, 0])
-            quote = None
-            i += 2
-            continue
-        if subst and quote is None and c == "(":
-            subst[-1][1] += 1
-            i += 1
-            continue
-        if subst and quote is None and c == ")":
-            if subst[-1][1] > 0:
-                subst[-1][1] -= 1
-            else:
-                quote = subst.pop()[0]
-            i += 1
-            continue
-        # CA-GUARD:end-heredoc-subst-nesting
-        if quote:
-            if c == "\\" and quote == '"' and i + 1 < n:
-                i += 2
-                continue
-            if c == quote:
-                quote = None
-            i += 1
-            continue
-        if c in "'\"":
-            quote = c
-            i += 1
-            continue
-        if c == "\\" and i + 1 < n:
-            i += 2
-            continue
-        if c == "<" and line[i + 1:i + 2] == "<":
-            if line[i + 2:i + 3] == "<":
-                i += 3  # here-string: data on THIS line, no body follows
-                continue
-            m = HEREDOC_RE.match(line, i)
-            if m:
-                return m.group(2)
-            i += 2
-            continue
-        i += 1
-    return None
-# CA-GUARD:end-heredoc-opener
+# Comments, here-document bodies, quoting and substitution bodies are read by
+# the shared tokenizer (tools/_shell_tokens.py), which tools/shell_oracle.py
+# checks against bash and dash.  The line scanner this replaced carried one
+# guard per incident (rounds 7-9, #1213): a here-string `<<<` and a quoted
+# `"<<EOF"` read as openers swallowing the file; a `<<` inside a quoted `$(`
+# read as text; a quoted `"$(command -v eigenscript-full)"` never scanned.
+# Each of those is now an incident row the oracle replays (INCIDENTS), not a
+# local patch.  Text the shell cannot tokenize is read up to the line where it
+# stops, as bash executes what it parsed before a syntax error.
 
 
 def shell_lines(text):
-    """Yield (lineno, line) for shell lines with comments and heredoc
-    BODIES removed. A heredoc body is data, not commands."""
-    lines = text.split("\n")
-    i = 0
-    n = len(lines)
-    while i < n:
-        raw = lines[i]
-        line = _strip_comment(raw)
-        delim = _heredoc_delim(line)
-        yield (i + 1, line)
-        if delim is not None:
-            j = i + 1
-            while j < n and lines[j].strip() != delim:
-                j += 1
-            i = j + 1
-            continue
-        i += 1
+    """Yield (lineno, line) per logical command line: comments, line
+    continuations and here-document BODIES removed (a body is data, not
+    commands); a quoted string or substitution spanning lines stays whole."""
+    for lineno, toks in parsed_prefix(text):
+        yield (lineno, " ".join(t.text for t in toks))
 
 
 def _split_words(line):
-    """Split a shell line into words and separators, respecting quotes."""
-    toks = []
-    i = 0
-    n = len(line)
-    cur = ""
-    while i < n:
-        c = line[i]
-        if c in " \t":
-            if cur:
-                toks.append(cur)
-                cur = ""
-            i += 1
-            continue
-        if c in "'\"":
-            q = c
-            j = i + 1
-            while j < n:
-                if line[j] == "\\" and q == '"' and j + 1 < n:
-                    j += 2
-                    continue
-                if line[j] == q:
-                    break
-                j += 1
-            cur += line[i:min(j + 1, n)]
-            i = j + 1
-            continue
-        if c == "\\" and i + 1 < n:
-            cur += line[i:i + 2]
-            i += 2
-            continue
-        two = line[i:i + 2]
-        if two in ("&&", "||", ";;", "$("):
-            if cur:
-                toks.append(cur)
-                cur = ""
-            toks.append(two)
-            i += 2
-            continue
-        if c in ";|&()`{}<>":
-            if cur:
-                toks.append(cur)
-                cur = ""
-            toks.append(c)
-            i += 1
-            continue
-        cur += c
-        i += 1
-    if cur:
-        toks.append(cur)
-    return toks
+    """Split shell text into words and separators, respecting quotes."""
+    return [";" if t.kind == "newline" else t.text for t in tokenize_prefix(line)]
 
 
-SEPARATORS = {";", ";;", "|", "||", "&&", "&", "(", ")", "$(", "`", "{", "}"}
+SEPARATORS = {";", ";;", ";&", ";;&", "|", "|&", "||", "&&", "&", "(", ")",
+              "$(", "`", "{", "}"}
 
 
 # CA-GUARD:subst-body
-# ROUND 8, finding 5 (measured): _split_words keeps a DOUBLE-QUOTED string
-# as one opaque token, so the ordinary `BIN="$(command -v eigenscript-full)"`
-# idiom derived NOTHING while the unquoted spelling derived the name -- and
-# `command -v` is advertised as a handled invocation position in the
-# docstring, the harness header, CHANGELOG and docs/CI.md. The bodies of
-# `$(...)` and `` `...` `` are SHELL, wherever they sit, so they are scanned
-# recursively. Single-quoted text is not expanded, so it is not a body.
 def _subst_bodies(tok):
-    """Bodies of $(...) / `...` inside tok that are not single-quoted."""
+    """Bodies of $(...) / `...` / <(...) inside tok that are not single-quoted."""
     out = []
-    i = 0
-    n = len(tok)
-    quote = None
-    while i < n:
-        c = tok[i]
-        if quote == "'":
-            if c == "'":
-                quote = None
-            i += 1
-            continue
-        if c == "\\" and i + 1 < n:
-            i += 2
-            continue
-        if c == "'" and quote is None:
-            quote = "'"
-            i += 1
-            continue
-        if c == '"':
-            quote = None if quote == '"' else '"'
-            i += 1
-            continue
-        if c == "$" and tok[i + 1:i + 2] == "(":
-            depth = 1
-            j = i + 2
-            while j < n and depth:
-                if tok[j] == "(":
-                    depth += 1
-                elif tok[j] == ")":
-                    depth -= 1
-                j += 1
-            if depth == 0:
-                out.append(tok[i + 2:j - 1])
-                i = j
-                continue
-            i += 2
-            continue
-        if c == "`":
-            j = tok.find("`", i + 1)
-            if j > i:
-                out.append(tok[i + 1:j])
-                i = j + 1
-                continue
-        i += 1
+    for t in tokenize_prefix(tok):
+        out.extend(t.subst)
     return out
 # CA-GUARD:end-subst-body
 
@@ -431,7 +222,7 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
             pending_prefix = ""
             for_state = 0
             continue
-        if tok in ("<", ">", ">>", "<<"):
+        if tok in REDIRECTIONS:
             cmdpos = False
             continue
         word = _unquote(tok)
