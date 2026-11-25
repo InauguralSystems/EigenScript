@@ -53,7 +53,8 @@ for program, index, extra, function, want_prefix, want_compiled, want_stops in C
     compiled = re.search(r"^compiled:\s+(\d+)$", q.stderr, re.M)
     compiled = int(compiled.group(1)) if compiled else None
     stops = [(int(n), op) for n, op in re.findall(r"^\s*(\d+)\s+([A-Z][A-Z0-9_]+)\s+\(", q.stderr, re.M)]
-    ok = (q.returncode == 0 and q.stdout == "value\n" and prefix == want_prefix and stores
+    report = [line for line in q.stderr.splitlines() if "runtime error:" in line or "Sanitizer" in line]
+    ok = (q.returncode == 0 and q.stdout == "value\n" and not report and prefix == want_prefix and stores
           and max(prefix) > max(stores) and compiled == want_compiled and stops == want_stops)
     failed += not ok
     print(f"{'PASS' if ok else 'FAIL'}: {program} index {index}: compiled={compiled} stops={stops} "
@@ -62,6 +63,6 @@ for program, index, extra, function, want_prefix, want_compiled, want_stops in C
         print(f"  wanted compiled={want_compiled} stops={want_stops} prefix={want_prefix}, each store below the "
               f"last prefix, stdout 'value'; got rc={q.returncode} stdout={q.stdout!r}")
         print("  A compiler change that alters the opcodes of these functions also turns this red.")
-        print("\n".join(line for line in q.stderr.splitlines() if "runtime error" in line or "Sanitizer" in line))
+        print("\n".join(report))
 print(f"examined={examined} failures={failed}")
 raise SystemExit(bool(failed) or examined == 0)
