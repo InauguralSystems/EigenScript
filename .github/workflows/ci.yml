@@ -856,12 +856,12 @@ jobs:
       # sections as executed, not merely selected.
       - name: JIT-tier sections under make jit-checked
         env:
-          EIGS_SUITE_SECTIONS: 82 100 129 130 0fd 0fe
+          EIGS_SUITE_SECTIONS: 82 100 129 130 0fd 0fe 73y
         run: |
           set -o pipefail
           make jit-checked
           bash tests/run_all_tests.sh 2>&1 | tee "$RUNNER_TEMP/jit-checked.log"
-          grep -q 'PLAN: sections=82,100,129,130,0fd,0fe bearing=6 chunks=10$' "$RUNNER_TEMP/jit-checked.log"
+          grep -q 'PLAN: sections=82,100,129,130,0fd,0fe,73y bearing=7 chunks=11$' "$RUNNER_TEMP/jit-checked.log"
           grep -qE '^  RESULTS: [0-9]+/[0-9]+ passed, 0 failed, 0 skipped$' "$RUNNER_TEMP/jit-checked.log"
 
       # Positive control for the lane itself: scanner-valid bytecode names a

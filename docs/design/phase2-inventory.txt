@@ -2328,101 +2328,101 @@ ext_store.c:1544 builtin_store_count make_int PRODUCE h
 ext_store.c:1578 builtin_store_update val_is_number TEST h
 ext_store.c:1579 builtin_store_update eigs_int_arg READ h
 ext_store.c:1720 builtin_store_drop eigs_int_arg_range READ h
-jit.c:1322 emit_conditional_incref_rax TAG-IMM 0xFFFB EMIT d
-jit.c:1454 emit_addsd_xmm0_xmm1 emit_addsd_xmm0_xmm1 EMIT d
-jit.c:1458 emit_subsd_xmm0_xmm1 emit_subsd_xmm0_xmm1 EMIT d
-jit.c:1462 emit_mulsd_xmm0_xmm1 emit_mulsd_xmm0_xmm1 EMIT d
-jit.c:1466 emit_divsd_xmm0_xmm1 emit_divsd_xmm0_xmm1 EMIT d
-jit.c:1472 emit_cvttsd2si_xmm0_rax emit_cvttsd2si_xmm0_rax EMIT d
-jit.c:1476 emit_cvttsd2si_xmm1_rdx emit_cvttsd2si_xmm1_rdx EMIT d
-jit.c:1484 emit_cvtsi2sd_rax_xmm2 emit_cvtsi2sd_rax_xmm2 EMIT d
-jit.c:1488 emit_cvtsi2sd_rdx_xmm2 emit_cvtsi2sd_rdx_xmm2 EMIT d
-jit.c:1492 emit_ucomisd_xmm0_xmm2 emit_ucomisd_xmm0_xmm2 EMIT d
-jit.c:1496 emit_ucomisd_xmm1_xmm2 emit_ucomisd_xmm1_xmm2 EMIT d
-jit.c:1500 emit_cvtsi2sd_rdx_xmm0 emit_cvtsi2sd_rdx_xmm0 EMIT d
-jit.c:1547 emit_btr_63_rax emit_btr_63_rax EMIT d
-jit.c:1565 emit_cvtsi2sd_rax_xmm0 emit_cvtsi2sd_rax_xmm0 EMIT d
-jit.c:1579 emit_ucomisd_xmm0_xmm1 emit_ucomisd_xmm0_xmm1 EMIT d
-jit.c:1635 emit_btr_63_rdx emit_btr_63_rdx EMIT d
-jit.c:1640 emit_btr_63_rsi emit_btr_63_rsi EMIT d
-jit.c:1667 emit_immediate_num_check_rax emit_immediate_num_check_rax EMIT d
-jit.c:1670 emit_immediate_num_check_rax TAG-IMM 0xFFF8 EMIT d
-jit.c:1673 emit_immediate_num_check_rdx emit_immediate_num_check_rdx EMIT d
-jit.c:1676 emit_immediate_num_check_rdx TAG-IMM 0xFFF8 EMIT d
-jit.c:1683 <file scope> emit_overflow_check_rax EMIT d
-jit.c:1686 emit_overflow_check_rax emit_btr_63_rdx EMIT d
-jit.c:1747 emit_cvttsd2si_xmm0_r8d emit_cvttsd2si_xmm0_r8d EMIT d
-jit.c:1752 emit_cvtsi2sd_r8d_xmm1 emit_cvtsi2sd_r8d_xmm1 EMIT d
-jit.c:1945 emit_jump_unless_bool_rax TAG-IMM 0xFFF9 EMIT d
-jit.c:2063 emit_conditional_decref_rsi_hook TAG-IMM 0xFFFB EMIT d
-jit.c:2209 emit_dict_cache_probe TAG-IMM 0xFFFB EMIT d
-jit.c:2374 <file scope> emit_load_numeric_operand EMIT d
-jit.c:2379 emit_load_numeric_operand TAG-IMM 0xFFF8 EMIT d
-jit.c:2384 emit_load_numeric_operand TAG-IMM 0xFFFB EMIT d
-jit.c:2387 emit_load_numeric_operand TAG-IMM 0xFFFD EMIT d
-jit.c:2394 emit_load_numeric_operand VAL_FLOAT EMIT d
-jit.c:2398 emit_load_numeric_operand VAL_F64_OFFSET RAW d
-jit.c:2399 emit_load_numeric_operand VAL_F64_OFFSET RAW d
-jit.c:2428 emit_decref_binop_operands TAG-IMM 0xFFFB EMIT d
-jit.c:2456 emit_commit_binop TAG-IMM 0xFFFB EMIT d
-jit.c:2684 jit_compile_to_thunk max_normal_bits EMIT d
-jit.c:2851 jit_compile_to_thunk/OP_NULL TAG-IMM 0xFFF8 EMIT d
-jit.c:2872 jit_compile_to_thunk/OP_CONST VAL_FLOAT TEST d
-jit.c:2877 jit_compile_to_thunk/OP_CONST VAL_F64_RAW RAW d
-jit.c:2877 jit_compile_to_thunk/OP_CONST slot_from_f64 PRODUCE d
-jit.c:2880 jit_compile_to_thunk/OP_CONST TAG-IMM 0xFFFB EMIT d
-jit.c:3086 jit_compile_to_thunk/OP_SET_NAME TAG-IMM 0xFFFB EMIT d
-jit.c:3207 jit_compile_to_thunk/OP_LOCAL_DOT_GET emit_immediate_num_check_rax EMIT d
-jit.c:3357 jit_compile_to_thunk/OP_LOCAL_DOT_SET emit_immediate_num_check_rax EMIT d
-jit.c:3360 jit_compile_to_thunk/OP_LOCAL_DOT_SET emit_immediate_num_check_rdx EMIT d
-jit.c:3544 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFF8 EMIT d
-jit.c:3549 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFB EMIT d
-jit.c:3551 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFD EMIT d
-jit.c:3557 jit_compile_to_thunk/OP_SET_LOCAL VAL_FLOAT EMIT d
-jit.c:3563 jit_compile_to_thunk/OP_SET_LOCAL VAL_F64_OFFSET RAW d
-jit.c:3622 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
-jit.c:3626 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
-jit.c:3636 jit_compile_to_thunk/OP_MOD emit_btr_63_rsi EMIT d
-jit.c:3650 jit_compile_to_thunk/OP_MOD fmod EMIT d
-jit.c:3656 jit_compile_to_thunk/OP_MOD emit_overflow_check_rax EMIT d
-jit.c:3656 jit_compile_to_thunk/OP_MOD max_normal_bits EMIT d
-jit.c:3704 jit_compile_to_thunk/OP_ADD emit_load_numeric_operand EMIT d
-jit.c:3708 jit_compile_to_thunk/OP_ADD emit_load_numeric_operand EMIT d
-jit.c:3716 jit_compile_to_thunk/OP_ADD emit_addsd_xmm0_xmm1 EMIT d
-jit.c:3717 jit_compile_to_thunk/OP_ADD emit_subsd_xmm0_xmm1 EMIT d
-jit.c:3718 jit_compile_to_thunk/OP_ADD emit_mulsd_xmm0_xmm1 EMIT d
-jit.c:3719 jit_compile_to_thunk/OP_ADD emit_divsd_xmm0_xmm1 EMIT d
-jit.c:3726 jit_compile_to_thunk/OP_ADD emit_overflow_check_rax EMIT d
-jit.c:3726 jit_compile_to_thunk/OP_ADD max_normal_bits EMIT d
-jit.c:3763 jit_compile_to_thunk/OP_EQ emit_load_numeric_operand EMIT d
-jit.c:3767 jit_compile_to_thunk/OP_EQ emit_load_numeric_operand EMIT d
-jit.c:3780 jit_compile_to_thunk/OP_EQ emit_ucomisd_xmm0_xmm1 EMIT d
-jit.c:3821 jit_compile_to_thunk/OP_BAND emit_immediate_num_check_rax EMIT d
-jit.c:3823 jit_compile_to_thunk/OP_BAND emit_immediate_num_check_rdx EMIT d
-jit.c:3829 jit_compile_to_thunk/OP_BAND emit_cvttsd2si_xmm0_rax EMIT d
-jit.c:3830 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rax_xmm2 EMIT d
-jit.c:3831 jit_compile_to_thunk/OP_BAND emit_ucomisd_xmm0_xmm2 EMIT d
-jit.c:3834 jit_compile_to_thunk/OP_BAND emit_cvttsd2si_xmm1_rdx EMIT d
-jit.c:3835 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rdx_xmm2 EMIT d
-jit.c:3836 jit_compile_to_thunk/OP_BAND emit_ucomisd_xmm1_xmm2 EMIT d
-jit.c:3856 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rdx_xmm0 EMIT d
-jit.c:3886 jit_compile_to_thunk/OP_NOT emit_immediate_num_check_rax EMIT d
-jit.c:3892 jit_compile_to_thunk/OP_NEG emit_overflow_check_rax EMIT d
-jit.c:3892 jit_compile_to_thunk/OP_NEG max_normal_bits EMIT d
-jit.c:3904 jit_compile_to_thunk/OP_NEG emit_btr_63_rax EMIT d
-jit.c:3919 jit_compile_to_thunk/OP_NEG emit_cvttsd2si_xmm0_rax EMIT d
-jit.c:3920 jit_compile_to_thunk/OP_NEG emit_cvtsi2sd_rax_xmm2 EMIT d
-jit.c:3921 jit_compile_to_thunk/OP_NEG emit_ucomisd_xmm0_xmm2 EMIT d
-jit.c:3925 jit_compile_to_thunk/OP_NEG emit_cvtsi2sd_rax_xmm0 EMIT d
-jit.c:4044 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_immediate_num_check_rax EMIT d
-jit.c:4047 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_btr_63_rax EMIT d
-jit.c:4188 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rdx EMIT d
-jit.c:4193 jit_compile_to_thunk/OP_INDEX_SET TAG-IMM 0xFFFB EMIT d
-jit.c:4207 jit_compile_to_thunk/OP_INDEX_SET emit_cvttsd2si_xmm0_r8d EMIT d
-jit.c:4208 jit_compile_to_thunk/OP_INDEX_SET emit_cvtsi2sd_r8d_xmm1 EMIT d
-jit.c:4209 jit_compile_to_thunk/OP_INDEX_SET emit_ucomisd_xmm0_xmm1 EMIT d
-jit.c:4217 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rax EMIT d
-jit.c:4556 jit_compile_to_thunk/OP_BINARY_LINE VAL_FLOAT TEST d
+jit.c:1363 emit_conditional_incref_rax TAG-IMM 0xFFFB EMIT d
+jit.c:1495 emit_addsd_xmm0_xmm1 emit_addsd_xmm0_xmm1 EMIT d
+jit.c:1499 emit_subsd_xmm0_xmm1 emit_subsd_xmm0_xmm1 EMIT d
+jit.c:1503 emit_mulsd_xmm0_xmm1 emit_mulsd_xmm0_xmm1 EMIT d
+jit.c:1507 emit_divsd_xmm0_xmm1 emit_divsd_xmm0_xmm1 EMIT d
+jit.c:1513 emit_cvttsd2si_xmm0_rax emit_cvttsd2si_xmm0_rax EMIT d
+jit.c:1517 emit_cvttsd2si_xmm1_rdx emit_cvttsd2si_xmm1_rdx EMIT d
+jit.c:1525 emit_cvtsi2sd_rax_xmm2 emit_cvtsi2sd_rax_xmm2 EMIT d
+jit.c:1529 emit_cvtsi2sd_rdx_xmm2 emit_cvtsi2sd_rdx_xmm2 EMIT d
+jit.c:1533 emit_ucomisd_xmm0_xmm2 emit_ucomisd_xmm0_xmm2 EMIT d
+jit.c:1537 emit_ucomisd_xmm1_xmm2 emit_ucomisd_xmm1_xmm2 EMIT d
+jit.c:1541 emit_cvtsi2sd_rdx_xmm0 emit_cvtsi2sd_rdx_xmm0 EMIT d
+jit.c:1588 emit_btr_63_rax emit_btr_63_rax EMIT d
+jit.c:1606 emit_cvtsi2sd_rax_xmm0 emit_cvtsi2sd_rax_xmm0 EMIT d
+jit.c:1620 emit_ucomisd_xmm0_xmm1 emit_ucomisd_xmm0_xmm1 EMIT d
+jit.c:1676 emit_btr_63_rdx emit_btr_63_rdx EMIT d
+jit.c:1681 emit_btr_63_rsi emit_btr_63_rsi EMIT d
+jit.c:1708 emit_immediate_num_check_rax emit_immediate_num_check_rax EMIT d
+jit.c:1711 emit_immediate_num_check_rax TAG-IMM 0xFFF8 EMIT d
+jit.c:1714 emit_immediate_num_check_rdx emit_immediate_num_check_rdx EMIT d
+jit.c:1717 emit_immediate_num_check_rdx TAG-IMM 0xFFF8 EMIT d
+jit.c:1724 <file scope> emit_overflow_check_rax EMIT d
+jit.c:1727 emit_overflow_check_rax emit_btr_63_rdx EMIT d
+jit.c:1788 emit_cvttsd2si_xmm0_r8d emit_cvttsd2si_xmm0_r8d EMIT d
+jit.c:1793 emit_cvtsi2sd_r8d_xmm1 emit_cvtsi2sd_r8d_xmm1 EMIT d
+jit.c:1986 emit_jump_unless_bool_rax TAG-IMM 0xFFF9 EMIT d
+jit.c:2104 emit_conditional_decref_rsi_hook TAG-IMM 0xFFFB EMIT d
+jit.c:2250 emit_dict_cache_probe TAG-IMM 0xFFFB EMIT d
+jit.c:2415 <file scope> emit_load_numeric_operand EMIT d
+jit.c:2420 emit_load_numeric_operand TAG-IMM 0xFFF8 EMIT d
+jit.c:2425 emit_load_numeric_operand TAG-IMM 0xFFFB EMIT d
+jit.c:2428 emit_load_numeric_operand TAG-IMM 0xFFFD EMIT d
+jit.c:2435 emit_load_numeric_operand VAL_FLOAT EMIT d
+jit.c:2439 emit_load_numeric_operand VAL_F64_OFFSET RAW d
+jit.c:2440 emit_load_numeric_operand VAL_F64_OFFSET RAW d
+jit.c:2469 emit_decref_binop_operands TAG-IMM 0xFFFB EMIT d
+jit.c:2497 emit_commit_binop TAG-IMM 0xFFFB EMIT d
+jit.c:2725 jit_compile_to_thunk max_normal_bits EMIT d
+jit.c:2906 jit_compile_to_thunk/OP_NULL TAG-IMM 0xFFF8 EMIT d
+jit.c:2927 jit_compile_to_thunk/OP_CONST VAL_FLOAT TEST d
+jit.c:2932 jit_compile_to_thunk/OP_CONST VAL_F64_RAW RAW d
+jit.c:2932 jit_compile_to_thunk/OP_CONST slot_from_f64 PRODUCE d
+jit.c:2935 jit_compile_to_thunk/OP_CONST TAG-IMM 0xFFFB EMIT d
+jit.c:3140 jit_compile_to_thunk/OP_SET_NAME TAG-IMM 0xFFFB EMIT d
+jit.c:3259 jit_compile_to_thunk/OP_LOCAL_DOT_GET emit_immediate_num_check_rax EMIT d
+jit.c:3405 jit_compile_to_thunk/OP_LOCAL_DOT_SET emit_immediate_num_check_rax EMIT d
+jit.c:3408 jit_compile_to_thunk/OP_LOCAL_DOT_SET emit_immediate_num_check_rdx EMIT d
+jit.c:3592 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFF8 EMIT d
+jit.c:3597 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFB EMIT d
+jit.c:3599 jit_compile_to_thunk/OP_SET_LOCAL TAG-IMM 0xFFFD EMIT d
+jit.c:3605 jit_compile_to_thunk/OP_SET_LOCAL VAL_FLOAT EMIT d
+jit.c:3611 jit_compile_to_thunk/OP_SET_LOCAL VAL_F64_OFFSET RAW d
+jit.c:3669 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
+jit.c:3673 jit_compile_to_thunk/OP_MOD emit_load_numeric_operand EMIT d
+jit.c:3683 jit_compile_to_thunk/OP_MOD emit_btr_63_rsi EMIT d
+jit.c:3697 jit_compile_to_thunk/OP_MOD fmod EMIT d
+jit.c:3703 jit_compile_to_thunk/OP_MOD emit_overflow_check_rax EMIT d
+jit.c:3703 jit_compile_to_thunk/OP_MOD max_normal_bits EMIT d
+jit.c:3750 jit_compile_to_thunk/OP_ADD emit_load_numeric_operand EMIT d
+jit.c:3754 jit_compile_to_thunk/OP_ADD emit_load_numeric_operand EMIT d
+jit.c:3762 jit_compile_to_thunk/OP_ADD emit_addsd_xmm0_xmm1 EMIT d
+jit.c:3763 jit_compile_to_thunk/OP_ADD emit_subsd_xmm0_xmm1 EMIT d
+jit.c:3764 jit_compile_to_thunk/OP_ADD emit_mulsd_xmm0_xmm1 EMIT d
+jit.c:3765 jit_compile_to_thunk/OP_ADD emit_divsd_xmm0_xmm1 EMIT d
+jit.c:3772 jit_compile_to_thunk/OP_ADD emit_overflow_check_rax EMIT d
+jit.c:3772 jit_compile_to_thunk/OP_ADD max_normal_bits EMIT d
+jit.c:3808 jit_compile_to_thunk/OP_EQ emit_load_numeric_operand EMIT d
+jit.c:3812 jit_compile_to_thunk/OP_EQ emit_load_numeric_operand EMIT d
+jit.c:3825 jit_compile_to_thunk/OP_EQ emit_ucomisd_xmm0_xmm1 EMIT d
+jit.c:3865 jit_compile_to_thunk/OP_BAND emit_immediate_num_check_rax EMIT d
+jit.c:3867 jit_compile_to_thunk/OP_BAND emit_immediate_num_check_rdx EMIT d
+jit.c:3873 jit_compile_to_thunk/OP_BAND emit_cvttsd2si_xmm0_rax EMIT d
+jit.c:3874 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rax_xmm2 EMIT d
+jit.c:3875 jit_compile_to_thunk/OP_BAND emit_ucomisd_xmm0_xmm2 EMIT d
+jit.c:3878 jit_compile_to_thunk/OP_BAND emit_cvttsd2si_xmm1_rdx EMIT d
+jit.c:3879 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rdx_xmm2 EMIT d
+jit.c:3880 jit_compile_to_thunk/OP_BAND emit_ucomisd_xmm1_xmm2 EMIT d
+jit.c:3900 jit_compile_to_thunk/OP_BAND emit_cvtsi2sd_rdx_xmm0 EMIT d
+jit.c:3929 jit_compile_to_thunk/OP_NOT emit_immediate_num_check_rax EMIT d
+jit.c:3935 jit_compile_to_thunk/OP_NEG emit_overflow_check_rax EMIT d
+jit.c:3935 jit_compile_to_thunk/OP_NEG max_normal_bits EMIT d
+jit.c:3947 jit_compile_to_thunk/OP_NEG emit_btr_63_rax EMIT d
+jit.c:3962 jit_compile_to_thunk/OP_NEG emit_cvttsd2si_xmm0_rax EMIT d
+jit.c:3963 jit_compile_to_thunk/OP_NEG emit_cvtsi2sd_rax_xmm2 EMIT d
+jit.c:3964 jit_compile_to_thunk/OP_NEG emit_ucomisd_xmm0_xmm2 EMIT d
+jit.c:3968 jit_compile_to_thunk/OP_NEG emit_cvtsi2sd_rax_xmm0 EMIT d
+jit.c:4081 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_immediate_num_check_rax EMIT d
+jit.c:4084 jit_compile_to_thunk/OP_JUMP_IF_FALSE emit_btr_63_rax EMIT d
+jit.c:4223 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rdx EMIT d
+jit.c:4228 jit_compile_to_thunk/OP_INDEX_SET TAG-IMM 0xFFFB EMIT d
+jit.c:4242 jit_compile_to_thunk/OP_INDEX_SET emit_cvttsd2si_xmm0_r8d EMIT d
+jit.c:4243 jit_compile_to_thunk/OP_INDEX_SET emit_cvtsi2sd_r8d_xmm1 EMIT d
+jit.c:4244 jit_compile_to_thunk/OP_INDEX_SET emit_ucomisd_xmm0_xmm1 EMIT d
+jit.c:4252 jit_compile_to_thunk/OP_INDEX_SET emit_immediate_num_check_rax EMIT d
+jit.c:4590 jit_compile_to_thunk/OP_BINARY_LINE VAL_FLOAT TEST d
 jit_smoke.c:103 jit_helper_local_idx_get slot_from_f64 PRODUCE d
 jit_smoke.c:138 jit_helper_iter_next SLOT_F64_RAW RAW d
 jit_smoke.c:142 jit_helper_iter_next slot_from_f64 PRODUCE d
