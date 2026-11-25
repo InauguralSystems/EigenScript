@@ -57,9 +57,10 @@ BLIND SPOTS (what no oracle here can see):
     redirection targets; a file whose reprint misplaces a here-document from
     an `if`/`while` header is counted as o3_reprint_unusable, not compared.
   * a here-document opened inside a $( ) that closes on the same line
-    (`$(cat <<EOF)`), and a function defined in a pipeline element (a
-    subshell bash discards), are read differently from bash; neither occurs
-    in the tree.  The plants run on every 4th file plus the incidents.
+    (`$(cat <<EOF)`), and a function defined in a pipeline element or a
+    backgrounded group (subshells bash discards), are read differently from
+    bash; none occurs in the tree.  `!(` at a command position is read as
+    negation (extglob off, as in scripts); elsewhere as an extglob group.  The plants run on every 4th file plus the incidents.
 """
 from __future__ import annotations
 
@@ -615,6 +616,23 @@ INCIDENTS = [
     ("cat <<'EOF'\nline \\\nEOF\nreal\n", [["cat"], ["real"]], ["line \\\n"]),
     # `<<-` strips leading TABS only: a space-indented delimiter does not end it.
     ("cat <<-X\n\tbody\n  X\n\tX\nreal\n", [["cat"], ["real"]], ["\tbody\n  X\n"]),
+    # critic r2: `!(cmd)` at a command position negates a subshell.
+    ("if !(eigenscript-gfx --version); then :; fi\n",
+     [["if", "!"], ["eigenscript-gfx", "--version"], ["then", ":"], ["fi"]], []),
+    # critic r2: in double quotes a backquote body unescapes \" too.
+    ('B="`c -v \\"x y\\"`"\n', [['B="`c -v \\"x y\\"`"']], [], ['c -v "x y"']),
+    ("echo `p \\\"a\\\"`\n", [["echo", "`p \\\"a\\\"`"]], [], ['p \\"a\\"']),
+    # critic r2: process substitution inside a word stays in the word.
+    ("x=a<(w b) c\n", [["x=a<(w b)", "c"]], [], ["w b"]),
+    # critic r2: command position after `time -p`, after NAME=value, at `{`.
+    ("time -p (( n << 1 ))\nreal\n", [["time", "-p"], ["real"]], []),
+    ("time (( n << 1 ))\nreal\n", [["time"], ["real"]], []),
+    ("FOO=1 [[ a < b ]]\n", [["FOO=1", "[[", "a", "]]"]], []),
+    ("echo {1}>x\n", [["echo", "{1}"]], []),
+    # critic r2: a delimiter line with a trailing blank does not end the body.
+    ("cat <<EOF\nbody\nEOF \nEOF\nreal\n", [["cat"], ["real"]], ["body\nEOF \n"]),
+    # critic r2: a quote inside $(( )) is not a $( ).
+    ("y=$(( ')' ))\n", [["y=$(( ')' ))"]], [], []),
     # ${x:-...} with a nested substitution and a `}` in quotes.
     ('echo ${x:-"}"$(y)} t\n', [["echo", '${x:-"}"$(y)}', "t"]], []),
 ]
@@ -637,6 +655,8 @@ UNQUOTE_INCIDENTS = [
     ("$'\\x41'", "A"), ("$'\\101'", "A"), ("$'\\cA'", "\x01"), ("$'\\c?'", "\x7f"),
     ("$'\\x4g'", "\x04g"), ("$'\\u00e9'", "\u00e9"), ("$'\\777'", "\udcff"),
     ("a\\ b'c'\"d\\\"e\"", 'a bcd"e'),
+    # critic r2 (bash 5.2.21): width of \u, NUL ends the word, bare \c, \x{..}.
+    ("$'\\u00410'", "A0"), ("$'a\\0b'", "a"), ("$'\\c'", "\\c"), ("$'\\x{41}'", "A"),
 ]
 
 
@@ -719,6 +739,12 @@ PLANTS = [
     ("subshell-definitions-counted",
      '        if tok.kind == "word" and at_start and depth == 0:',
      '        if tok.kind == "word" and at_start:', {"H"}),
+    ("unicode-escape-out-of-range-crashes",
+     "        if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF:",
+     "        if False:", {"R"}),
+    ("negated-subshell-read-as-extglob",
+     '                if prefix == "!" and self.cmdpos:',
+     '                if False:', {"H"}),
     ("quoted-heredoc-delimiter-not-unquoted",
      "            self.pending.append((idx, unquote(word), strip, quoted))",
      "            self.pending.append((idx, word, strip, quoted))", {"H", "O1", "O3", "O4"}),
@@ -742,6 +768,8 @@ def _oracles_of(findings):
         m = re.search(r"\b(O[1-4]|CRASH)\b", f)
         if f.startswith("H "):
             tags.add("H")
+        elif f.startswith("R "):
+            tags.add("R")
         elif m:
             tags.add(m.group(1))
     return tags
@@ -759,6 +787,41 @@ def incident_items():
     return [(f"incident#{i}", row[0]) for i, row in enumerate(INCIDENTS)]
 
 
+ROBUST_N = 4000
+ROBUST_PARTS = ["a", " ", "\n", "'", '"', "\\", "$", "(", ")", "{", "}", "`", "<<", "<<-",
+                "<<<", "EOF", "#", ";", "&&", "|", "[[", "]]", "((", "))", "$(", "${", "$((",
+                "$'", "\\x", "\\u", "\\U", "\\c", "\\0", "case", "in", "esac", "for",
+                "time", "!", "=~", "x=", "<(", ">&", "2>", "{fd}", "\t", "\\\n", "\u00e9",
+                "110000", "D800", "41", "?", "0", "777", "'"]
+
+
+ROBUST_ESCAPES = ["\\U110000", "\\UD800", "\\U41", "\\u", "\\uDFFF", "\\x", "\\x{", "\\x{zz}",
+                  "\\x{41}", "\\c", "\\c?", "\\c\\\\", "\\c\u00e9", "\\777", "\\0", "\\'", "a",
+                  "\\", "\\q"]
+
+
+def robustness(mod=ST):
+    """Seeded random shell-ish text: the tokenizer may reject it, never crash
+    (a crash would take a whole gate down instead of reading a prefix)."""
+    import random
+    rng = random.Random(20261125)
+    bad = []
+    for _ in range(ROBUST_N):
+        text = "".join(rng.choice(ROBUST_PARTS) for _ in range(rng.randint(1, 40)))
+        if rng.random() < 0.5:                # an ANSI-C string of escapes
+            text = "echo $'" + "".join(rng.choice(ROBUST_ESCAPES)
+                                       for _ in range(rng.randint(1, 6))) + "' " + text
+        try:
+            for tok in mod.tokenize_prefix(text):
+                mod.unquote(tok.text)
+            mod.function_definitions(mod.tokenize_prefix(text))
+        except ST.ShellLexError:
+            pass
+        except Exception as e:            # noqa: BLE001 -- the finding itself
+            bad.append((text, f"{type(e).__name__}: {e}"))
+    return bad
+
+
 def selftest():
     if not BASH or not DASH:
         print("INSTRUMENT ERROR: shell_oracle needs bash and dash "
@@ -766,7 +829,17 @@ def selftest():
         return 2
     items = load_items(tracked_shell_files()) + incident_items()
     rc = 0
-    print(f"PLAN: {1 + 1 + 1 + len(PLANTS)}")
+    print(f"PLAN: {4 + len(PLANTS)}")
+
+    bad = robustness()
+    if bad:
+        rc = 1
+        print(f"  FAIL: tokenizer raised something other than ShellLexError on {len(bad)} input(s)")
+        for text, err in bad[:5]:
+            print(f"    {text!r}: {err}")
+    else:
+        print(f"  PASS: {ROBUST_N} generated inputs: tokenize() and unquote() only ever "
+              "return or raise ShellLexError")
 
     base, counts = run_corpus(items)
     base += check_incidents()
@@ -801,6 +874,7 @@ def selftest():
         mod = load_mutant(old, new)
         found, _ = run_corpus(subset, mod=mod)
         found += check_incidents(mod)
+        found += [f"R {t!r}: {e}" for t, e in robustness(mod)]
         tags = _oracles_of(found)
         if found and expect <= tags:
             print(f"  PASS: plant {name} caught by {','.join(sorted(tags))} "

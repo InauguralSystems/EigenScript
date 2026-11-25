@@ -81,6 +81,7 @@ METACHARS = frozenset(" \t\n;&|()<>")
 # Words after which the next word is again in command position.
 RESERVED_OPENERS = frozenset({
     "if", "then", "else", "elif", "while", "until", "do", "!", "{", "time",
+    "coproc",
 })
 EXTGLOB_LEADS = frozenset("?*+@!")
 
@@ -153,7 +154,7 @@ class _Lexer:
     def dollar_or_backtick(self, j: int, subst: list, in_double: bool) -> int:
         t = self.text
         if t[j] == "`":
-            return self.backtick(j, subst)
+            return self.backtick(j, subst, in_double)
         nxt = t[j + 1:j + 2]
         if t.startswith("$((", j) and self.arith_closes(j + 3):
             return self.arith(j + 3, j, subst)
@@ -167,8 +168,9 @@ class _Lexer:
             return self.double(j + 1, subst)
         return j + 1
 
-    def backtick(self, i: int, subst: list) -> int:
+    def backtick(self, i: int, subst: list, in_double: bool = False) -> int:
         j = i + 1
+        escapable = "$`\\\"" if in_double else "$`\\"
         body = []
         while j < self.n:
             c = self.text[j]
@@ -178,7 +180,7 @@ class _Lexer:
                 # except before $ ` \ (POSIX 2.6.3); newline is a continuation.
                 if nxt == "\n":
                     self.cuts.add(j)
-                elif nxt in "$`\\":
+                elif nxt in escapable:
                     body.append(nxt)
                 else:
                     body.append(c + nxt)
@@ -328,6 +330,8 @@ class _Body:
         self.expect_delim = None       # (token idx, strip) awaiting the delimiter word
         self.regex_next = False        # the word after `=~` inside [[ ]]
         self.after_for = False         # `for` was just read: `((` is arithmetic
+        self.after_time = False        # `time` was just read: its -p keeps cmdpos
+        self.assigned = False          # this command began with NAME=value
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -352,11 +356,13 @@ class _Body:
                 continue
             if c == "(":
                 prefix = lx.clean(start, j)
+                if prefix == "!" and self.cmdpos:
+                    break                     # `!(cmd)`: negation of a subshell
                 if (prefix and prefix[-1] in EXTGLOB_LEADS) or _is_array_assign(prefix):
                     j = lx.paren_group(j + 1, subst, j)
                     continue
                 break
-            if c in "<>" and t[j + 1:j + 2] == "(" and j == start:
+            if c in "<>" and t[j + 1:j + 2] == "(":
                 j = lx.procsub(j + 2, subst, j)
                 continue
             if c in METACHARS:
@@ -511,6 +517,8 @@ class _Body:
 
     def after_separator(self):
         self.cmdpos = True
+        self.assigned = False
+        self.after_time = False
 
     def in_pattern(self) -> bool:
         return bool(self.case) and self.case[-1] == "pattern"
@@ -541,11 +549,24 @@ class _Body:
                 self.case.pop()
                 self.cmdpos = False
             return
-        if word == "{":
-            self.cmdpos = True                # a group or function body opens
+        if word == "{" and self.cmdpos:
+            return                            # a group or function body opens
+        if self.cmdpos and self.after_time and word.startswith("-"):
+            return                            # `time -p`: still a command position
+        self.after_time = False
+        if self.cmdpos and self.assigned:
+            # After `NAME=value` the next word is a command NAME, never a
+            # keyword: `x=1 [[ a ]]` runs a command called `[[`.
+            if not _is_assignment(word):
+                self.cmdpos = False
             return
         if self.cmdpos and word in ("for", "select"):
             self.after_for = True
+        if self.cmdpos and word == "time":
+            self.after_time = True
+        if self.cmdpos and _is_assignment(word):
+            self.assigned = True
+            return
         if self.cmdpos:
             if word == "case":
                 self.case.append("word")
@@ -764,7 +785,9 @@ def unquote(word: str) -> str:
         else:
             out.append(c)
             i += 1
-    return "".join(out)
+    text = "".join(out)
+    nul = text.find("\0")                     # bash's words are C strings
+    return text if nul < 0 else text[:nul]
 
 
 def _byte(b: int) -> str:
@@ -775,7 +798,8 @@ def _byte(b: int) -> str:
 
 
 def _ansi_escape(word: str, j: int) -> tuple[str, int]:
-    """Decode the escape at word[j] (a backslash) inside $'...' as bash does."""
+    """Decode the escape at word[j] (a backslash) inside $'...' as bash 5.2
+    does.  Never raises: an escape bash leaves alone stays literal."""
     n = len(word)
     e = word[j + 1]
     if e in _ANSI:
@@ -786,6 +810,12 @@ def _ansi_escape(word: str, j: int) -> tuple[str, int]:
             k += 1
         return _byte(int(word[j + 1:k], 8)), k
     hexd = "0123456789abcdefABCDEF"
+    if e == "x" and word[j + 2:j + 3] == "{":
+        close = word.find("}", j + 3)
+        digits = word[j + 3:close] if close > 0 else ""
+        if digits and all(c in hexd for c in digits):
+            return _byte(int(digits, 16)), close + 1
+        return word[j:j + 2], j + 2
     if e in "xuU":
         width = {"x": 2, "u": 4, "U": 8}[e]
         k = j + 2
@@ -794,10 +824,20 @@ def _ansi_escape(word: str, j: int) -> tuple[str, int]:
         if k == j + 2:
             return word[j:j + 2], j + 2
         value = int(word[j + 2:k], 16)
-        return (_byte(value) if e == "x" else chr(value)), k
-    if e == "c" and j + 2 < n:
+        if e == "x":
+            return _byte(value), k
+        if value > 0x10FFFF or 0xD800 <= value <= 0xDFFF:
+            return word[j:k], k               # not a character: kept as written
+        return chr(value), k
+    if e == "c":
+        if j + 2 >= n or word[j + 2] == "'":
+            return "\\c", j + 2                # `\c` with nothing after it
         x = word[j + 2]
-        return ("\x7f" if x == "?" else chr(ord(x.upper()) & 0x1F)), j + 3
+        if x == "\\" and word[j + 3:j + 4] == "\\":
+            return "\x1c", j + 4
+        if x == "?":
+            return "\x7f", j + 3
+        return _byte(ord(x.upper()) & 0x1F) if ord(x) < 0x80 else x, j + 3
     return word[j:j + 2], j + 2
 
 
