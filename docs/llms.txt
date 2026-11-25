@@ -582,7 +582,6 @@ file is written (#2444).
 tensor_load raises a catchable io error naming a path it cannot open. The
 sgd_update family requires matching list/list or buffer/buffer parameter and
 gradient tensors; mixed representations raise type_mismatch before mutation.
-The other refusals are in their rows of BUILTINS.md.
 
 read_text, read_bytes, and read_bytes_buf use Python-style failure semantics:
 missing, unreadable, and directory paths raise catchable io errors containing
