@@ -480,7 +480,10 @@ Builtins: `matmul`, `add`, `subtract`, `multiply`, `divide`, `softmax`,
 `log_softmax`, `relu`, `leaky_relu`, `zeros`, `random_normal`, `shape`,
 `numerical_grad`, `sgd_update`, `tensor_save`, `tensor_load`.
 `tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
-`tensor_load` raises catchable `io` naming the path and defect for missing, directory, short-header, and short-payload inputs; malformed dimensions raise `value`, while an over-cap header or failed payload allocation raises `limit` naming the path and size. `sgd_update` validates the complete shape before mutation: every list row's kind and length must match (ragged matching rows are allowed), and buffer mismatches report each 1-D count or 2-D rows x columns. Mixed representations or row kinds raise `type_mismatch`; different extents raise `value`.
+`tensor_load` likewise raises `io` when its path cannot be opened. The
+`sgd_update` family requires both tensor operands to use the same container
+kind; mixing a list and buffer raises `type_mismatch` without updating either.
+The other refusals are in their rows of BUILTINS.md.
 
 File reads follow Python's exception model: `read_text`, `read_bytes`, and
 `read_bytes_buf` raise a catchable `io` error naming the path and the operating

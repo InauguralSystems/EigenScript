@@ -26,15 +26,6 @@ lint/LSP/DAP inspection, and `eigenscript fmt` are host, tool, or runtime input
 acquisition—not reads performed by a running EigenScript program—and therefore
 remain live. The audited per-site classification, every read and write site with its reason, is in PR #1901's discussion (#1885).
 
-`tensor_load` is the exception among tensor checkpoint reads: each call writes
-exactly one `N ... tensor_load=` record.  A successful load records
-`null`, not the tensor: the payload is untaped, and replay refuses the call with
-`io` before opening the path.  A short header, a bad
-dimension, a zero extent, a short numeric payload and a refused payload
-allocation each record a two-string list, the error kind and the message;
-replay raises that kind and message without opening the path. A directory or a
-path that cannot be opened records the one-string file-I/O error.
-
 The same boundary applies outside the filesystem: raw TCP and HTTP-client
 socket results (including sends) and the script-visible clocks (`clock_unix`,
 `monotonic_ns`, `monotonic_ms`, and `gfx_ticks`) are tape-served before their
@@ -388,8 +379,8 @@ Notes on the families:
   loudly under replay, also before opening their path.
 - **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
   records one compact observation: the standard one-string file-I/O error
-  record when opening the path fails, a two-string `[kind, message]` for a
-  short header, bad dimension, zero extent, short numeric payload or refused
+  record when the path cannot be opened or is a directory, a two-string
+  `[kind, message]` for a short header, ndim other than 1 or 2, zero extent, short numeric payload or refused
   payload allocation, `[rows, cols]` for an over-cap header,
   otherwise `null`. Replay re-raises a recorded open or file error
   byte-for-byte.
