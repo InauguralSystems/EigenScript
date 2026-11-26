@@ -107,8 +107,10 @@ class Program:
         self.text = "\n".join(lines) + "\n"
         # A production builds every alternative and keeps one, so names were
         # counted that never reached the text: keep the ones that did (a
-        # name may be spelled with quotes, backslashes or a continuation).
-        plain = re.sub(r"""\\\n|[\\"']""", "", self.text)
+        # name may be spelled with quotes, backslashes, a continuation or one
+        # of spell()'s two ANSI-C escapes).
+        plain = self.text.replace("\\x73", "s").replace("\\145", "e")
+        plain = re.sub(r"""\\\n|[\\"']""", "", plain)
         placed = set(re.findall(r"eigenscript-[a-z]+[0-9]+", plain))
         self.live &= placed
         self.dead &= placed
@@ -760,7 +762,7 @@ def execute(text, work):
         try:
             os.killpg(p.pid, signal.SIGKILL)
         except ProcessLookupError:
-            pass
+            pass                          # the whole group exited on its own just now
         p.wait()
     finally:
         signal.alarm(0)

@@ -268,8 +268,9 @@ def _word_shape(text, subst, mod, depth):
                 break
         bodies.append(shape(body, mod, depth + 1))
     skeleton = _ansi_as_single(skeleton, mod)
-    skeleton = re.sub(r"\s+", " ", skeleton) if subst else skeleton
-    return (skeleton, tuple(bodies)) if subst else skeleton
+    if not subst:
+        return skeleton
+    return ("word", re.sub(r"\s+", " ", skeleton), tuple(bodies))
 
 
 # ------------------------------------------------------------------- oracles
