@@ -2028,7 +2028,7 @@ numbers are at `0740af03`.
   - the ext_store.c record codec;
   - ext_http.c request/response JSON.
 - **(A) (overflow raises, no wraparound):** the N3 and N4b sites; `sum`,
-  `shared_incr`, `sign_extend`'s subtraction (R1.6b-D1), the `add`/`subtract`/`multiply` scalar arms; the N9
+  `shared_incr`, the `add`/`subtract`/`multiply` scalar arms; the N9
   builtins provide explicit wrapping.
 - **(B):** as N7; `type of` and the 54 consumer `type of ... == "num"` lines
   keep working.

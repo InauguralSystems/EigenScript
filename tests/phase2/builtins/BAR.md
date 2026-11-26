@@ -675,7 +675,7 @@ by text (§10).
 | Q-R17: the writers' loss is R1.7's | agreed: the decoders change at R1.6; the writers' float loss is R1.7 | no change |
 | Q-DB253: the db 2^53 raise | agreed: exact int64; `db_check_exact_int`'s raise is deleted with its reason | no change (the db `.branch` files assumed it) |
 | Q-HEX | agreed: exact digits; negatives raise | `hex` (adds `hex of -1`) |
-| Q-SIGNEXT | agreed: an exact int from the existing operation; R1.6b-D1 (#1894): the subtraction is checked int64 arithmetic, so a result below INT64_MIN raises `value` | `sign_extend` (adds the overflow case) |
+| Q-SIGNEXT | agreed: an exact int from the existing operation; R1.6b-D1 (#1894): the subtraction is checked int64 arithmetic, so a result below INT64_MIN raises `value`; both superseded for `sign_extend` by the #1896 decision (it masks to the width, and that case answers `-1`) | `sign_extend` (adds the overflow case) |
 | Q-CAP: rows the release profile cannot observe | A3: the `profile` column and matched builds | the 25 non-release rows |
 | Q-CLOCK | B2: the injected clock | `monotonic_ns` |
 | Q-ALREADY: int-requiring rows exact before R1.6 | A2: `closed_in` R1.5 (`bit_*`) and main (`chr`, `dispatch`) | 8 rows |
@@ -928,7 +928,8 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   - R1.6b-D1 `sign_extend`: adds `["overflow", "value"]` for
     `sign_extend of [-9223372036854775553, 8]` (the subtraction is checked
     int64 arithmetic; INT64_MIN - 1 raises). `pre` and the tag print
-    `["overflow-answer", -9.223372036854776e+18]`.
+    `["overflow-answer", -9.223372036854776e+18]`. Superseded by the #1896
+    decision: that line is now `["overflow-answer", -1]`.
   - R1.6b-D2 `min`, `max`: each adds `["empty", "value"]` (`of []`) and
     `["empty-list", "value"]` (`of ([])`). `pre` and the tag print
     `["empty-answer", 0]` and `["empty-list-answer", 0]`.

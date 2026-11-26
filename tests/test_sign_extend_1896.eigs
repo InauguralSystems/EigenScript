@@ -21,4 +21,5 @@ check of ["zero width remains passthrough", sign_extend of [511, 0], 511]
 check of ["width above 64 remains passthrough", sign_extend of [511, 65], 511]
 
 if failures > 0:
-    raise of f"{failures} sign_extend checks failed"
+    print of f"{failures} sign_extend checks failed"
+    exit of 1
