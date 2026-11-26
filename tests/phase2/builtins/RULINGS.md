@@ -105,6 +105,15 @@ bank source and before/after branch hashes are in `../builtins_changes.md`.
 This authorized semantic amendment is separate from N6's text-only allowance;
 every other frozen expectation remains unchanged until the explicit S10-D3 diagnostic amendment below.
 
+### #1896 decision: low-bit masking defines `sign_extend`
+
+[The orchestrator's #1896 decision](https://github.com/InauguralSystems/EigenScript/issues/1896#issuecomment-7174712863)
+rules that `sign_extend` masks to the low `bits` bits and then sign-extends for
+widths 1 through 64. For this builtin only, it supersedes Q-SIGNEXT and
+R1.6b-D1. The gate accepts either the BASE transcript under the R1.6b-D1
+ledger row or exactly the decision's two replacements under a `#1896` row;
+the scenario and every other frozen expectation remain unchanged.
+
 ## S10-D3 — main read_text cap diagnostic stands (2026-10-29)
 
 The PR #1776 orchestrator ruling authorizes ONLY the over-cap diagnostic line in `builtins/read_text.branch`. Main `e0d491598ee19108802bf25c99c5b59d23039117` closes [#2076](https://github.com/InauguralSystems/EigenScript/issues/2076), whose Done-when requires "the same raise message naming the escape" for `read_text`, `read_bytes` and `read_bytes_buf`, from one shared cap helper. EigenMiniSat#131 supplied the consumer: competition instances of14–21MB were refused. The bar case is a builtin self-test, not a separate Phase2 numeric rule.

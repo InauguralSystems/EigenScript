@@ -35,6 +35,9 @@ SYNC11_RETIREMENTS = {BAR + name + '.branch' for name in (
     'model_load_weights', 'native_train_step_builtin')}
 NEAREST_PATH = BAR + 'nearest_in_range_all.branch'
 NEAREST_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1888#issuecomment-6402855103'
+SIGN_EXTEND_PATH = BAR + 'sign_extend.branch'
+SIGN_EXTEND_ANCHOR = 'f685b61313eec4723fa96783b280841b92715ff3'
+SIGN_EXTEND_DECISION = 'https://github.com/InauguralSystems/EigenScript/issues/1896#issuecomment-7174712863'
 FROUND_PATH = BAR + 'fround.branch'
 R22_ANCHOR = '3a1c5e84dfb3f705f6c9033fe59606f2689a8011'
 FROUND_DECISION = 'docs/design/phase2-numbers.md: fround result guard until R2.2; Round 2 item 2'
@@ -167,6 +170,51 @@ def apply_semantic_amendment(root, data, frozen):
     frozen[NEAREST_PATH] = after
 
 
+def apply_sign_extend_amendment(root, data, frozen):
+    """#1896 permits exactly its two-line sign_extend change, selected by the ledger."""
+    entry = data.get('sign_extend_amendment', {})
+    require(entry.get('anchor') == SIGN_EXTEND_ANCHOR and
+            entry.get('decision') == SIGN_EXTEND_DECISION,
+            SIGN_EXTEND_PATH + ': missing #1896 decision/anchor')
+    source = SIGN_EXTEND_PATH.removesuffix('.branch') + '.eigs'
+    before = git(root, 'show', SIGN_EXTEND_ANCHOR + ':' + SIGN_EXTEND_PATH)
+    source_bytes = git(root, 'show', SIGN_EXTEND_ANCHOR + ':' + source)
+    first = b'[9007199254740865, "int"]'
+    second = b'["overflow", "value"]'
+    require(before.count(first) == 1 and before.count(second) == 1,
+            SIGN_EXTEND_PATH + ': base does not contain the two decision sites exactly once')
+    after = before.replace(first, b'[-127, "int"]').replace(second, b'["overflow-answer", -1]')
+    require(sha(before) == entry.get('base_sha256') and sha(after) == entry.get('new_sha256'),
+            SIGN_EXTEND_PATH + ': #1896 recorded hashes do not match the exact two replacements')
+    require(sha(source_bytes) == entry.get('source_sha256') and
+            (root / source).read_bytes() == source_bytes,
+            source + ': #1896 changed the frozen scenario')
+    section = (root / 'tests/phase2/builtins_changes.md').read_text().split('## Frozen .branch amendments\n', 1)
+    require(len(section) == 2, 'missing frozen .branch amendment section')
+    decision_rows = []
+    for line in section[1].split('\n## ', 1)[0].splitlines():
+        if not line.startswith('|'):
+            continue
+        fields = [value.strip().strip('`') for value in line.strip('|').split('|')]
+        if len(fields) == 4 and fields[2] == '#1896':
+            decision_rows.append(fields)
+    waiver = amendments_for(root, [SIGN_EXTEND_PATH]).get(SIGN_EXTEND_PATH, [])
+    current = (root / SIGN_EXTEND_PATH).read_bytes()
+    if waiver[:2] == [entry['base_sha256'], 'R1.6b-D1']:
+        require(len(waiver) == 3 and bool(waiver[2]) and not decision_rows,
+                SIGN_EXTEND_PATH + ': base state must have only its R1.6b-D1 ledger row')
+        require(current == before, SIGN_EXTEND_PATH + ': R1.6b-D1 requires the BASE bytes')
+        frozen[SIGN_EXTEND_PATH] = before
+    elif waiver[:2] == [entry['new_sha256'], '#1896']:
+        require(len(waiver) == 3 and bool(waiver[2]) and
+                decision_rows == [[SIGN_EXTEND_PATH, entry['new_sha256'], '#1896', waiver[2]]],
+                SIGN_EXTEND_PATH + ': #1896 must name only sign_extend and its exact decided SHA-256')
+        require(current == after, SIGN_EXTEND_PATH + ': #1896 requires exactly the two decided replacements')
+        frozen[SIGN_EXTEND_PATH] = after
+    else:
+        raise ValueError(SIGN_EXTEND_PATH + ': ledger must select BASE/R1.6b-D1 or the exact #1896 bytes')
+
+
 
 def apply_fround_semantic_amendment(root, data, frozen):
     """R2.2-N11's two explicitly scheduled values; no file is waived."""
@@ -233,6 +281,7 @@ def derive(root, observations, output):
     paths = [p for p in paths if p.endswith('.branch') and p not in retired]
     frozen = anchor_files(root, paths)
     apply_semantic_amendment(root, metadata, frozen)
+    apply_sign_extend_amendment(root, metadata, frozen)
     apply_diagnostic_amendment(root, frozen)
     files, current_differences, runs = {}, {}, {}
     for profile in PROFILES:
@@ -348,6 +397,7 @@ def load(root, metadata):
     frozen = {path: anchored[path] for path in branch_paths}
     require(bool(frozen), 'anchor has no frozen files')
     apply_semantic_amendment(root, data, frozen)
+    apply_sign_extend_amendment(root, data, frozen)
     apply_fround_semantic_amendment(root, data, frozen)
     apply_diagnostic_amendment(root, frozen)
     for path, entry in files.items():
@@ -416,8 +466,12 @@ def check(root, metadata, candidate_dir=None, baseline_binary=None, binary=None)
     data, frozen = load(root, metadata)
     if candidate_dir:
         paths = list(candidate_dir.rglob('*'))
-        require({p.relative_to(candidate_dir).as_posix() for p in paths} == {Path(p).name for p in data['files']},
-                'candidate file population differs from the derived population')
+        present = {p.relative_to(candidate_dir).as_posix() for p in paths}
+        expected = {Path(p).name for p in data['files']}
+        require(not expected - present,
+                'candidate file population is missing: ' + ', '.join(sorted(expected - present)))
+        require(not present - expected,
+                'candidate file population has extra: ' + ', '.join(sorted(present - expected)))
         actual = {path: (candidate_dir / Path(path).name).read_bytes() for path in data['files']}
     else:
         actual = {p.relative_to(root).as_posix(): p.read_bytes() for p in (root / BAR).rglob('*.branch')}
@@ -446,9 +500,22 @@ def self_test(root, metadata):
     with tempfile.TemporaryDirectory(prefix='r17-d2-selftest-') as temp:
         directory = Path(temp)
         good = {Path(p).name: render(frozen[p], e['line_kinds'], p) for p, e in data['files'].items()}
+        class CheckResult:
+            def __init__(self, returncode, stderr=b''):
+                self.returncode, self.stderr = returncode, stderr
         def invoke():
-            return subprocess.run([sys.executable, str(Path(__file__).resolve()), '--root', str(root),
-                                   '--metadata', str(metadata), '--candidate-dir', str(directory)], capture_output=True)
+            try:
+                # Plants need only the verdict; avoid formatting the complete
+                # 67-path success report for every in-process mutation.
+                saved_stdout = sys.stdout
+                sys.stdout = io.StringIO()
+                try:
+                    check(root, metadata, directory)
+                finally:
+                    sys.stdout = saved_stdout
+                return CheckResult(0)
+            except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+                return CheckResult(1, str(error).encode())
         def write(files):
             for p in directory.glob('*'):
                 p.unlink()
@@ -457,37 +524,166 @@ def self_test(root, metadata):
         write(good)
         require(invoke().returncode == 0, 'self-test positive complete Python-repr amendment failed')
         plants = {
-            'value': ('fround.branch', lambda b: b.replace(b'0.10000000149011612', b'0.2')),
-            'restored-clamp': ('fround.branch', lambda b: b.replace(b'[inf,', b'[1e+308,', 1)),
-            'kind': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3"')),
-            'integer': ('json_encode.branch', lambda b: b.replace(b'9007199254740993', b'9007199254740992', 1)),
-            'integer-kind': ('json_encode.branch', lambda b: b.replace(b'[3,', b'[3.0,', 1)),
-            'non-float-text': ('json_build.branch', lambda b: b.replace(b'"a"', b'"z"')),
-            'missing-token': ('min.branch', lambda b: b.replace(b'[3, "int"]', b'["int"]', 1)),
-            'extra-token': ('max.branch', lambda b: b.replace(b'[3, "int"]', b'[3, 4, "int"]', 1)),
-            'float-render': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3.00"')),
-            'position': ('json_build.branch', lambda b: b.replace(b'"d": 3.0', b'3.0: "d"')),
+            'value': ('fround.branch', lambda b: b.replace(b'0.10000000149011612', b'0.2'), b'fround.branch:1 token 1: double bits changed'),
+            'restored-clamp': ('fround.branch', lambda b: b.replace(b'[inf,', b'[1e+308,', 1), b'fround.branch:2: numeric token count changed'),
+            'kind': ('str.branch', lambda b: b.replace(b'"3.0"', b'"3"'), b'str.branch:1 token 3: float kind/text is not Python repr'),
+            'integer': ('json_encode.branch', lambda b: b.replace(b'9007199254740993', b'9007199254740992', 1), b'json_encode.branch:1 token 2: integer spelling/value/kind changed'),
+            'integer-kind': ('json_encode.branch', lambda b: b.replace(b'[3,', b'[3.0,', 1), b'json_encode.branch:1 token 1: integer spelling/value/kind changed'),
+            'non-float-text': ('json_build.branch', lambda b: b.replace(b'"a"', b'"z"'), b'json_build.branch:1: non-float text or numeric position changed'),
+            'missing-token': ('min.branch', lambda b: b.replace(b'[3, "int"]', b'["int"]', 1), b'min.branch:2: numeric token count changed'),
+            'extra-token': ('max.branch', lambda b: b.replace(b'[3, "int"]', b'[3, 4, "int"]', 1), b'max.branch:2: numeric token count changed'),
+            'float-render': ('str.branch', lambda b: b.replace(b'"2.5"', b'"2.50"'), b'str.branch:1 token 2: float kind/text is not Python repr'),
+            'position': ('json_build.branch', lambda b: b.replace(b'"b": 2.5', b'2.5: "b"'), b'json_build.branch:1: non-float text or numeric position changed'),
         }
         count = 0
-        for label, (name, mutate) in plants.items():
+        for label, (name, mutate, message) in plants.items():
             bad = dict(good)
             bad[name] = mutate(bad[name])
             require(bad[name] != good[name], 'self-test plant did not take: ' + label)
             write(bad)
             result = invoke()
-            require(result.returncode == 1 and b'FAIL:' in result.stderr, 'self-test plant survived: ' + label)
+            require(result.returncode == 1 and message in result.stderr, 'self-test plant survived: ' + label)
             print('float-amend-self-test: %s rejected PASS' % label)
             count += 1
-        for label, files in [('missing-file', {k: v for k, v in good.items() if k != 'str.branch'}),
-                             ('extra-file', dict(good, extra_branch=b'0\n'))]:
+        for label, files, message in [('missing-file', {k: v for k, v in good.items() if k != 'str.branch'}, b'candidate file population is missing: str.branch'),
+                                      ('extra-file', dict(good, extra_branch=b'0\n'), b'candidate file population has extra: extra.branch')]:
             if label == 'extra-file':
                 files['extra.branch'] = files.pop('extra_branch')
             write(files)
             result = invoke()
-            require(result.returncode == 1 and b'FAIL:' in result.stderr, 'self-test plant survived: ' + label)
+            require(result.returncode == 1 and message in result.stderr, 'self-test plant survived: ' + label)
             print('float-amend-self-test: %s rejected PASS' % label)
             count += 1
-        print('float-amend-self-test: positive=1 rejected=%d PASS' % count)
+        tree = directory / 'tree'
+        result = subprocess.run(['git', '-C', str(root), 'worktree', 'add', '--detach', str(tree), 'HEAD'],
+                                capture_output=True)
+        require(result.returncode == 0, 'self-test could not create scratch worktree: ' +
+                result.stderr.decode(errors='replace'))
+        try:
+            for relative in ('tools/phase2_float_amend.py', 'tests/phase2/r17_float_text.json'):
+                (tree / relative).write_bytes((root / relative).read_bytes())
+            ledger_path = Path('tests/phase2/builtins_changes.md')
+            branch_path = Path(SIGN_EXTEND_PATH)
+            source_path = Path(SIGN_EXTEND_PATH.removesuffix('.branch') + '.eigs')
+            # Preserve every later accepted ledger row.  Only this decision's
+            # source and branch come from its anchor.
+            originals = {
+                ledger_path: (root / ledger_path).read_bytes(),
+                branch_path: git(root, 'show', SIGN_EXTEND_ANCHOR + ':' + branch_path.as_posix()),
+                source_path: git(root, 'show', SIGN_EXTEND_ANCHOR + ':' + source_path.as_posix()),
+            }
+            def reset_state():
+                for path, body in originals.items():
+                    (tree / path).write_bytes(body)
+                # Normalize just the sign_extend row to the base state; the
+                # checkout normally contains the accepted #1896 state.
+                set_row(data['sign_extend_amendment']['base_sha256'], 'R1.6b-D1', ' base state')
+            def set_row(digest, ruling, reason=' planted self-test row'):
+                ledger = (tree / ledger_path).read_text()
+                lines = ledger.splitlines(keepends=True)
+                matches = [i for i, line in enumerate(lines) if line.startswith('| `' + SIGN_EXTEND_PATH + '` |')]
+                require(len(matches) == 1, 'self-test sign_extend ledger must contain exactly one row')
+                ending = '\n' if lines[matches[0]].endswith('\n') else ''
+                lines[matches[0]] = '| `%s` | `%s` | %s |%s |%s' % (
+                    SIGN_EXTEND_PATH, digest, ruling, reason, ending)
+                (tree / ledger_path).write_text(''.join(lines))
+            def select_new(body):
+                set_row(data['sign_extend_amendment']['new_sha256'], '#1896')
+                (tree / branch_path).write_bytes(body)
+            def state_check(selected_data=None, before_override=None):
+                selected_data = selected_data or data
+                frozen_state = {SIGN_EXTEND_PATH: before_override or originals[branch_path]}
+                saved_git = globals()['git']
+                if before_override is not None:
+                    def planted_git(selected_root, *args):
+                        if args == ('show', selected_data['sign_extend_amendment']['anchor'] + ':' + SIGN_EXTEND_PATH):
+                            return before_override
+                        return saved_git(selected_root, *args)
+                    globals()['git'] = planted_git
+                try:
+                    apply_sign_extend_amendment(tree, selected_data, frozen_state)
+                    return CheckResult(0)
+                except (OSError, ValueError, KeyError, IndexError, TypeError) as error:
+                    return CheckResult(1, str(error).encode())
+                finally:
+                    globals()['git'] = saved_git
+            reset_state()
+            require(state_check().returncode == 0, 'self-test BASE/R1.6b-D1 positive failed')
+            before = originals[branch_path]
+            decided = before.replace(b'[9007199254740865, "int"]', b'[-127, "int"]').replace(
+                b'["overflow", "value"]', b'["overflow-answer", -1]')
+            require(sha(decided) == data['sign_extend_amendment']['new_sha256'],
+                    'self-test computed #1896 bytes differ from the decision hash')
+            reset_state(); select_new(decided)
+            require(state_check().returncode == 0, 'self-test #1896 positive failed')
+            print('float-amend-self-test: sign-extend-states positive PASS')
+            state_plants = []
+            reset_state(); (tree / branch_path).write_bytes(decided)
+            state_plants.append(('sign-extend-new-with-old-row', state_check(), b'R1.6b-D1 requires the BASE bytes'))
+            reset_state(); one_more = decided + b'\n'; select_new(one_more)
+            state_plants.append(('sign-extend-extra-byte-nonmatching-ledger', state_check(), b'#1896 requires exactly the two decided replacements'))
+            reset_state(); (tree / branch_path).write_bytes(one_more); set_row(sha(one_more), '#1896')
+            state_plants.append(('sign-extend-extra-byte-matching-ledger', state_check(), b'ledger must select BASE/R1.6b-D1'))
+            reset_state(); minus128 = decided.replace(b'[-127, "int"]', b'[-128, "int"]'); (tree / branch_path).write_bytes(minus128); set_row(sha(minus128), '#1896')
+            planted_data = json.loads(json.dumps(data))
+            planted_data['sign_extend_amendment']['new_sha256'] = sha(minus128)
+            state_plants.append(('sign-extend-minus-128-matching-records', state_check(planted_data),
+                                 b'#1896 recorded hashes do not match the exact two replacements'))
+            reset_state(); (tree / source_path).write_bytes(originals[source_path] + b'\n')
+            state_plants.append(('sign-extend-source-edit', state_check(), b'#1896 changed the frozen scenario'))
+            reset_state(); ledger = (tree / ledger_path).read_text().replace(
+                '## Frozen .branch amendments\n', '## Planted .branch amendments\n', 1)
+            (tree / ledger_path).write_text(ledger)
+            state_plants.append(('sign-extend-missing-ledger-section', state_check(),
+                                 b'missing frozen .branch amendment section'))
+            for label, body in (
+                    ('sign-extend-first-replacement', before.replace(b'[9007199254740865, "int"]', b'[-127, "int"]')),
+                    ('sign-extend-second-replacement', before.replace(b'["overflow", "value"]', b'["overflow-answer", -1]')),
+                    ('sign-extend-crlf', decided.replace(b'\n', b'\r\n'))):
+                reset_state(); (tree / branch_path).write_bytes(body); set_row(sha(body), '#1896')
+                state_plants.append((label, state_check(), b'ledger must select BASE/R1.6b-D1'))
+            for ruling in ('# 1896', '1896'):
+                reset_state(); (tree / branch_path).write_bytes(decided); set_row(sha(decided), ruling)
+                state_plants.append(('sign-extend-ruling-' + ruling.replace(' ', '-'), state_check(),
+                                     b'ledger must select BASE/R1.6b-D1'))
+            reset_state(); ledger = (tree / ledger_path).read_text()
+            heading, section = ledger.split('## Frozen .branch amendments\n', 1)
+            table, suffix = section.split('\n## ', 1)
+            table += '\n| `tests/phase2/builtins/not-sign-extend.branch` | `00` | #1896 | relabelled base-state row |'
+            (tree / ledger_path).write_text(heading + '## Frozen .branch amendments\n' + table + '\n## ' + suffix)
+            state_plants.append(('sign-extend-base-decision-row', state_check(), b'base state must have only its R1.6b-D1 ledger row'))
+            reset_state(); set_row(data['sign_extend_amendment']['new_sha256'], 'R1.6b-D1')
+            state_plants.append(('sign-extend-new-sha-base-ruling', state_check(), b'ledger must select BASE/R1.6b-D1'))
+            for key, message in (('anchor', b'missing #1896 decision/anchor'), ('decision', b'missing #1896 decision/anchor'),
+                                 ('base_sha256', b'#1896 recorded hashes do not match'), ('source_sha256', b'#1896 changed the frozen scenario')):
+                reset_state(); planted = json.loads(json.dumps(data)); planted['sign_extend_amendment'][key] = 'planted'
+                state_plants.append(('sign-extend-metadata-' + key, state_check(planted), message))
+            reset_state(); set_row(data['sign_extend_amendment']['base_sha256'], 'R1.6b-D1', '')
+            state_plants.append(('sign-extend-base-empty-reason', state_check(), b'base state must have only its R1.6b-D1 ledger row'))
+            reset_state(); (tree / branch_path).write_bytes(decided); set_row(data['sign_extend_amendment']['new_sha256'], '#1896', '')
+            state_plants.append(('sign-extend-new-empty-reason', state_check(), b'#1896 must name only sign_extend'))
+            duplicated = before + before[before.find(b'[9007199254740865, "int"]'):]
+            planted = json.loads(json.dumps(data)); planted['sign_extend_amendment']['base_sha256'] = sha(duplicated)
+            reset_state(); set_row(sha(duplicated), 'R1.6b-D1')
+            state_plants.append(('sign-extend-duplicate-decision-site', state_check(planted, duplicated),
+                                 b'base does not contain the two decision sites exactly once'))
+            # A later accepted path remains untouched because reset_state starts
+            # from the current ledger rather than the decision anchor's ledger.
+            reset_state(); ledger = (tree / ledger_path).read_text(); heading, section = ledger.split('## Frozen .branch amendments\n', 1)
+            table, suffix = section.split('\n## ', 1)
+            table += '\n| `tests/phase2/builtins/later.branch` | `' + sha(b'later\n') + '` | LATER | simulated later accepted path |'
+            (tree / ledger_path).write_text(heading + '## Frozen .branch amendments\n' + table + '\n## ' + suffix)
+            require(state_check().returncode == 0, 'self-test BASE state rejected a later accepted ledger path')
+            print('float-amend-self-test: sign-extend-later-ledger positive PASS')
+            for label, planted, message in state_plants:
+                require(planted.returncode == 1 and message in planted.stderr,
+                        'self-test plant survived: ' + label)
+                print('float-amend-self-test: %s rejected PASS' % label)
+                count += 1
+        finally:
+            subprocess.run(['git', '-C', str(root), 'worktree', 'remove', '--force', str(tree)],
+                           capture_output=True)
+        print('float-amend-self-test: positive=3 rejected=%d PASS' % count)
 
 
 def main():
