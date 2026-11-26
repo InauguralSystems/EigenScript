@@ -33,7 +33,7 @@ if [ "${n:-0}" -lt "$FILE_FLOOR" ]; then
 fi
 # GNU userland accepts these convenient flags, but the macOS/BSD tools used by
 # the merge queue do not.  This is a row in the portability gate rather than a
-# new checker.  shell_lines() is the repository's existing shell lexer: it
+# new checker.  shell_token_lines() is the repository's shell tokenizer: it
 # removes comments and skips heredoc bodies before command words are examined.
 # Allowlist rows are exact path/kind pairs; every row must consume at least one
 # live hit, so deleting the use without deleting its explanation is red.
@@ -45,7 +45,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd() / "tools"))
-from _derive_variants import SEPARATORS, _split_words, _subst_bodies, shell_lines
+from _derive_variants import SEPARATORS, shell_token_lines
+from _shell_tokens import (TokenizerGap, assignment_split, emptied, tokenize_file,
+                           tokenize_prefix, unquote)
 
 ALLOW = {
     ("tests/test_ci_portability.sh", "sed -i"): (
@@ -61,54 +63,71 @@ CONTROL = {"if", "then", "elif", "else", "do", "while", "until", "!", "time"}
 WRAPPERS = {"command", "builtin", "exec", "env", "sudo", "nohup"}
 
 
-def plain(word):
-    if len(word) >= 2 and word[0] == word[-1] and word[0] in "'\"":
-        return word[1:-1]
-    return word
+def _argv(raw):
+    """One command's argv from its words as written: leading reserved
+    words, assignments and wrappers (with their options), in whatever order
+    they come, are not the command."""
+    raw = list(raw)
+    # Quote removal is the shell's (the tokenizer's): `'sed' -i`, `s\ed -i`
+    # and `$'sed' -i` all run sed.
+    seg = [unquote(x) for x in raw]
+    wrapped = False
+    while seg:
+        # The word in front, with its expansions taken as empty when that
+        # leaves a word: `${TMO:+$TMO }sed -i` and `$(Q)sed -i` run `sed`
+        # when the expansion is empty.
+        reading = emptied(raw[0])
+        if reading:
+            seg[0] = reading
+        word = seg[0]
+        # A leading assignment is what bash's own test says it is
+        # (`m[${k[1]}]=v sed -i`), or -- as before -- any NAME=... once
+        # quotes are stripped: over-broad keeps a flag in view, never hides
+        # one.  A word that is nothing but expansions (`$TMO sed -i`,
+        # `${WRAP:+nice} sed -i`, `"${run[@]}" sed -i`) holds a wrapper or
+        # nothing, and the word after it is what runs.
+        if word in WRAPPERS:
+            wrapped = True
+        elif not (word in CONTROL or reading == "" or assignment_split(raw[0]) is not None
+                  or ("=" in word and word.split("=", 1)[0].replace("_", "a").isalnum())
+                  or (wrapped and (word.startswith("-") or "=" in word))):
+            break
+        seg.pop(0)
+        raw.pop(0)
+    return seg
 
 
-def commands(text):
-    """Yield argv vectors at shell command positions, including substitutions."""
-    toks = _split_words(text)
+def commands(toks):
+    """Yield, per command at a shell command position (substitutions
+    included), the readings of its argv: a list, the usual reading first.
+
+    TOKS are tokens the shell tokenizer read in context (shell_token_lines);
+    a substitution's body is a command list of its own.  A redirection and
+    its target are not words of the command (`env -i < f sed -i x`).  The
+    second reading, present only when it differs, starts at the word the
+    tokenizer says the command RUNS (role 'command'): `time -p sed -i x` and
+    `coproc sed -i x` run `sed`, and the first reading takes `-p` and
+    `coproc` for it."""
     for tok in toks:
-        for body in _subst_bodies(tok):
-            yield from commands(body)
+        for body in tok.subst:
+            yield from commands(tokenize_prefix(body))
+    texts = [";" if t.kind == "newline" else t.text for t in toks]
     start = 0
-    for end in range(len(toks) + 1):
-        if end != len(toks) and toks[end] not in SEPARATORS:
+    for end in range(len(texts) + 1):
+        if end != len(texts) and (toks[end].kind == "word" or texts[end] not in SEPARATORS):
             continue
-        seg = [plain(x) for x in toks[start:end] if x not in ("<", ">")]
+        kept = [i for i in range(start, end)
+                if toks[i].kind == "word" and toks[i].role not in ("target", "delimiter")]
         start = end + 1
-        while seg and (seg[0] in CONTROL or
-                       ("=" in seg[0] and seg[0].split("=", 1)[0].replace("_", "a").isalnum())):
-            seg.pop(0)
-        while seg and seg[0] in WRAPPERS:
-            seg.pop(0)
-            while seg and (seg[0].startswith("-") or "=" in seg[0]):
-                seg.pop(0)
-        if seg:
-            yield seg
-
-
-def logical_lines(text):
-    """Join shell backslash-newline continuations, retaining the first line."""
-    first = None
-    parts = []
-    for lineno, line in shell_lines(text):
-        if first is None:
-            first = lineno
-        # An odd trailing run escapes the newline.  shell_lines has already
-        # removed comments, so this is the physical line ending the shell sees.
-        trailing = len(line) - len(line.rstrip("\\"))
-        if trailing % 2:
-            parts.append(line[:-1])
-            continue
-        parts.append(line)
-        yield first, "".join(parts)
-        first = None
-        parts = []
-    if parts:
-        yield first, "".join(parts)
+        readings = [_argv([texts[i] for i in kept])]
+        runs = next((n for n, i in enumerate(kept) if toks[i].role == "command"), 0)
+        if runs:
+            second = _argv([texts[i] for i in kept[runs:]])
+            if second != readings[0]:
+                readings.append(second)
+        readings = [r for r in readings if r]
+        if readings:
+            yield readings
 
 
 def option_words(args, operands=(), attached_operands=()):
@@ -206,17 +225,29 @@ def violation(argv):
     return None
 
 
+# ---- driver: everything above is also loaded by tools/_shell_exec.py, which
+# checks commands() against the commands bash runs (oracle O7)
 hits = []
+gaps = 0
 for name in sys.argv[1:]:
     text = Path(name).read_text(encoding="utf-8", errors="replace")
-    for lineno, line in logical_lines(text):
-        for argv in commands(line):
-            kind = violation(argv)
+    try:
+        # A file bash accepts but the tokenizer stops on would be checked
+        # only up to that line: refuse instead of passing on less.
+        tokenize_file(text, name)
+    except TokenizerGap as gap:
+        gaps += 1
+        print(f"gnu-flags: FAIL: INSTRUMENT ERROR: {gap}")
+        continue
+    for lineno, toks in shell_token_lines(text):
+        for readings in commands(toks):
+            # one hit per command, whichever reading shows the flag first
+            kind = next(filter(None, map(violation, readings)), None)
             if kind:
                 hits.append((name, lineno, kind))
 
 used = set()
-bad = 0
+bad = gaps
 allowed = 0
 for name, lineno, kind in hits:
     key = (name, kind)

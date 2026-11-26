@@ -408,9 +408,10 @@ replaced_runtime_slot() {
 # The source scanner considers invocation sites, not prose or Dockerfile PATH lines.
 unsupported_variant() {
   local repo="$1" cmd="$2" raw n f
-  raw="$(python3 "$HERE/tools/_derive_variants.py" "$repo" 2>/dev/null)" || { echo variant-derivation; return; }
+  # stderr is not discarded: a deriver INSTRUMENT ERROR names the file and line.
+  raw="$(python3 "$HERE/tools/_derive_variants.py" "$repo")" || { echo variant-derivation; return; }
   f="$WORK/command.sh"; printf '%s\n' "$cmd" > "$f"
-  raw="$raw"$'\n'"$(python3 "$HERE/tools/_derive_variants.py" --shell "$f" 2>/dev/null)" || { echo variant-derivation; return; }
+  raw="$raw"$'\n'"$(python3 "$HERE/tools/_derive_variants.py" --shell "$f")" || { echo variant-derivation; return; }
   while IFS= read -r n; do
     case "$n" in variant\|*) n="${n#variant|}"; n="${n%%|*}" ;; *) continue ;; esac
     case "$n" in
@@ -980,7 +981,7 @@ YAML
   st_consumer first 'eigenscript smoke.eigs'; st_consumer second 'eigenscript smoke.eigs'
   printf 'first\nsecond\n' > "$st_eco/.ca_expected"
   mkdir -p "$st_root/runner/tools" "$st_root/runner/reports/consumer_acceptance"
-  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$st_root/runner/tools/"
+  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_shell_tokens.py" "$HERE/tools/_python_execution.py" "$HERE/tools/_extract_runcmd.py" "$st_root/runner/tools/"
   printf 'status=COMPLETE\ninventory=3\nexamined=3\nVERDICT: PASS\n' > "$st_record"
   st_rc=0
   CA_ECO="$st_eco" CA_TREE="$st_root" CA_RECORD="$st_record" CA_TIMEOUT=2 timeout 60 bash "$st_root/runner/tools/consumer_acceptance.sh" run "$st_candidate" > "$st_out" 2>&1 || st_rc=$?
@@ -1071,7 +1072,7 @@ YAML
   # (L) Git's common directory finds the ecosystem from a nested worktree.
   local wt_main="$st_root/eco-root/EigenScript" wt="$st_root/eco-root/EigenScript/.worktrees/topic" wt_out="$st_root/worktree.out"
   mkdir -p "$wt_main/tools" "$st_root/eco-root/one/.devcontainer"
-  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_extract_runcmd.py" "$wt_main/tools/"
+  cp "$HERE/tools/consumer_acceptance.sh" "$HERE/tools/read_werror_flags.sh" "$HERE/tools/werror_flags.txt" "$HERE/tools/_derive_variants.py" "$HERE/tools/_shell_tokens.py" "$HERE/tools/_python_execution.py" "$HERE/tools/_extract_runcmd.py" "$wt_main/tools/"
   : > "$st_root/eco-root/.ca_fixture"
   printf 'ARG EIGS_REF=v0.43.0\n' > "$st_root/eco-root/one/.devcontainer/Dockerfile"
   printf 'eigenscript smoke.eigs\n' > "$st_root/eco-root/one/.ca_declared"
