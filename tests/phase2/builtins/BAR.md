@@ -289,14 +289,10 @@ agreed).
   so `4.5` raises and `4.0` converts. A fraction already raised and still
   does. A negative raises `value` (Q-HEX); it already does on `pre`.
 - `sign_extend`: both arguments are integer-valued (a bit pattern and a width).
-  The algorithm is unchanged and reads exactly: `[2^53+129, 8]`, low byte 0x81,
-  gives `2^53+129-256` = `9007199254740865`. Results are ints (Q-SIGNEXT).
-  The subtraction is checked int64 arithmetic under rule (A), "overflow
-  raises, no wraparound" (R1.6b-D1, #1894): `[-9223372036854775553, 8]` has
-  low byte 0xFF, and subtracting 256 would give INT64_MIN - 1, so it raises
-  `value`, naming `sign_extend`. Lua's integer subtraction wraps the same
-  operation to 9223372036854775807; `pre` and the tag answer
-  `-9.223372036854776e+18`.
+  The #1896 decision supersedes Q-SIGNEXT and R1.6b-D1 for this builtin: it
+  masks to the low `bits` bits (1 to 64) and then sign-extends. So
+  `[2^53+129, 8]`, low byte 0x81, gives `-127`, and `[-9223372036854775553, 8]`,
+  low byte 0xFF, gives `-1` and no longer raises `value`. Results are ints.
 - `random_int`: Lua `math.random(m, n)` is an integer. The bounds follow N5.
   `[2^53+1, 2^53+1]` has a span of 1, so the result is deterministic and exact.
 - `seed_random`: a seed's range is all of int64 (§6, design round 2). So seeds
@@ -679,7 +675,7 @@ by text (§10).
 | Q-R17: the writers' loss is R1.7's | agreed: the decoders change at R1.6; the writers' float loss is R1.7 | no change |
 | Q-DB253: the db 2^53 raise | agreed: exact int64; `db_check_exact_int`'s raise is deleted with its reason | no change (the db `.branch` files assumed it) |
 | Q-HEX | agreed: exact digits; negatives raise | `hex` (adds `hex of -1`) |
-| Q-SIGNEXT | agreed: an exact int from the existing operation; R1.6b-D1 (#1894): the subtraction is checked int64 arithmetic, so a result below INT64_MIN raises `value` | `sign_extend` (adds the overflow case) |
+| Q-SIGNEXT | agreed: an exact int from the existing operation; R1.6b-D1 (#1894): the subtraction is checked int64 arithmetic, so a result below INT64_MIN raises `value`; both superseded for `sign_extend` by the #1896 decision (it masks to the width, and that case answers `-1`) | `sign_extend` (adds the overflow case) |
 | Q-CAP: rows the release profile cannot observe | A3: the `profile` column and matched builds | the 25 non-release rows |
 | Q-CLOCK | B2: the injected clock | `monotonic_ns` |
 | Q-ALREADY: int-requiring rows exact before R1.6 | A2: `closed_in` R1.5 (`bit_*`) and main (`chr`, `dispatch`) | 8 rows |
@@ -932,7 +928,8 @@ Each item is filed or closed with a reason (the out-of-scope ledger, 2026-10-20)
   - R1.6b-D1 `sign_extend`: adds `["overflow", "value"]` for
     `sign_extend of [-9223372036854775553, 8]` (the subtraction is checked
     int64 arithmetic; INT64_MIN - 1 raises). `pre` and the tag print
-    `["overflow-answer", -9.223372036854776e+18]`.
+    `["overflow-answer", -9.223372036854776e+18]`. Superseded by the #1896
+    decision: that line is now `["overflow-answer", -1]`.
   - R1.6b-D2 `min`, `max`: each adds `["empty", "value"]` (`of []`) and
     `["empty-list", "value"]` (`of ([])`). `pre` and the tag print
     `["empty-answer", 0]` and `["empty-list-answer", 0]`.

@@ -1,7 +1,7 @@
 [-1, "int"]
-[9007199254740865, "int"]
+[-127, "int"]
 ["bits-fraction", "value"]
 ["value-fraction", "value"]
 [-1, "int"]
-["overflow", "value"]
+["overflow-answer", -1]
 rc=0

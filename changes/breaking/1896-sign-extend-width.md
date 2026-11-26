@@ -1,0 +1,1 @@
+- Mask `sign_extend` values to the requested 1..64-bit width before extending; programs relying on high bits passing through must mask or preserve those values explicitly (#1896).

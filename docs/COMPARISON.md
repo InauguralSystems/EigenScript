@@ -232,8 +232,8 @@ print of (7 // 2)
 
 
 Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
-`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
-raises `value` if its existing subtraction underflows (R1.6b-D1).
+`sum` remains int zero (C2). `sign_extend` sign-extends the low bits of its
+value, as its row in BUILTINS.md says.
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning

@@ -6219,8 +6219,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
  * zero symbols crossed in either direction). Their prototypes are in
  * builtins_internal.h; register_builtins below still binds them. ---- */
 
-/* sign_extend of [val, bits] — sign-extend val from given bit width.
- * E.g. sign_extend of [0xFF, 8] → -1 */
+/* sign_extend of [val, bits] — sign-extend the low bits of val.
+ * E.g. sign_extend of [0x1FF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "sign_extend");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "sign_extend", "[val, bits]", make_float(0));
@@ -6229,16 +6229,14 @@ Value* builtin_sign_extend(Value *arg) {
     int64_t val = eigs_list_int(arg, 0, "sign_extend");
     int64_t bits = eigs_list_int(arg, 1, "sign_extend");
     if (g_has_error) return make_null();
-    if (bits <= 0 || bits > 32) return make_int(val);
-    if ((uint64_t)val & (UINT64_C(1) << (bits - 1))) {
-        int64_t result;
-        if (__builtin_sub_overflow(val, INT64_C(1) << bits, &result)) {
-            rt_error(EK_VALUE, 0, "sign_extend: int64 overflow");
-            return make_null();
-        }
-        return make_int(result);
-    }
-    return make_int(val);
+    if (bits <= 0 || bits > 64 || bits == 64) return make_int(val);
+    uint64_t mask = (UINT64_C(1) << bits) - 1;
+    uint64_t sign = UINT64_C(1) << (bits - 1);
+    uint64_t result = ((((uint64_t)val & mask) ^ sign) - sign);
+    /* Decode two's-complement bits without an implementation-defined cast. */
+    int64_t signed_result = result <= INT64_MAX
+        ? (int64_t)result : -1 - (int64_t)(UINT64_MAX - result);
+    return make_int(signed_result);
 }
 
 /* list_truncate of [list, new_len] — shrink list in-place to new_len items.

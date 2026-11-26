@@ -285,7 +285,7 @@ static const char *builtin_docs[][2] = {
     {"shared_keys", "shared_keys — http_request extension builtin; see docs/BUILTINS.md"},
     {"shared_set", "shared_set — http_request extension builtin; see docs/BUILTINS.md"},
     {"shared_size", "shared_size — http_request extension builtin; see docs/BUILTINS.md"},
-    {"sign_extend", "sign_extend of [val, bits] — sign-extend val from given bit width."},
+    {"sign_extend", "sign_extend of [val, bits] — sign-extend the low bits of val."},
     {"sin", "sin — builtin; see docs/BUILTINS.md"},
     {"softmax", "softmax — builtin; see docs/BUILTINS.md"},
     {"sort", "sort of list — stable in-place sort of an all-number or all-string list."},
