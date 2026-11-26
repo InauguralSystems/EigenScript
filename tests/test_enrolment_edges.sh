@@ -35,6 +35,11 @@ bash tests/phase2/slot_layer.sh
 variant=$("$TESTS_DIR/../tools/subst_tool.sh" "$TESTS_DIR/..")
 inline=$(tools/bare_subst.sh)
 echo "$(tools/quoted_subst.sh)"
+$TMO python3 tools/after_expansion.py
+"$BASH" "$TESTS_DIR/../tools/after_quoted_expansion.sh"
+${TMO:+$TMO }bash tools/glued_expansion.sh
+env A=1 sudo bash tools/wrapper_chain.sh
+echo "$BASH" tools/argument_only.sh
 EOF
 cat >"$WORK/tests/test_importer.py" <<'EOF'
 import tools.ai_benchmark
@@ -42,16 +47,26 @@ import subprocess
 subprocess.run(["python3", "tools/phase2_inventory.py"])
 print("tools/orphan.py")
 EOF
+cat >"$WORK/tests/test_helper_name.py" <<'EOF'
+import subprocess
+from helpers import run_bounded
+run_bounded()
+subprocess.run("run_bounded 30 $EIGS tests/never_run.eigs", shell=True)
+subprocess.run("$EIGS tests/does_run.eigs", shell=True)
+EOF
+printf 'print of 1\n' >"$WORK/tests/never_run.eigs"
+printf 'print of 1\n' >"$WORK/tests/does_run.eigs"
 cat >"$WORK/tests/phase2/slot_layer.sh" <<'EOF'
 python3 tools/phase2_inventory.py
 EOF
 cat >"$WORK/bench/check_regression.sh" <<'EOF'
 bash tools/phase2_cost.sh
 EOF
-for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh subst_tool.sh bare_subst.sh quoted_subst.sh; do
+for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh subst_tool.sh bare_subst.sh quoted_subst.sh \
+         after_quoted_expansion.sh glued_expansion.sh wrapper_chain.sh argument_only.sh; do
     printf '#!/bin/sh\n' >"$WORK/tools/$f"
 done
-for f in ai_benchmark.py phase2_inventory.py orphan.py; do printf '# fixture\n' >"$WORK/tools/$f"; done
+for f in ai_benchmark.py phase2_inventory.py orphan.py after_expansion.py; do printf '# fixture\n' >"$WORK/tools/$f"; done
 
 python3 "$ROOT/tools/enrolment_edges.py" "$WORK" >"$WORK/edges"
 bad=0
@@ -70,9 +85,73 @@ row "indented make recipe reaches tool" $'@make:indented-check\ttools/indented_c
 row "command substitution in an assignment" $'tests/sections/fixture.sh\ttools/subst_tool.sh'
 row "bare command substitution" $'tests/sections/fixture.sh\ttools/bare_subst.sh'
 row "quoted command substitution" $'tests/sections/fixture.sh\ttools/quoted_subst.sh'
+# #2559: bash runs the word after one that is nothing but an expansion when
+# the expansion is empty (`$TMO python3 x.py`, as tools/phase2_plants.sh has
+# it), and an interpreter may be held in a variable (`"$BASH" x.sh`, as
+# tests/run_all_tests.sh has it).  A word after `echo` is an argument.
+row "command after a word that is only an expansion" $'tests/sections/fixture.sh\ttools/after_expansion.py'
+row "interpreter held in a quoted variable" $'tests/sections/fixture.sh\ttools/after_quoted_expansion.sh'
+row "expansion written against the command word" $'tests/sections/fixture.sh\ttools/glued_expansion.sh'
+row "wrappers in either order" $'tests/sections/fixture.sh\ttools/wrapper_chain.sh'
+if grep -Fq $'tests/sections/fixture.sh\ttools/argument_only.sh' "$WORK/edges"; then
+    echo "  FAIL: an argument after an expansion falsely enrolled tools/argument_only.sh"; bad=1
+else
+    echo "  PASS: an argument after an expansion is not an execution edge"
+fi
 if grep -Fq $'tests/test_importer.py\ttools/orphan.py' "$WORK/edges"; then
     echo "  FAIL: print string falsely enrolled tools/orphan.py"; bad=1
 else
     echo "  PASS: print string is not an execution edge"
+fi
+# #2559: a Python file defines no shell function.  Read as shell, the call
+# statement `run_bounded()` was a definition of that launcher, so the string
+# the file hands to sh read as a launch of the program after it -- where sh
+# answers "run_bounded: not found" (127) and the program never runs.  The row
+# before it shows the file's shell strings are read at all.
+row "program run from a Python shell string" $'tests/test_helper_name.py\ttests/does_run.eigs'
+if grep -Fq $'tests/test_helper_name.py\ttests/never_run.eigs' "$WORK/edges"; then
+    echo "  FAIL: a Python call statement defined a shell launcher and falsely enrolled tests/never_run.eigs"; bad=1
+else
+    echo "  PASS: a Python call statement does not define a shell launcher"
+fi
+# A whole shell file the tokenizer stops on while `bash -n` accepts it must
+# fail the gate, naming file and line -- never pass on the prefix (#2559).
+# SHELL_TOKENS_PLANT_GAP makes the tokenizer stop at the marker.
+printf 'bash tools/phase2_cost.sh\n: PLANT_GAP_MARK\nbash tools/indented_check.sh\n' >"$WORK/tests/gap.sh"
+gap_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/enrolment_edges.py" "$WORK" \
+    >"$WORK/gap.out" 2>"$WORK/gap.err" || gap_rc=$?
+if [ "$gap_rc" -eq 2 ] && grep -Fq 'INSTRUMENT ERROR: tests/gap.sh:2: ' "$WORK/gap.err"; then
+    echo "  PASS: plant: enrolment edges refuse a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: enrolment edges passed on a prefix (rc=$gap_rc)"; cat "$WORK/gap.err"; bad=1
+fi
+dv_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/_derive_variants.py" --shell "$WORK/tests/gap.sh" \
+    >"$WORK/dv.out" 2>"$WORK/dv.err" || dv_rc=$?
+if [ "$dv_rc" -eq 2 ] && grep -Fq 'INSTRUMENT ERROR: gap.sh:2: ' "$WORK/dv.err"; then
+    echo "  PASS: plant: variant deriver refuses a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: variant deriver derived from a prefix (rc=$dv_rc)"; cat "$WORK/dv.err"; bad=1
+fi
+pt_rc=0
+PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$WORK/tests/gap.sh" \
+    PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 \
+    SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK bash "$ROOT/tools/portability_parse_check.sh" \
+    >"$WORK/pt.out" 2>&1 || pt_rc=$?
+if [ "$pt_rc" -ne 0 ] && grep -Fq "INSTRUMENT ERROR: $WORK/tests/gap.sh:2: " "$WORK/pt.out"; then
+    echo "  PASS: plant: portability check refuses a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: portability check read a prefix (rc=$pt_rc)"; cat "$WORK/pt.out"; bad=1
+fi
+# Control: a file bash rejects too is read up to the line where it stops.
+printf 'bash tools/phase2_cost.sh\n: PLANT_GAP_MARK "unclosed\n' >"$WORK/tests/gap.sh"
+ctl_rc=0
+SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK python3 "$ROOT/tools/enrolment_edges.py" "$WORK" \
+    >"$WORK/gap.out" 2>"$WORK/gap.err" || ctl_rc=$?
+if [ "$ctl_rc" -eq 0 ] && grep -Fxq $'tests/gap.sh\ttools/phase2_cost.sh' "$WORK/gap.out"; then
+    echo "  PASS: control: a file bash rejects is read up to where it stops"
+else
+    echo "  FAIL: control: rc=$ctl_rc for a file bash rejects"; cat "$WORK/gap.err"; bad=1
 fi
 exit "$bad"

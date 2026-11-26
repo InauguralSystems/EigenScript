@@ -93,7 +93,7 @@ open(p, 'w').write(s.replace(old, old.replace(pin, '0' * 64)))
 EOF
         ;;
     F3) git -C "$T" show 0a73adb0612f8612d75393891ae2ba2e1c803663:tests/phase2/builtins/builtins/min.branch > "$B/builtins/min.branch" ;;
-    F4) sub "$B/builtins/sign_extend.branch" '["overflow", "value"]' '["overflow", "type_mismatch"]' ;;
+    F4) sub "$B/builtins/set_exit_code.branch" '["code-negative", "value"]' '["code-negative", "type_mismatch"]' ;;
     R1) sub "$B/run_probes.sh" 'out="$HERE/builtins/$2.$3"' 'out="$2.$3"' ;;
     R2|R3) sub "$B/run_probes.sh" '(LD_PRELOAD="$SHIM" ' '(' ;;
     R4) sub "$B/builtins/recv_timeout.eigs" 'send of [c, 7]\n' '' ;;
@@ -155,7 +155,7 @@ G4|integral-float success must be a result|random_hex: integral-float success st
 F1|frozen bar rejects an unlisted edit|len\.branch: unlisted frozen bar difference
 F2|frozen bar rejects a stale SHA|min\.branch: stale amendment R1\.7-D6: SHA-256=0000
 F3|frozen bar rejects a restored pin|min\.branch: stale amendment R1\.7-D6:
-F4|frozen bar rejects an edited amended line|sign_extend\.branch: stale amendment R1\.6b-D1:
+F4|frozen bar rejects an edited amended line independent of #1896|set_exit_code\.branch: stale amendment R1\.6-S2:
 R1|runner: empty stdout with rc 0|FAIL: abs\.pre printed nothing with rc 0
 R2|runner: hook case without the shim|FAIL: audio_stream_push\.pre ran without its hook pcm
 R3|table: hook case recorded without the shim|audio_stream_push\.pre holds \[\], not one .hook-loaded pcm. line

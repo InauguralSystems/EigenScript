@@ -2317,9 +2317,22 @@ Value* builtin_random_int(Value *arg) {
 
 /* The one way to seed the shared stream: `seed_random` and the CLI's
  * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
-void eigs_seed_random(long seed) {
+void eigs_seed_random(int64_t seed) {
+    uint64_t bits = (uint64_t)seed;
     pthread_mutex_lock(&g_random_lock);
-    srand48(seed);
+    if (bits <= UINT32_MAX) {
+        srand48((long)seed);
+    } else {
+        /* srand48 reads 32 bits (#1886): mix all 64 into the 48-bit state. */
+        uint64_t z = bits + UINT64_C(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
+        z ^= z >> 31;
+        unsigned short state[3] = {
+            (unsigned short)(z & 0xFFFF), (unsigned short)((z >> 16) & 0xFFFF),
+            (unsigned short)((z >> 32) & 0xFFFF)};
+        seed48(state);
+    }
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
 }
@@ -2329,7 +2342,7 @@ Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "seed_random", "a number", make_bool(0));
     int64_t seed = eigs_int_arg(arg, "seed_random");
     if (g_has_error) return make_null();
-    eigs_seed_random((long)seed);
+    eigs_seed_random(seed);
     return make_bool(1);
 }
 
@@ -6206,8 +6219,8 @@ Value* builtin_nearest_in_range_all(Value *arg) {
  * zero symbols crossed in either direction). Their prototypes are in
  * builtins_internal.h; register_builtins below still binds them. ---- */
 
-/* sign_extend of [val, bits] — sign-extend val from given bit width.
- * E.g. sign_extend of [0xFF, 8] → -1 */
+/* sign_extend of [val, bits] — sign-extend the low bits of val.
+ * E.g. sign_extend of [0x1FF, 8] → -1 */
 Value* builtin_sign_extend(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "sign_extend");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 2, "sign_extend", "[val, bits]", make_float(0));
@@ -6216,16 +6229,14 @@ Value* builtin_sign_extend(Value *arg) {
     int64_t val = eigs_list_int(arg, 0, "sign_extend");
     int64_t bits = eigs_list_int(arg, 1, "sign_extend");
     if (g_has_error) return make_null();
-    if (bits <= 0 || bits > 32) return make_int(val);
-    if ((uint64_t)val & (UINT64_C(1) << (bits - 1))) {
-        int64_t result;
-        if (__builtin_sub_overflow(val, INT64_C(1) << bits, &result)) {
-            rt_error(EK_VALUE, 0, "sign_extend: int64 overflow");
-            return make_null();
-        }
-        return make_int(result);
-    }
-    return make_int(val);
+    if (bits <= 0 || bits > 64 || bits == 64) return make_int(val);
+    uint64_t mask = (UINT64_C(1) << bits) - 1;
+    uint64_t sign = UINT64_C(1) << (bits - 1);
+    uint64_t result = ((((uint64_t)val & mask) ^ sign) - sign);
+    /* Decode two's-complement bits without an implementation-defined cast. */
+    int64_t signed_result = result <= INT64_MAX
+        ? (int64_t)result : -1 - (int64_t)(UINT64_MAX - result);
+    return make_int(signed_result);
 }
 
 /* list_truncate of [list, new_len] — shrink list in-place to new_len items.

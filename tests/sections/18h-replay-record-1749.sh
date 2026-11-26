@@ -1,7 +1,7 @@
 echo "[18h] Recording a replay retains served external inputs (#1749)"
 check_binary_fingerprint
 TOTAL=$((TOTAL + 1))
-REPLAY_RECORD_OUT=$(EIGS="$EIGENSCRIPT" bash "$TESTS_DIR/test_replay_record.sh" 2>&1)
+REPLAY_RECORD_OUT=$(EIGS="$EIGS" bash "$TESTS_DIR/test_replay_record.sh" 2>&1)
 REPLAY_RECORD_RC=$?
 if rc_ok "$REPLAY_RECORD_RC" "$REPLAY_RECORD_OUT" &&
    grep -qx 'PASS: replay while recording retains every served record byte-identically' <<< "$REPLAY_RECORD_OUT"; then

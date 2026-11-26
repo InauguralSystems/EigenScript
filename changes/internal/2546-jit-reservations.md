@@ -1,0 +1,1 @@
+- Couple every JIT patch-table write to an explicit capacity reservation in checked builds (#2546).

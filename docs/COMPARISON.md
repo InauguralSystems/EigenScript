@@ -14,6 +14,8 @@ line or `when` ordinal must be an exact whole number: a fraction, a non-finite
 value or a line outside the C `int` range raises `value` instead of being
 truncated. Audio generators round `duration * rate` half away from zero to get
 their sample count.
+`seed_random` consumes all 64 bits of an int64 seed; its compatibility range
+and 48-bit-state collision limit are specified in [BUILTINS.md](BUILTINS.md).
 
 See [Argument guards and arithmetic traps](SPEC.md#argument-guards-and-arithmetic-traps) for the three `EIGS_STRICT` states; wrong-typed builtin arguments raise `type_mismatch` in all three.
 
@@ -230,8 +232,8 @@ print of (7 // 2)
 
 
 Empty `min`/`max` raises `value` in both call forms (R1.6b-D2); empty
-`sum` remains int zero (C2). `sign_extend` reads exact int64 arguments and
-raises `value` if its existing subtraction underflows (R1.6b-D1).
+`sum` remains int zero (C2). `sign_extend` sign-extends the low bits of its
+value, as its row in BUILTINS.md says.
 
 Counts and indices are ints. `floor`, `ceil` and half-away-from-zero `round`
 return an int when the result fits int64. `min`/`max` return the winning

@@ -189,7 +189,7 @@ int main(int argc, char **argv) {
         if (seed_env && *seed_env) {   /* empty means unset, as for EIGS_* flags */
             char *end = NULL;
             errno = 0;
-            long seed = strtol(seed_env, &end, 10);
+            int64_t seed = strtoll(seed_env, &end, 10);
             if (errno == ERANGE || end == seed_env || *end != '\0') {
                 fprintf(stderr, "EIGS_SEED_RANDOM: invalid integer: %s\n", seed_env);
                 return 2;

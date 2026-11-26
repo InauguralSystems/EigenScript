@@ -410,6 +410,14 @@ static void t_rand48(void) {
         CHECK(bits_of(a) == bits_of(b), "drand48 #%d: %a vs %a", i, a, b);
         if (g_fail > 5) return;
     }
+    unsigned short sx[3] = {0x1234, 0xABCD, 0xFEDC};
+    unsigned short *ho = seed48(sx), *eo = eigs_seed48(sx);
+    for (int i = 0; i < 3; i++)
+        CHECK(ho[i] == eo[i], "seed48 old state %d: %x vs %x", i, ho[i], eo[i]);
+    for (int i = 0; i < 1000; i++) {
+        double a = drand48(), b = eigs_drand48();
+        CHECK(bits_of(a) == bits_of(b), "seed48 drand48 #%d: %a vs %a", i, a, b);
+    }
     srand48(-999); eigs_srand48(-999);
     for (int i = 0; i < 10000; i++) {
         long a = lrand48(), b = eigs_lrand48();
@@ -581,6 +589,41 @@ static void t_libm_ulp(void) {
     }
     printf("  pow   max ulp %" PRIu64 " (worst x=%a y=%a)\n", maxu, wx, wy);
     CHECK(maxu <= 8, "pow exceeds 8 ulp");
+    /* #2477: every represented whole exponent is valid for a negative base.
+     * Oddness is meaningful below 2^53; all represented integers at and above
+     * that boundary are even. Fractional, zero-base and infinite-base answers
+     * remain pinned to the system library. */
+    {
+        const double bases[] = {-1.0, -2.0, -0.5};
+        const double exponents[] = {1e15 - 1.0, 1e15 + 1.0,
+                                    0x1p53 - 1.0, 0x1p53, 0x1p53 + 2.0,
+                                    0x1p62, 1e300, 0.5, -1e15 - 1.0};
+        int examined = 0;
+        for (size_t i = 0; i < sizeof(bases) / sizeof(bases[0]); i++)
+            for (size_t j = 0; j < sizeof(exponents) / sizeof(exponents[0]); j++) {
+                double want = pow(bases[i], exponents[j]);
+                double got = eigs_pow(bases[i], exponents[j]);
+                examined++;
+                CHECK((isnan(want) && isnan(got)) || bits_of(want) == bits_of(got),
+                      "pow(%a, %a): %a, the system library %a",
+                      bases[i], exponents[j], got, want);
+            }
+        const double unchanged[][2] = {
+            {0.0, 3.0}, {0.0, -3.0}, {-0.0, 3.0}, {-0.0, -3.0},
+            {INFINITY, 3.0}, {-INFINITY, 3.0},
+            {INFINITY, 0.5}, {-INFINITY, 0.5},
+        };
+        for (size_t i = 0; i < sizeof(unchanged) / sizeof(unchanged[0]); i++) {
+            double want = pow(unchanged[i][0], unchanged[i][1]);
+            double got = eigs_pow(unchanged[i][0], unchanged[i][1]);
+            examined++;
+            CHECK((isnan(want) && isnan(got)) || bits_of(want) == bits_of(got),
+                  "pow(%a, %a): %a, the system library %a",
+                  unchanged[i][0], unchanged[i][1], got, want);
+        }
+        printf("  negative-base pow boundaries: examined %d\n", examined);
+        CHECK(examined == 35, "negative-base pow boundaries: examined %d", examined);
+    }
     /* #2444: an infinite or NaN argument has the system library's answer,
      * exactly (the same bits, or both NaN). Every one-argument function of
      * the table above at the three values; atan2 and pow on every pair of the

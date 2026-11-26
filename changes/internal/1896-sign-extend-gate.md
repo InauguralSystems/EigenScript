@@ -1,0 +1,1 @@
+- Teach the Phase 2 gate to accept only the two ruled `sign_extend` transcript states without changing either golden file (#1896).

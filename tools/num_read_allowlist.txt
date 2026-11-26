@@ -64,6 +64,7 @@ vm.c|#define ARITH_FAST|2|arithmetic fast path after both operands tested VAL_FL
 vm.c|#define NUM_BINOP|6|arithmetic after a->type == VAL_FLOAT && b->type == VAL_FLOAT; NUM_REUSE writes
 vm.c|jit_helper_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|jit_helper_index_get|3|JIT helper: index read after slot_is_f64 / VAL_FLOAT tests on index and element
+vm.c|buffer_store_number|2|buffer store of a value the caller proved with val_is_number: VAL_INT payload behind its kind test, else VAL_FLOAT payload, finite-checked by buffer_store_f64 (#2528)
 vm.c|jit_helper_index_set|5|JIT helper: index store after slot_is_f64 / VAL_FLOAT tests on index and value
 vm.c|jit_helper_local_dot_set|1|JIT helper: number store after slot_is_f64
 vm.c|obs_dump_value|3|SIGUSR1 observer dump after slot_is_f64 / case VAL_FLOAT / case VAL_INT (exact digits)

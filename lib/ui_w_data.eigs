@@ -553,9 +553,10 @@ _register_widget of ["grid", {
 # both the hex cells and the ASCII column. `cursor` (absolute addr or
 # null) marks one byte in accent. `on_select(w, addr)` fires ONLY on a
 # user click (the #842 gesture contract — hex_set_cursor from code is
-# silent). Everything renders under gfx_clip and through the
-# measured-width clipper (#823); theme keys hex_bg / hex_addr /
-# hex_text / hex_ascii / hex_cursor with fallbacks.
+# silent). Everything renders under gfx_clip; multi-character fields use the
+# measured-width clipper while one-glyph ASCII cells draw directly (#823).
+# Theme keys hex_bg / hex_addr / hex_text / hex_ascii / hex_cursor have
+# fallbacks; text over highlight and cursor fills is chosen from black/white.
 
 define hex_view(id, x, y, w, h, reader, size) as:
     return {
@@ -580,18 +581,46 @@ define hex_view(id, x, y, w, h, reader, size) as:
 define hex_set_cursor(hv, addr) as:
     hv.cursor is addr
 
-# Geometry shared by render, hit-testing and the tests: cell/gutter
-# metrics derived from the measured monospace glyph size.
+# Keep the printable ASCII scan once per active font/scale; the one-string signature is also a
+# cheap invalidation seam for metric providers used by embedders and tests.
+_hex_glyph_metrics is {"scale": null, "signature": null, "cw": 0, "hex_cw": 0, "zero_cw": 0, "row_h": 0}
+
+# Geometry shared by render, hit-testing and the tests: cell/gutter metrics
+# derived from the active font.  Rendering, mousemove, mousedown and scroll
+# each call this at most once per dispatch; only a changed signature rescans.
 define hex_view_metrics(hv) as:
-    local cw is text_width of ["0", 1]
-    local row_h is (text_height of 1) + 4
-    local gutter is (hv.addr_nibbles * cw) + 10
-    local cell_w is (cw * 2) + 4
+    local scale is 1
+    local signature is (text_width of [" !\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~", scale]) + (text_height of scale * 10000)
+    if _hex_glyph_metrics.scale != scale or _hex_glyph_metrics.signature != signature:
+        local cw is 0
+        for b in range of [32, 127]:
+            local bw is text_width of [(chr of b), scale]
+            if bw > cw:
+                cw is bw
+        local hex_cw is 0
+        for b in range of [0, 16]:
+            local bw is text_width of [(hex of [b, 1]), scale]
+            if bw > hex_cw:
+                hex_cw is bw
+        _hex_glyph_metrics.scale is scale
+        _hex_glyph_metrics.signature is signature
+        _hex_glyph_metrics.cw is cw
+        _hex_glyph_metrics.hex_cw is hex_cw
+        _hex_glyph_metrics.zero_cw is text_width of ["0", scale]
+        _hex_glyph_metrics.row_h is (text_height of scale) + 4
+    local cw is _hex_glyph_metrics.cw
+    local row_h is _hex_glyph_metrics.row_h
+    local hex_cw is _hex_glyph_metrics.hex_cw
+    # The "0" advance sizes the gutter and the hex cells; they grow only when
+    # the widest hex digit would not fit in them.
+    local zero_cw is _hex_glyph_metrics.zero_cw
+    local gutter is max of [(hv.addr_nibbles * zero_cw) + 10, (hv.addr_nibbles * hex_cw) + 6]
+    local cell_w is max of [(zero_cw * 2) + 4, hex_cw * 2]
     local bpr is hv.bytes_per_row
     local half_gap is 6
     local hex_w is bpr * cell_w + half_gap
     local ascii_x is gutter + hex_w + 8
-    return {"cw": cw, "row_h": row_h, "gutter": gutter,
+    return {"cw": cw, "hex_cw": hex_cw, "row_h": row_h, "gutter": gutter,
             "cell_w": cell_w, "half_gap": half_gap,
             "hex_w": hex_w, "ascii_x": ascii_x, "bpr": bpr}
 
@@ -628,6 +657,21 @@ define _hex_style_color(st) as:
     if (type of st) == "str":
         return theme_color of [st, _theme.accent]
     return st
+
+define _hex_contrast_text(fill) as:
+    # The higher-contrast WCAG endpoint is always at least 4.5:1.
+    local lum is 0
+    local weights is [0.2126, 0.7152, 0.0722]
+    for i in range of 3:
+        local s is fill[i] / 255
+        if s <= 0.04045:
+            s is s / 12.92
+        else:
+            s is pow of [((s + 0.055) / 1.055), 2.4]
+        lum is lum + weights[i] * s
+    if lum > 0.179:
+        return [0, 0, 0]
+    return [255, 255, 255]
 
 define _render_hex_view(widget, ax, ay) as:
     widget._ax is ax
@@ -668,24 +712,43 @@ define _render_hex_view(widget, ax, ay) as:
                     cx is cx + m.half_gap
                 # Highlights under the cell (and mirrored under ASCII).
                 local axx is ax + m.ascii_x + ci * m.cw
+                # The highlight is behind both columns, the cursor only behind
+                # the hex digits.
+                local text_fill is null
+                local ascii_fill is null
                 for hi in range of (len of widget.highlights):
                     local hl is widget.highlights[hi]
                     if addr >= hl.start and addr < hl.end:
                         local hc is _hex_style_color of (hl.style)
                         gfx_rect of [cx - 1, ry - 1, m.cell_w - 2, m.row_h - 1, hc[0], hc[1], hc[2]]
                         gfx_rect of [axx, ry - 1, m.cw, m.row_h - 1, hc[0], hc[1], hc[2]]
+                        text_fill is hc
+                        ascii_fill is hc
                 if widget.cursor != null:
                     if addr == widget.cursor:
                         gfx_rrect of [cx - 2, ry - 2, m.cell_w, m.row_h, 0, ccol[0], ccol[1], ccol[2]]
+                        text_fill is ccol
                 local b is widget.reader of addr
                 if b == null or b < 0:
-                    _draw_text_clipped of [cx, ry, m.cell_w, "..", acol, 1]
+                    local cellcol is acol
+                    if text_fill != null:
+                        cellcol is _hex_contrast_text of text_fill
+                    _draw_text_clipped of [cx, ry, m.cell_w, "..", cellcol, 1]
                 else:
-                    _draw_text_clipped of [cx, ry, m.cell_w, (hex of [b, 2]), tcol, 1]
+                    local cellcol is tcol
+                    if text_fill != null:
+                        cellcol is _hex_contrast_text of text_fill
+                    _draw_text_clipped of [cx, ry, m.cell_w, (hex of [b, 2]), cellcol, 1]
                     local ch is "."
                     if b >= 32 and b <= 126:
                         ch is chr of b
-                    _draw_text_clipped of [axx, ry, m.cw, ch, ascol, 1]
+                    local cellcol is ascol
+                    if ascii_fill != null:
+                        cellcol is _hex_contrast_text of ascii_fill
+                    # A cell promises exactly one character.  Let gfx_text
+                    # rasterise it and the widget clip crop any bearing/ink;
+                    # the multi-character clipper must not discard the glyph.
+                    gfx_text of [axx, ry, ch, cellcol[0], cellcol[1], cellcol[2], 1]
     ui_clip_pop of null
     gfx_rrect of [ax, ay, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]
     gfx_rrect of [ax, ay + widget.h - 1, widget.w, 1, 0, bcol[0], bcol[1], bcol[2]]

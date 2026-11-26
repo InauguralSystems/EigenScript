@@ -4296,6 +4296,13 @@
       "source_sha256": "119f8cee398570b41c70fa0d426e87f74a784e7a893845ce6914fc23d555b871"
     }
   },
+  "sign_extend_amendment": {
+    "anchor": "f685b61313eec4723fa96783b280841b92715ff3",
+    "decision": "https://github.com/InauguralSystems/EigenScript/issues/1896#issuecomment-7174712863",
+    "base_sha256": "bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf",
+    "new_sha256": "fef0a6bd86661ed14b34a320566aba85fca8ce4fb8c5218e2b517bd9dae7b808",
+    "source_sha256": "400b3dd69556056dacc3bfb0d73f6b993b23d822cc2b7e52e8507fcae1d07dda"
+  },
   "semantic_amendments": {
     "tests/phase2/builtins/builtins/nearest_in_range_all.branch": {
       "ruling": "S10-D2",

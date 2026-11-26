@@ -52,6 +52,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 #                       (tools/freestanding_check.sh, #1985)
 #   qemu-user/ziglang-> execute the RISC-V mini-libc fenv differential against
 #                       zig's target musl (#1983)
+#   SDL2_ttf/DejaVu   -> proportional-font render checks in the gfx lane
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         build-essential \
