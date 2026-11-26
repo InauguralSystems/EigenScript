@@ -1664,7 +1664,7 @@ current state behind several rows:
 | `shared_delete` | int-preserving | - | - | removed count |
 | `shared_incr` | int-preserving | LOSS | - | shared counter: delta and stored value in doubles |
 | `shared_size` | int-preserving | - | - | entry count |
-| `sign_extend` | int-requiring | LOSS | - | N5 exact int64 arguments and result; existing subtraction is checked under (A), raising `value` naming sign_extend on underflow (R1.6b-D1, #1894); high-bit masking is separate (#1896) |
+| `sign_extend` | int-requiring | LOSS | - | N5 exact int64 arguments and result; the #1896 contract masks to the low 1..64 bits before sign-extension; widths outside that range pass through |
 | `sin` | float-producing | - | - | Lua math.sin |
 | `softmax` | float-producing | - | - | ML (float) |
 | `sort` | other | LOSS | - | exact int comparator written in R1.2, live from R1.3 (N2.sort-exact); from R2.2 floats sort by IEEE totalOrder, NaN after +inf (Q8) |

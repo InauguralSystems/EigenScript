@@ -192,7 +192,7 @@ builtin-call forms below are retained for backward compatibility.
 | `bit_not` | `bit_not of x` | Bitwise NOT (prefer `~x`) |
 | `bit_shl` | `bit_shl of [a, b]` | Left shift (prefer `a << b`) |
 | `bit_shr` | `bit_shr of [a, b]` | Unsigned right shift (prefer `a >> b`) |
-| `sign_extend` | `sign_extend of [val, bits]` | Exact int64 result from the existing 1..32-bit sign-extension operation; value and width follow N5 (integral floats convert, fractions raise). Its subtraction is checked: int64 underflow raises `value`, naming `sign_extend` (R1.6b-D1). Bits above the width retain the existing behavior (#1896 is separate). |
+| `sign_extend` | `sign_extend of [val, bits]` | Mask `val` to its low `bits` bits, then sign-extend to an exact int64 result. Widths 1..64 are interpreted; widths outside that range return `val` unchanged. Value and width follow N5: integral floats convert, fractions and floats outside int64 raise `value`, and bools, strings, and other non-numbers raise `type_mismatch`. |
 
 ### Width arithmetic (N9)
 

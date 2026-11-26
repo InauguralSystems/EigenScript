@@ -236,7 +236,7 @@ Historical import records above are already included in the pin.
 |---|---|---|---|
 | `tests/phase2/builtins/builtins/max.branch` | `1ca8c1c885cd796015304677d87b4782642d0a79026bd63fd28b67632b25ed9c` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
 | `tests/phase2/builtins/builtins/min.branch` | `eee02d9e7cd24809addb54e3c2df45f401134d5c279a7971a87fea26848781bc` | R1.7-D6 | N6 Python repr only; source-bound kinds and per-line bit proof; prior numeric/value rulings retained |
-| `tests/phase2/builtins/builtins/sign_extend.branch` | `bfc48781e0e0ab7eb480899c9975ccdbb810c36cbd2b297fd62231b41ee03bdf` | R1.6b-D1 | the subtraction is checked int64 arithmetic under rule (A): `sign_extend of [-9223372036854775553, 8]` raises `value` (#1894) |
+| `tests/phase2/builtins/builtins/sign_extend.branch` | `fef0a6bd86661ed14b34a320566aba85fca8ce4fb8c5218e2b517bd9dae7b808` | #1896 | low-bit masking: `[2^53+129, 8]` gives `-127` and `[-9223372036854775553, 8]` answers `-1` instead of raising `value`; exactly the decision's two replacements, scenario unchanged |
 | `tests/phase2/builtins/builtins/set_exit_code.branch` | `6e6f540c7b879ca35185d74c3840327c3f14ef37c5eb74c5d60531aef340620b` | R1.6-S2 | new int-requiring round-c builtin; main already rejects fractions and values outside 0..255; matched main and merged output agree |
 
 | `tests/phase2/builtins/builtins/fround.branch` | `20db5e6318722fdac7343675baf2bed0dc8afb4131f995a195c396a3c46bdcc9` | R2.2-N11 | Explicit fround result guard retirement (design §6 until R2.2, §8.2); only ±1e308 results become ±inf. Kinds, source, flags and rc unchanged. |

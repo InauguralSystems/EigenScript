@@ -289,14 +289,10 @@ agreed).
   so `4.5` raises and `4.0` converts. A fraction already raised and still
   does. A negative raises `value` (Q-HEX); it already does on `pre`.
 - `sign_extend`: both arguments are integer-valued (a bit pattern and a width).
-  The algorithm is unchanged and reads exactly: `[2^53+129, 8]`, low byte 0x81,
-  gives `2^53+129-256` = `9007199254740865`. Results are ints (Q-SIGNEXT).
-  The subtraction is checked int64 arithmetic under rule (A), "overflow
-  raises, no wraparound" (R1.6b-D1, #1894): `[-9223372036854775553, 8]` has
-  low byte 0xFF, and subtracting 256 would give INT64_MIN - 1, so it raises
-  `value`, naming `sign_extend`. Lua's integer subtraction wraps the same
-  operation to 9223372036854775807; `pre` and the tag answer
-  `-9.223372036854776e+18`.
+  The #1896 decision supersedes Q-SIGNEXT and R1.6b-D1 for this builtin: it
+  masks to the low `bits` bits (1 to 64) and then sign-extends. So
+  `[2^53+129, 8]`, low byte 0x81, gives `-127`, and `[-9223372036854775553, 8]`,
+  low byte 0xFF, gives `-1` and no longer raises `value`. Results are ints.
 - `random_int`: Lua `math.random(m, n)` is an integer. The bounds follow N5.
   `[2^53+1, 2^53+1]` has a span of 1, so the result is deterministic and exact.
 - `seed_random`: a seed's range is all of int64 (§6, design round 2). So seeds
