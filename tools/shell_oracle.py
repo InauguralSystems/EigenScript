@@ -713,6 +713,9 @@ INCIDENTS = [
      ["eigenscript-full a.eigs"]),
     ("arr=(<(eigenscript-full a.eigs) b)\n", [["arr=(<(eigenscript-full a.eigs) b)"]], [],
      ["eigenscript-full a.eigs"]),
+    # DevBox r6: a process substitution inside an element, not only a whole one.
+    ("m=([k]=<(c1 a) x<(c2 b) y)\n", [["m=([k]=<(c1 a) x<(c2 b) y)"]], [], ["c1 a", "c2 b"]),
+    ('cat <<-"E"ND_X\n\tbody\n\tEND_X\nc2\n', [["cat"], ["c2"]], ["\tbody\n"]),
     # DevBox r5: `(#` in an =~ group and `@(#` in [[ ]] are pattern text.
     ("[[ $line =~ (#.*)$ ]] && bash tests/strip.sh\n",
      [["[[", "$line", "=~", "(#.*)$", "]]"], ["bash", "tests/strip.sh"]], []),
@@ -867,8 +870,12 @@ PLANTS = [
      "                    j = lx.subscript(j + 1, close - 1, subst)",
      "                    j = close", {"H", "O6"}),
     ("array-process-substitution-dropped",
-     '            if array and c in "<>" and self.text[j + 1:j + 2] == "(" \\',
-     '            if False and self.text[j + 1:j + 2] == "(" \\', {"H", "O6"}),
+     '            if array and c in "<>" and self.text[j + 1:j + 2] == "(":',
+     '            if False and self.text[j + 1:j + 2] == "(":', {"H", "O6"}),
+    ("array-process-substitution-only-at-element-start",
+     '            if array and c in "<>" and self.text[j + 1:j + 2] == "(":',
+     '            if array and c in "<>" and self.text[j + 1:j + 2] == "(" '
+     'and self.text[j - 1] in " \\t\\n(":', {"H", "O6"}),
     ("arith-probe-not-memoized",
      "        if j in self.arith_memo:\n            return self.arith_memo[j]",
      "        if False:\n            pass", {"R"}),
@@ -956,6 +963,7 @@ O5_CONSTRUCTS = [
     "echo $'it\\'s'", "echo $$'a'", "[[ -n $a &&\n -n $b ]]",
     "trap 'echo \"it'\\''s\"' EXIT", "case $a in (x|y) :;; *) :;; esac",
     "seen[$(echo k)]=1", "arr=(<(echo a) b)", "[[ $(echo a) == a ]]",
+    "m=([k]=<(echo a) x<(echo b) y)",
     "case $(echo a) in $(echo a)) :;; esac", "echo \"${x:-$(echo d)}\" >$(echo f)",
 ]
 O5_MARKER = "eigenscript-full end"

@@ -366,8 +366,8 @@ class _Lexer:
             if c in "$`":
                 j = self.dollar_or_backtick(j, subst, in_double=False)
                 continue
-            if array and c in "<>" and self.text[j + 1:j + 2] == "(" \
-                    and self.text[j - 1] in " \t\n(":
+            if array and c in "<>" and self.text[j + 1:j + 2] == "(":
+                # anywhere in an element: `[k]=<(cmd)`, `x<(cmd)` (DevBox r6)
                 j = self.procsub(j + 2, subst, j)
                 continue
             if array and c == "#" and (self.text[j - 1] in " \t\n("):
