@@ -28,6 +28,10 @@ def rel(path: Path) -> str:
     return path.resolve().relative_to(ROOT).as_posix()
 
 
+# NAME=, NAME+= and NAME[subscript]= are assignments, not command words.
+_ASSIGNMENT = r"^[A-Za-z_]\w*(?:\[[^]]*\])?\+?="
+
+
 def emit(src: str, dst: str) -> None:
     print(f"{src}\t{dst}")
 
@@ -102,12 +106,12 @@ def _commands(text: str) -> tuple[tuple[str, ...], ...]:
             commands.extend(_commands(body))
     for cmd in simple_commands(tokens):
         words = [unquote(t.text) for t in cmd]
-        while words and (re.match(r"^[A-Za-z_]\w*=", words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
+        while words and (re.match(_ASSIGNMENT, words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
             words.pop(0)
         if words and words[0] == "env":
             words.pop(0)
             while words and (words[0].startswith("-")
-                             or re.match(r"^[A-Za-z_]\w*=", words[0])
+                             or re.match(_ASSIGNMENT, words[0])
                              or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
                                  and words[0] not in {"$EIGS", "${EIGS}"})):
                 words.pop(0)
@@ -146,7 +150,7 @@ def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
         if words[i] not in defined:
             return i
         i += 1 + metadata[words[i]]
-    while i < len(words) and re.match(r"^[A-Za-z_]\w*=", words[i]):
+    while i < len(words) and re.match(_ASSIGNMENT, words[i]):
         i += 1
     if i < len(words) and words[i] == "$EIGS_TMO":
         i += 1
@@ -154,7 +158,7 @@ def normalized_command_index(words: list[str], defined: frozenset[str]) -> int:
         i += 1
         while i < len(words) and (
             words[i].startswith("-")
-            or re.match(r"^[A-Za-z_]\w*=", words[i])
+            or re.match(_ASSIGNMENT, words[i])
             or (words[i].startswith("$") and "[@]" in words[i])
             or (re.match(r'^\$[A-Za-z_]\w*$', words[i])
                 and words[i] not in {"$EIGS", "${EIGS}"})

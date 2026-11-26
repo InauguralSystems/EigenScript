@@ -125,7 +125,8 @@ KEYWORDS = {
 
 SHELL_SHEBANG = re.compile(r"^#!.*\b(ba|da|k|z|a)?sh\b")
 DEFAULT_EXPANSION = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=])([^}]*)\}")
-ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+# NAME=, NAME+= and NAME[subscript]= are assignments (DevBox on #2559).
+ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^]]*\])?\+?=(.*)$")
 EIGS_CALL_RE = re.compile(
     r"\bexec_capture\s+of\s*\(?\s*\[\s*\[?\s*[\"']([^\"']*)[\"']"
 )
@@ -227,6 +228,9 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
     # there is an invocation position exactly like an assignment's value.
     for_state = 0
     # CA-GUARD:end-for-list
+    # A redirection's target is a file name, not a command; the command
+    # position is unchanged by it (`< <(c) cmd`, `< f cmd` run `cmd`).
+    skip_target = False
     for tok in toks:
         if tok in SEPARATORS:
             cmdpos = True
@@ -234,7 +238,7 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
             for_state = 0
             continue
         if tok in REDIRECTIONS:
-            cmdpos = False
+            skip_target = True
             continue
         word = _unquote(tok)
         # ${VAR:-eigenscript-x} defaults are invocation-shaped wherever
@@ -246,6 +250,9 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
         if depth < 4:
             for body in _subst_bodies(tok):
                 scan_shell_line(body, hits, path, lineno, depth + 1)
+        if skip_target:
+            skip_target = False
+            continue
         if for_state:
             if for_state == 1:            # the loop variable
                 for_state = 2
@@ -705,6 +712,16 @@ def selftest():
         }, set()),
         ("shell-first-word", {"run.sh": "#!/bin/sh\neigenscript-full work.eigs\n"},
          {"eigenscript-full"}),
+        # #2559 (DevBox): a leading redirection's target and a subscript
+        # assignment do not end the command position; a redirection target
+        # is a file, never an invocation.
+        ("shell-redirect-target-and-subscript-assignment", {"run.sh": (
+            "#!/bin/bash\n"
+            "< <(c20) eigenscript-ra x\n"
+            "m[1]=<(c18) eigenscript-rb x\n"
+            "< f eigenscript-rc x\n"
+            "cat > eigenscript-not-run\n"
+        )}, {"eigenscript-ra", "eigenscript-rb", "eigenscript-rc"}),
         ("shell-exec-env-timeout-xvfb", {"run.sh": (
             "#!/bin/bash\n"
             "exec eigenscript-a x\n"
