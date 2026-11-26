@@ -2317,9 +2317,22 @@ Value* builtin_random_int(Value *arg) {
 
 /* The one way to seed the shared stream: `seed_random` and the CLI's
  * EIGS_SEED_RANDOM (#2120, src/main.c) both come through here. */
-void eigs_seed_random(long seed) {
+void eigs_seed_random(int64_t seed) {
+    uint64_t bits = (uint64_t)seed;
     pthread_mutex_lock(&g_random_lock);
-    srand48(seed);
+    if (bits <= UINT32_MAX) {
+        srand48((long)seed);
+    } else {
+        /* srand48 reads 32 bits (#1886): mix all 64 into the 48-bit state. */
+        uint64_t z = bits + UINT64_C(0x9E3779B97F4A7C15);
+        z = (z ^ (z >> 30)) * UINT64_C(0xBF58476D1CE4E5B9);
+        z = (z ^ (z >> 27)) * UINT64_C(0x94D049BB133111EB);
+        z ^= z >> 31;
+        unsigned short state[3] = {
+            (unsigned short)(z & 0xFFFF), (unsigned short)((z >> 16) & 0xFFFF),
+            (unsigned short)((z >> 32) & 0xFFFF)};
+        seed48(state);
+    }
     __atomic_store_n(&g_random_seeded, 1, __ATOMIC_RELEASE);
     pthread_mutex_unlock(&g_random_lock);
 }
@@ -2329,7 +2342,7 @@ Value* builtin_seed_random(Value *arg) {
     ARG_GUARD(!arg || !val_is_number(arg), "seed_random", "a number", make_bool(0));
     int64_t seed = eigs_int_arg(arg, "seed_random");
     if (g_has_error) return make_null();
-    eigs_seed_random((long)seed);
+    eigs_seed_random(seed);
     return make_bool(1);
 }
 

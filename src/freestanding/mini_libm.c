@@ -206,8 +206,11 @@ double eigs_pow(double x, double y) {
         int odd = eigs_fabs(y) < 0x1p53 && eigs_fmod(eigs_fabs(y), 2.0) == 1.0;
         return x < 0.0 && odd ? -magnitude : magnitude;
     }
-    int y_int = (y == eigs_floor(y) && eigs_fabs(y) <= 1e15);
-    int y_odd = y_int && (eigs_fmod(eigs_fabs(y), 2.0) == 1.0);
+    double ay = eigs_fabs(y);
+    int y_int = (y == eigs_floor(y));
+    /* Below 2^53, fmod distinguishes odd represented integers. At and above
+     * 2^53 every finite double integer is even. */
+    int y_odd = y_int && ay < 0x1p53 && eigs_fmod(ay, 2.0) == 1.0;
     /* tiny integer exponents: repeated squaring is within ~1 ulp and
      * hits the common x^2 / x^3 / 1/x cases exactly where possible */
     if (y_int && eigs_fabs(y) <= 4.0) {

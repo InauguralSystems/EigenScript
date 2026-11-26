@@ -17,6 +17,7 @@ load_file of "lib/test.eigs"
 _gfx_rec is 0
 _gfx_log is []
 _bool_metrics is {"calls": 0}
+_proportional_metrics is 0
 
 define _gfx_note(kind, args) as:
     if _gfx_rec == 1:
@@ -76,6 +77,22 @@ define gfx_ticks(args) as:
 # installed on the machine running the suite.
 define gfx_text_width(text, scale) as:
     _bool_metrics.calls += 1
+    if _proportional_metrics == 2:
+        local total is 0
+        for i in range of (len of text):
+            local advance is 7
+            if (substr of [text, i, 1]) == "W":
+                advance is 11
+            total is total + advance
+        return total * scale
+    if _proportional_metrics == 1:
+        local total is 0
+        for i in range of (len of text):
+            local advance is 6
+            if (substr of [text, i, 1]) == "W" or (substr of [text, i, 1]) == "M" or (substr of [text, i, 1]) == "@":
+                advance is 9
+            total is total + advance
+        return total * scale
     return (len of text) * 6 * scale
 
 define gfx_text_height(scale) as:
@@ -2472,6 +2489,52 @@ append of [hx.highlights, {"start": 4, "end": 8, "style": "accent"}]
 n_hx2 is _record_render_hex of [hx, 0, 0]
 assert_true of [n_hx2 > n_hx, "highlight rects add primitives"]
 
+# #1646: drive the hex ASCII column with proportional metrics where the
+# characters reported in the issue are wider than "0".  The draw-call
+# oracle counts the printable population derived from its byte bounds;
+# space still issues a text draw (its font surface may contain no ink).
+define _hx_printable_reader(addr) as:
+    return addr + 32
+_proportional_metrics is 1
+hp is hex_view of ["hp", 0, 0, 2600, 20, _hx_printable_reader, 95]
+hp.bytes_per_row is 95
+hp_metric_calls0 is _bool_metrics.calls
+hpm is hex_view_metrics of hp
+assert_eq of [hpm.cw, 9, "#1646 ASCII cell uses the widest printable glyph"]
+assert_eq of [hpm.hex_cw, 6, "#1646 hex geometry uses the widest hex digit, not the widest printable glyph"]
+hp16 is hex_view of ["hp16", 0, 0, 460, 20, _hx_printable_reader, 16]
+hp16m is hex_view_metrics of hp16
+assert_eq of [hp16m.ascii_x + 16 * hp16m.cw, 448, "#1646 full 16-byte row width is pinned"]
+assert_true of [hp16m.ascii_x + 16 * hp16m.cw <= 460, "#1646 all 16 ASCII cells fit a 460px widget"]
+assert_eq of [_bool_metrics.calls - hp_metric_calls0, 117, "#1646 cold metrics scan measures signature, printable ASCII, hex digits, the zero and row height"]
+hp_metric_calls1 is _bool_metrics.calls
+hex_view_metrics of hp
+assert_eq of [_bool_metrics.calls - hp_metric_calls1, 2, "#1646 cached metrics measure only the width/height font signature"]
+_proportional_metrics is 2
+hpm_changed is hex_view_metrics of hp
+assert_eq of [hpm_changed.cw, 11, "#1646 changed font metrics invalidate cached cell width"]
+_proportional_metrics is 1
+hpm is hex_view_metrics of hp
+_record_render_hex of [hp, 0, 0]
+hp_ascii_draws is 0
+for gi in range of (len of _gfx_log):
+    call is _gfx_log[gi]
+    if call[0] == "text" and call[1][0] >= hpm.ascii_x:
+        hp_ascii_draws is hp_ascii_draws + 1
+assert_eq of [hp_ascii_draws, 95, "#1646 all bytes 32..126 reach the ASCII draw call (space included)"]
+
+append of [hp.highlights, {"start": 0, "end": 1, "style": "highlight_bg"}]
+_record_render_hex of [hp, 0, 0]
+hp_selected_text is 0
+for gi in range of (len of _gfx_log):
+    call is _gfx_log[gi]
+    if call[0] == "text" and call[1][0] >= hpm.ascii_x and call[1][2] == " ":
+        local expected is _hex_contrast_text of _theme.highlight_bg
+        if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
+            hp_selected_text is 1
+assert_eq of [hp_selected_text, 1, "#1646 highlighted ASCII chooses contrast from its drawn fill"]
+_proportional_metrics is 0
+
 # ---- Consumer contract 2: a record-inspector shape (tidelog-like) ----
 # A CBOR-ish record with unmapped tail; ASCII column shows the text.
 hx_rec is [0xA2, 0x64, 0x6E, 0x61, 0x6D, 0x65, 0x63, 0x65, 0x64, 0x64, 0x79]
@@ -3823,9 +3886,30 @@ assert_eq of [(theme_high_contrast of null).bg[0], 0, "high contrast background"
 assert_true of [(set_theme of (theme_light of null)) == null and (theme of null).bg[0] == 235, "theme setter changes active palette"]
 coverage_theme_roles is ["highlight_bg", "highlight_alt_bg", "highlight_active_bg"]
 coverage_builtin_themes is [theme_dark of null, theme_light of null, theme_high_contrast of null]
+
+define _wcag_channel(v) as:
+    local s is v / 255
+    if s <= 0.04045:
+        return s / 12.92
+    return pow of [((s + 0.055) / 1.055), 2.4]
+
+define _wcag_luminance(c) as:
+    return 0.2126 * (_wcag_channel of c[0]) + 0.7152 * (_wcag_channel of c[1]) + 0.0722 * (_wcag_channel of c[2])
+
+define _wcag_contrast(a, b) as:
+    local la is _wcag_luminance of a
+    local lb is _wcag_luminance of b
+    if lb > la:
+        local swap is la
+        la is lb
+        lb is swap
+    return (la + 0.05) / (lb + 0.05)
+
 for ti in range of (len of coverage_builtin_themes):
     for ri in range of (len of coverage_theme_roles):
         assert_true of [coverage_builtin_themes[ti][coverage_theme_roles[ri]] != null, "built-in theme supplies generic highlight role"]
+        local chosen is _hex_contrast_text of coverage_builtin_themes[ti][coverage_theme_roles[ri]]
+        assert_true of [(_wcag_contrast of [chosen, coverage_builtin_themes[ti][coverage_theme_roles[ri]]]) >= 4.5, "#1646 black/white chooser meets WCAG contrast for built-in highlight fills"]
 coverage_legacy_theme is {"bg": [7, 8, 9]}
 set_theme of coverage_legacy_theme
 assert_eq of [(theme_color of ["highlight_bg", [11, 22, 33]])[1], 22, "legacy theme missing highlight role uses fallback"]
@@ -4484,5 +4568,59 @@ catch _bool_separator_error:
     _bool_separator_message is _bool_separator_error
 assert_eq of [_bool_separator_rejected, true, "separator rejects bool orientation"]
 assert_eq of [_bool_separator_message, "separator: vertical must be num, got bool", "separator names invalid vertical argument"]
+
+
+# A spy on the clipper proves the hex ASCII column bypasses it.  Keep this at
+# the end because EigenScript function redefinition is global.
+_hex_ascii_clipper_calls is 0
+define _draw_text_clipped(x, y, w, text, color, scale) as:
+    if text == "W":
+        _hex_ascii_clipper_calls is _hex_ascii_clipper_calls + 1
+    gfx_text of [x, y, text, color[0], color[1], color[2], scale]
+
+_proportional_metrics is 1
+define _hex_spy_reader(addr) as:
+    if addr == 0:
+        return 87
+    return 0 - 1
+spy_hv is hex_view of ["contrast-spy", 0, 0, 460, 20, _hex_spy_reader, 2]
+spy_m is hex_view_metrics of spy_hv
+spy_themes is [theme_dark of null, theme_light of null, theme_high_contrast of null]
+spy_fills is ["highlight_bg", "highlight_alt_bg", "highlight_active_bg", "focus_ring"]
+for sti in range of (len of spy_themes):
+    set_theme of spy_themes[sti]
+    for sfi in range of (len of spy_fills):
+        spy_hv.cursor is null
+        spy_hv.highlights is [{"start": 0, "end": 2, "style": spy_fills[sfi]}]
+        _record_render_hex of [spy_hv, 0, 0]
+        local fill is spy_themes[sti][spy_fills[sfi]]
+        local expected is _hex_contrast_text of fill
+        local matched is 0
+        for si in range of (len of _gfx_log):
+            local call is _gfx_log[si]
+            if call[0] == "text" and (call[1][2] == "57" or call[1][2] == "W" or call[1][2] == ".."):
+                if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
+                    matched is matched + 1
+        assert_eq of [matched, 3, "#1646 drawn ASCII, hex digits and marker contrast with each highlight fill"]
+    spy_hv.highlights is []
+    spy_hv.cursor is 0
+    _record_render_hex of [spy_hv, 0, 0]
+    local expected is _hex_contrast_text of spy_themes[sti].hex_cursor
+    local matched is 0
+    for si in range of (len of _gfx_log):
+        local call is _gfx_log[si]
+        if call[0] == "text" and call[1][2] == "57":
+            if call[1][3] == expected[0] and call[1][4] == expected[1] and call[1][5] == expected[2]:
+                matched is matched + 1
+        if call[0] == "text" and call[1][2] == "W":
+            local ascii_col is theme_color of ["hex_ascii", _theme.text_dim]
+            if call[1][3] == ascii_col[0] and call[1][4] == ascii_col[1] and call[1][5] == ascii_col[2]:
+                matched is matched + 1
+    assert_eq of [matched, 2, "#1646 the hex digits contrast with the cursor fill; the ASCII byte, which has no fill, keeps its colour"]
+assert_eq of [(_hex_contrast_text of [255, 255, 0])[0], 0, "#1646 _hex_contrast_text: black on a light fill"]
+assert_eq of [(_hex_contrast_text of [20, 20, 120])[0], 255, "#1646 _hex_contrast_text: white on a dark fill"]
+assert_eq of [_hex_ascii_clipper_calls, 0, "#1646 hex ASCII column never routes through _draw_text_clipped"]
+set_theme of saved_theme
+_proportional_metrics is 0
 
 test_summary of null

@@ -1,0 +1,1 @@
+- Make freestanding `pow` accept every exactly represented whole exponent for negative finite bases, including odd exponents above 1e15 (#2477).
