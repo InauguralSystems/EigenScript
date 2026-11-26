@@ -1,0 +1,1 @@
+- A suite test pins where the JIT scan ends for the hot function and the loop of the non-finite buffer store test, at indexes 0.0 and -2.0, past their stores (#2541).
