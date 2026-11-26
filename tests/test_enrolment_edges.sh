@@ -95,6 +95,16 @@ if [ "$dv_rc" -eq 2 ] && grep -Fq 'INSTRUMENT ERROR: gap.sh:2: ' "$WORK/dv.err";
 else
     echo "  FAIL: plant: variant deriver derived from a prefix (rc=$dv_rc)"; cat "$WORK/dv.err"; bad=1
 fi
+pt_rc=0
+PORTABILITY_BASH=/bin/bash PORTABILITY_MAX_MAJOR=99 PORTABILITY_FILES="$WORK/tests/gap.sh" \
+    PORTABILITY_FILE_FLOOR=1 PORTABILITY_RUN_TARGETS= PORTABILITY_RUN_N=0 \
+    SHELL_TOKENS_PLANT_GAP=PLANT_GAP_MARK bash "$ROOT/tools/portability_parse_check.sh" \
+    >"$WORK/pt.out" 2>&1 || pt_rc=$?
+if [ "$pt_rc" -ne 0 ] && grep -Fq "INSTRUMENT ERROR: $WORK/tests/gap.sh:2: " "$WORK/pt.out"; then
+    echo "  PASS: plant: portability check refuses a file bash accepts but the tokenizer stops on"
+else
+    echo "  FAIL: plant: portability check read a prefix (rc=$pt_rc)"; cat "$WORK/pt.out"; bad=1
+fi
 # Control: a file bash rejects too is read up to the line where it stops.
 printf 'bash tools/phase2_cost.sh\n: PLANT_GAP_MARK "unclosed\n' >"$WORK/tests/gap.sh"
 ctl_rc=0

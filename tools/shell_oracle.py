@@ -60,7 +60,11 @@ BLIND SPOTS (what no oracle here can see):
     continuation (`<\\<newline><EOF`), posix-mode quoting inside ${...}
     (`${x:?it's}` in a dash file), a `<<-` delimiter that itself holds a
     tab, and the ANSI-C edge cases `\\x{}`, `\\c\\'` and `\\UFFFFFFFF`, which
-    were not checked against bash.
+    were not checked against bash.  `$'\\U110000'` and `$'\\uD800'` are kept
+    as written; bash 5.2 under C.UTF-8 emits bytes for them.
+  * the dialect is bash's: in a `#!/bin/sh` file dash reads `((cmd))` as
+    two subshells, the tokenizer as an arithmetic command (dash corpus of
+    the r5 review: 1 such miss in 501).
   * a here-document opened inside a $( ) that closes on the same line
     (`$(cat <<EOF)`), and a function defined in a pipeline element or a
     backgrounded group (subshells bash discards), are read differently from
@@ -403,6 +407,7 @@ def check_text(name, text, mod=ST, locale="C", posix=False, probes=True):
     # O4
     if probes:
         _region_probes(name, text, mod, comments, heredocs, locale, F, C)
+        _substitution_probes(name, text, mod, heredocs, locale, F, C)
     return F, C
 
 
@@ -468,12 +473,51 @@ def _region_probes(name, text, mod, comments, heredocs, locale, F, C):
             F.append(f"{name}:{_line(text, pos)}: O4 {msg}")
 
 
+def _substitution_probes(name, text, mod, heredocs, locale, F, C):
+    """O6 (DevBox's suggestion on #2559): every $( / <( / >( that bash parses
+    as a substitution has a recorded body, and none that bash reads as text
+    does.  bash decides by a syntax error planted right after the opener.
+    Not asked: `$((` (arithmetic or not, bash's answer would mix the two),
+    and openers inside here-document bodies and backquotes, which bash -n
+    does not parse (bash expands them at run time; incidents cover them)."""
+    if not hasattr(mod, "scan_full"):
+        return
+    ours = set(mod.scan_full(text)[3])
+    inside_doc = [(a, b) for a, b, _ in heredocs]
+    cands = []
+    for opener in ("$(", "<(", ">("):
+        p = text.find(opener)
+        while p >= 0:
+            if not text.startswith("$((", p) and \
+                    not any(a <= p < b for a, b in inside_doc):
+                cands.append(p)
+            p = text.find(opener, p + 1)
+    cands = _sample(sorted(cands), None if FULL else 4 * PROBE_CAP)
+    if not cands:
+        return
+    verdicts = bash_accepts_many(text, [p + 2 for p in cands], locale)
+    if not verdicts or not verdicts[0]:
+        C["o6_fallback_files"] = C.get("o6_fallback_files", 0) + 1
+        verdicts = [True] + [bash_accepts(text[:p + 2] + MARK + text[p + 2:], locale)
+                             for p in cands]
+    for p, accepted in zip(cands, verdicts[1:]):
+        C["o6_probes"] = C.get("o6_probes", 0) + 1
+        code = not accepted
+        if code and p not in ours:
+            F.append(f"{name}:{_line(text, p)}: O6 bash parses a substitution at "
+                     f"{text[p:p + 2]!r}; the tokenizer recorded no body there")
+        elif not code and p in ours:
+            F.append(f"{name}:{_line(text, p)}: O6 the tokenizer recorded a body at "
+                     f"{text[p:p + 2]!r}; bash reads it as text")
+
+
+# Each eval runs in a subshell: a syntax error inside a $( ) is fatal to the
+# shell that parses it, and must not end the loop for the probes after it.
 _PARSE_MANY = r"""
 while IFS= read -r -d '' src; do
-  if eval "__oracle_probe() {
+  if ( eval "__oracle_probe() {
 $src
-}"; then printf 1; else printf 0; fi
-  unset -f __oracle_probe
+}" ); then printf 1; else printf 0; fi
 done
 """
 
@@ -494,9 +538,13 @@ def bash_accepts_many(text, positions, locale="C"):
         p.stdin.write(raw + b"\0")
         for off in offsets:
             p.stdin.write(raw[:off] + mark + raw[off:] + b"\0")
-        p.stdin.close()
     except BrokenPipeError:
         pass                              # bash exited early; the length check below decides
+    finally:
+        try:
+            p.stdin.close()
+        except BrokenPipeError:
+            pass                          # same: an early exit is decided by the length check
     out = p.stdout.read().decode()
     p.wait(timeout=300)
     if len(out) != len(positions) + 1:
@@ -660,6 +708,20 @@ INCIDENTS = [
      [["if"], ["v=1"], ["then"], ["fi"], ["real"]], []),
     ("f+() { (( n << 1 )); }\nreal\n", [["f+"], ["{"], ["}"], ["real"]], []),
     ("[[ -n $a &&\n -n $b ]] && go\n", [["[[", "-n", "$a", "&&", "-n", "$b", "]]"], ["go"]], []),
+    # DevBox r5: a subscript's and an array value's substitutions run.
+    ("seen[$(eigenscript-full a.eigs)]=1\n", [["seen[$(eigenscript-full a.eigs)]=1"]], [],
+     ["eigenscript-full a.eigs"]),
+    ("arr=(<(eigenscript-full a.eigs) b)\n", [["arr=(<(eigenscript-full a.eigs) b)"]], [],
+     ["eigenscript-full a.eigs"]),
+    # DevBox r5: `(#` in an =~ group and `@(#` in [[ ]] are pattern text.
+    ("[[ $line =~ (#.*)$ ]] && bash tests/strip.sh\n",
+     [["[[", "$line", "=~", "(#.*)$", "]]"], ["bash", "tests/strip.sh"]], []),
+    ("[[ $x == @(#*|y) ]] && z\n", [["[[", "$x", "==", "@(#*|y)", "]]"], ["z"]], []),
+    # DevBox r5 mutants: `$((` that does not close as `))` is a $( ) of a
+    # subshell; `!` keeps the command position for `((`.
+    ("x=$((cd tests && bash a.sh) || true)\n", [["x=$((cd tests && bash a.sh) || true)"]], [],
+     ["(cd tests && bash a.sh) || true"]),
+    ("if ! (( n << 1 )); then :; fi\nreal\n", [["if", "!"], ["then", ":"], ["fi"], ["real"]], []),
     # an expanded here-document body's $( ) runs; a quoted one's does not.
     ("cat <<EOF\nx $(eigenscript-full a)\nEOF\n", [["cat"]], ["x $(eigenscript-full a)\n"],
      ["eigenscript-full a"]),
@@ -801,6 +863,15 @@ PLANTS = [
     ("extglob-at-command-position",
      "                                                 and not self.cmdpos):",
      "                                                 ):", {"H"}),
+    ("subscript-bodies-dropped",
+     "                    j = lx.subscript(j + 1, close - 1, subst)",
+     "                    j = close", {"H", "O6"}),
+    ("array-process-substitution-dropped",
+     '            if array and c in "<>" and self.text[j + 1:j + 2] == "(" \\',
+     '            if False and self.text[j + 1:j + 2] == "(" \\', {"H", "O6"}),
+    ("arith-probe-not-memoized",
+     "        if j in self.arith_memo:\n            return self.arith_memo[j]",
+     "        if False:\n            pass", {"R"}),
     ("quoted-heredoc-delimiter-not-unquoted",
      "            self.pending.append((idx, unquote(word), strip, quoted))",
      "            self.pending.append((idx, word, strip, quoted))", {"H", "O1", "O3", "O4"}),
@@ -821,7 +892,7 @@ def load_mutant(old, new):
 def _oracles_of(findings):
     tags = set()
     for f in findings:
-        m = re.search(r"\b(O[1-4]|CRASH)\b", f)
+        m = re.search(r"\b(O[1-6]|CRASH)\b", f)
         if f.startswith("H "):
             tags.add("H")
         elif f.startswith("R "):
@@ -884,6 +955,8 @@ O5_CONSTRUCTS = [
     "arr=( a # it's\n 'b' )", "echo <( : )a", "[[ $a =~ ^(a|b)#c$ ]]",
     "echo $'it\\'s'", "echo $$'a'", "[[ -n $a &&\n -n $b ]]",
     "trap 'echo \"it'\\''s\"' EXIT", "case $a in (x|y) :;; *) :;; esac",
+    "seen[$(echo k)]=1", "arr=(<(echo a) b)", "[[ $(echo a) == a ]]",
+    "case $(echo a) in $(echo a)) :;; esac", "echo \"${x:-$(echo d)}\" >$(echo f)",
 ]
 O5_MARKER = "eigenscript-full end"
 
@@ -940,10 +1013,17 @@ ROBUST_ESCAPES = ["\\U110000", "\\UD800", "\\U41", "\\u", "\\uDFFF", "\\x", "\\x
 
 def robustness(mod=ST):
     """Seeded random shell-ish text: the tokenizer may reject it, never crash
-    (a crash would take a whole gate down instead of reading a prefix)."""
+    (a crash would take a whole gate down instead of reading a prefix), and
+    nesting must not make it exponential."""
     import random
+    import time
     rng = random.Random(20261125)
     bad = []
+    deep = "x=" + "$(( $(" * 18 + "echo 1" + ") ))" * 18
+    t0 = time.monotonic()
+    mod.tokenize(deep)
+    if time.monotonic() - t0 > 1.0:
+        bad.append((deep[:40] + "...", f"18-deep $(( $( took {time.monotonic() - t0:.1f}s"))
     for _ in range(ROBUST_N):
         text = "".join(rng.choice(ROBUST_PARTS) for _ in range(rng.randint(1, 40)))
         if rng.random() < 0.5:                # an ANSI-C string of escapes
@@ -961,11 +1041,13 @@ def robustness(mod=ST):
 
 
 def selftest():
+    sys.stdout.reconfigure(line_buffering=True)   # a timed-out run still shows its progress
     if not BASH or not DASH:
         print("INSTRUMENT ERROR: shell_oracle needs bash and dash "
               f"(bash={BASH}, dash={DASH})")
         return 2
-    items = load_items(tracked_shell_files()) + incident_items() + composed_items()
+    tree = load_items(tracked_shell_files())
+    items = tree + incident_items() + composed_items()
     rc = 0
     print(f"PLAN: {5 + len(PLANTS)}")
 
@@ -1008,9 +1090,11 @@ def selftest():
     else:
         rc = 1
         print("  FAIL: A/A rerun differs")
-    # Every 4th file (deterministic) plus the incidents: the locale A/A and
-    # each plant run on this subset to bound the selftest's time.
-    subset = items[::4] + incident_items()
+    # every 8th tracked file, the incidents, and every construct composed
+    # into every 8th wrapper (each construct, in several contexts): the
+    # locale A/A and the plants run on this subset to bound the selftest
+    subset = tree[::8] + incident_items() + [
+        it for it in composed_items() if int(it[0].split("#")[1].split(".")[0]) % 8 == 0]
     sub_base, _ = run_corpus(subset)
     other, _ = run_corpus(subset, locale="C.UTF-8")
     if other == sub_base:

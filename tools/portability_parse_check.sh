@@ -46,6 +46,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd() / "tools"))
 from _derive_variants import SEPARATORS, _split_words, _subst_bodies, shell_lines
+from _shell_tokens import TokenizerGap, tokenize_file
 
 ALLOW = {
     ("tests/test_ci_portability.sh", "sed -i"): (
@@ -207,8 +208,17 @@ def violation(argv):
 
 
 hits = []
+gaps = 0
 for name in sys.argv[1:]:
     text = Path(name).read_text(encoding="utf-8", errors="replace")
+    try:
+        # A file bash accepts but the tokenizer stops on would be checked
+        # only up to that line: refuse instead of passing on less.
+        tokenize_file(text, name)
+    except TokenizerGap as gap:
+        gaps += 1
+        print(f"gnu-flags: FAIL: INSTRUMENT ERROR: {gap}")
+        continue
     for lineno, line in logical_lines(text):
         for argv in commands(line):
             kind = violation(argv)
@@ -216,7 +226,7 @@ for name in sys.argv[1:]:
                 hits.append((name, lineno, kind))
 
 used = set()
-bad = 0
+bad = gaps
 allowed = 0
 for name, lineno, kind in hits:
     key = (name, kind)

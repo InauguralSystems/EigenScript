@@ -35,8 +35,11 @@ Tokens are (kind, text, line, start, end, subst, heredoc):
            unquote() removes them), or the operator text without IO number
   line     1-based line of the token's first character
   subst    for a word: the bodies of $(...), `...`, <(...), >(...) found at
-           any quoting depth of that word (not nested inside each other --
-           a consumer recurses by tokenizing a body)
+           any quoting depth of that word -- in quotes, ${...}, $((...)),
+           an assignment's [subscript] and an array value (not nested inside
+           each other: a consumer recurses by tokenizing a body); for a
+           `<<`/`<<-` redirection with an unquoted delimiter, the bodies of
+           the $(...) and `...` in the here-document body
   heredoc  for a `<<`/`<<-` redirection: the body text, else None
 
 tokenize() raises ShellLexError for text the shell would reject lexically:
@@ -95,6 +98,8 @@ class _Lexer:
         self.cuts: set[int] = set()       # positions of removed `\`+newline
         self.comments: list[tuple[int, int]] = []        # [start, end) spans
         self.heredocs: list[tuple[int, int, bool]] = []  # body spans, <<- flag
+        self.arith_memo: dict[int, bool] = {}
+        self.openers: list[int] = []   # offsets of every recorded $( / <( / >( body's opener
         self.line_starts = [0]
         for i, c in enumerate(text):
             if c == "\n":
@@ -232,6 +237,7 @@ class _Lexer:
         if end is None:
             self.err("unterminated $(...)", opener)
         subst.append(self.clean(body_start, end))
+        self.openers.append(opener)
         return end + 1
 
     def procsub(self, body_start: int, subst: list, opener: int) -> int:
@@ -240,6 +246,7 @@ class _Lexer:
         if end is None:
             self.err("unterminated process substitution", opener)
         subst.append(self.clean(body_start, end))
+        self.openers.append(opener)
         return end + 1
 
     def arith_scan(self, j: int, subst: list) -> int | None:
@@ -273,14 +280,21 @@ class _Lexer:
         return None
 
     def arith_closes(self, j: int) -> bool:
-        """Whether `$((` at j-3 is arithmetic: its parens close as `))`."""
+        """Whether `$((` at j-3 is arithmetic: its parens close as `))`.
+        Memoized: nested `$(( $(( ...` would otherwise rescan per level."""
+        if j in self.arith_memo:
+            return self.arith_memo[j]
         cuts = set(self.cuts)
+        comments, heredocs, openers = list(self.comments), list(self.heredocs), list(self.openers)
         try:
-            return self.arith_scan(j, []) is not None
+            result = self.arith_scan(j, []) is not None
         except ShellLexError:
-            return False
+            result = False
         finally:
-            self.cuts = cuts
+            self.cuts, self.comments, self.heredocs = cuts, comments, heredocs
+            self.openers = openers
+        self.arith_memo[j] = result
+        return result
 
     def arith(self, j: int, opener: int, subst: list) -> int:
         end = self.arith_scan(j, subst)
@@ -310,9 +324,31 @@ class _Lexer:
             j += 1
         self.err("unterminated ${...}", opener)
 
-    def paren_group(self, j: int, subst: list, opener: int) -> int:
+    def subscript(self, j: int, close: int, subst: list) -> int:
+        """Read an assignment subscript `[...]` from j up to its `]` at close,
+        recording $( ), backquote and ${ } bodies (they run).  Returns the
+        index after the `]`."""
+        while j < close:
+            c = self.text[j]
+            if c == "\\":
+                j += 2
+                continue
+            if c == "'":
+                j = self.single(j)
+                continue
+            if c == '"':
+                j = self.double(j, subst)
+                continue
+            if c in "$`":
+                j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            j += 1
+        return close + 1
+
+    def paren_group(self, j: int, subst: list, opener: int, array: bool = False) -> int:
         """A balanced ( ... ) that is part of a word: an extglob group or an
-        array value `name=( ... )`.  j is after the `(`."""
+        array value `name=( ... )`.  j is after the `(`.  Only an array value
+        holds comments and process substitutions."""
         depth = 0
         while j < self.n:
             c = self.text[j]
@@ -330,7 +366,11 @@ class _Lexer:
             if c in "$`":
                 j = self.dollar_or_backtick(j, subst, in_double=False)
                 continue
-            if c == "#" and (self.text[j - 1] in " \t\n("):
+            if array and c in "<>" and self.text[j + 1:j + 2] == "(" \
+                    and self.text[j - 1] in " \t\n(":
+                j = self.procsub(j + 2, subst, j)
+                continue
+            if array and c == "#" and (self.text[j - 1] in " \t\n("):
                 nl = self.text.find("\n", j)
                 end = self.n if nl < 0 else nl
                 self.comments.append((j, end))
@@ -394,7 +434,7 @@ class _Body:
             if c == "[" and self.cmdpos and lx.clean(start, j).isidentifier():
                 close = _subscript_end(t, j)  # `a[1<<3]=x`: an assignment's subscript
                 if close is not None and t[close:close + 1] in ("=", "+"):
-                    j = close
+                    j = lx.subscript(j + 1, close - 1, subst)
                     continue
             if c == "(":
                 prefix = lx.clean(start, j)
@@ -402,7 +442,7 @@ class _Body:
                                                  and not self.cmdpos):
                     # (at a command position `!(cmd)` negates a subshell and
                     # `f+()` defines a function: bash scripts run with extglob off)
-                    j = lx.paren_group(j + 1, subst, j)
+                    j = lx.paren_group(j + 1, subst, j, array=_is_array_assign(prefix))
                     continue
                 break
             if c in "<>" and t[j + 1:j + 2] == "(":
@@ -492,7 +532,7 @@ class _Body:
                 self.cmdpos = True
                 continue
             self.after_for = False
-            op = self.match_op()
+            op = None if (self.dbracket and self.regex_next) else self.match_op()
             if op and not (self.dbracket and op not in (";", "\n")):
                 self.handle_op(op)
                 continue
@@ -703,13 +743,19 @@ class _Body:
             tok = self.tokens[idx]
             # An unquoted delimiter means the body is expanded: its $( ) and
             # backquotes run when the command does, so they are recorded.
-            subst = tuple(_body_substitutions(body)) if not quoted else ()
+            if quoted:
+                subst = ()
+            else:
+                found, openers = _body_substitutions(body)
+                subst = tuple(found)
+                lx.openers.extend(body_start + o for o in openers)
             self.tokens[idx] = tok._replace(heredoc=body, subst=subst)
         self.pending = []
 
 
 def _body_substitutions(body: str) -> list:
-    """$( ) / backquote / ${ } bodies in an expanded here-document body."""
+    """($( ) / backquote / ${ } bodies, $( openers) in an expanded
+    here-document body; opener offsets are relative to the body."""
     lx = _Lexer(body)
     out: list = []
     j = 0
@@ -729,7 +775,7 @@ def _body_substitutions(body: str) -> list:
                 j += 1
             continue
         j += 1
-    return out
+    return out, lx.openers
 
 
 def _subscript_end(t: str, j: int) -> int | None:
@@ -784,10 +830,16 @@ def tokenize(text: str) -> list[Token]:
 
 def scan(text: str):
     """(tokens, comment spans, here-document body spans) for whole text."""
+    return scan_full(text)[:3]
+
+
+def scan_full(text: str):
+    """scan() plus the sorted offsets of every $( / <( / >( whose body was
+    recorded, at any depth (for the oracle's O6)."""
     lx = _Lexer(text)
     body = _Body(lx, 0, closer=None)
     body.run()
-    return body.tokens, sorted(lx.comments), sorted(lx.heredocs)
+    return body.tokens, sorted(lx.comments), sorted(lx.heredocs), sorted(set(lx.openers))
 
 
 # ------------------------------------------------------------- consumers' API

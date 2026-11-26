@@ -408,9 +408,10 @@ replaced_runtime_slot() {
 # The source scanner considers invocation sites, not prose or Dockerfile PATH lines.
 unsupported_variant() {
   local repo="$1" cmd="$2" raw n f
-  raw="$(python3 "$HERE/tools/_derive_variants.py" "$repo" 2>/dev/null)" || { echo variant-derivation; return; }
+  # stderr is not discarded: a deriver INSTRUMENT ERROR names the file and line.
+  raw="$(python3 "$HERE/tools/_derive_variants.py" "$repo")" || { echo variant-derivation; return; }
   f="$WORK/command.sh"; printf '%s\n' "$cmd" > "$f"
-  raw="$raw"$'\n'"$(python3 "$HERE/tools/_derive_variants.py" --shell "$f" 2>/dev/null)" || { echo variant-derivation; return; }
+  raw="$raw"$'\n'"$(python3 "$HERE/tools/_derive_variants.py" --shell "$f")" || { echo variant-derivation; return; }
   while IFS= read -r n; do
     case "$n" in variant\|*) n="${n#variant|}"; n="${n%%|*}" ;; *) continue ;; esac
     case "$n" in
