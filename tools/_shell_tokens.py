@@ -109,6 +109,7 @@ OPERATORS = (
     ";;", ";&", "&&", "||", "|&", "&>", "<<", "<>", "<&", ">&", ">>", ">|",
     "<", ">", "|", "&", ";", "(", ")",
 )
+OPERATOR_STARTS = frozenset(op[0] for op in OPERATORS)
 REDIRECTIONS = frozenset({
     "<<<", "<<-", "&>>", "&>", "<<", "<>", "<&", ">&", ">>", ">|", "<", ">",
 })
@@ -160,7 +161,12 @@ class _Lexer:
         after a here-document delimiter that bash ends in mid-line (`EOF)`
         inside a substitution), so that the slice reads the same on its own."""
         end = min(end, self.n)
-        if not self.cuts and not self.breaks:
+        # Every cut is a backslash followed by a newline, and removes both:
+        # with none of those in or just before the slice there is nothing to
+        # remove.  (One continuation anywhere in a file must not make every
+        # later slice of it a character-by-character copy.)
+        if not self.breaks and (not self.cuts
+                                or self.text.find("\\\n", max(start - 1, 0), end + 1) < 0):
             return self.text[start:end]
         return "".join(
             ("\n" if i in self.breaks else "") + self.text[i] for i in range(start, end)
@@ -766,6 +772,8 @@ class _Body:
 
     def match_op(self) -> str | None:
         t, i = self.lx.text, self.i
+        if t[i:i + 1] not in OPERATOR_STARTS:     # most words: no operator starts here
+            return None
         for op in OPERATORS:
             if t.startswith(op, i):
                 if op in ("<", ">") and t[i + 1:i + 2] == "(" :
@@ -1133,6 +1141,8 @@ def _expansions(word: str):
     A list of groups (inside double quotes, [expansion text, ...]): an
     unquoted expansion is a group of its own, a pair of double quotes is one
     group holding the expansions written inside it (none, for `""`)."""
+    if word[:1] not in ('"', "$", "`"):      # most words: not an expansion from the start
+        return None
     lx = _Lexer(word, roles=False)
     n, i, group, out = len(word), 0, None, []
     try:
@@ -1346,10 +1356,28 @@ _ANSI = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
          "'": "'", '"': '"', "?": "?"}
 
 
+_NOTHING_TO_UNQUOTE = re.compile(r"[^'\"\\$`]*\Z")
+
+
 def unquote(word: str, expansions: list | None = None) -> str:
     """Quote removal (POSIX 2.6.7) with expansions left as literal text.
     Given a list EXPANSIONS, each expansion is appended to it and left OUT of
     the result instead (see emptied())."""
+    if _NOTHING_TO_UNQUOTE.match(word):      # most words: nothing to remove
+        return word
+    if expansions is None:
+        return _unquoted(word)
+    return _unquote(word, expansions)
+
+
+@functools.lru_cache(maxsize=65536)
+def _unquoted(word: str) -> str:
+    """unquote() of a word, remembered: the readers ask about the same words
+    once for each reading of a command."""
+    return _unquote(word, None)
+
+
+def _unquote(word: str, expansions: list | None) -> str:
     out = []
     i, n = 0, len(word)
     while i < n:
@@ -1411,12 +1439,15 @@ def unquote(word: str, expansions: list | None = None) -> str:
     return "".join(out)
 
 
+@functools.lru_cache(maxsize=65536)
 def emptied(word: str):
     """WORD (a token's text) after quote removal with every expansion taken
     as empty: what bash runs it as when they all expand to nothing --
     `${TMO:+$TMO }cmd`, `$(Q)cmd`, `cmd${EXE}` are `cmd`.  None when the word
     has no expansion, or one that always has a value (`$?`, `${#v}`,
     arithmetic): then there is no such reading."""
+    if "$" not in word and "`" not in word:  # most words: no expansion to empty
+        return None
     found: list = []
     text = unquote(word, found)
     if not found or any(_ALWAYS_VALUED.match(x) for x in found):

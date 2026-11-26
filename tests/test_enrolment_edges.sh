@@ -47,6 +47,15 @@ import subprocess
 subprocess.run(["python3", "tools/phase2_inventory.py"])
 print("tools/orphan.py")
 EOF
+cat >"$WORK/tests/test_helper_name.py" <<'EOF'
+import subprocess
+from helpers import run_bounded
+run_bounded()
+subprocess.run("run_bounded 30 $EIGS tests/never_run.eigs", shell=True)
+subprocess.run("$EIGS tests/does_run.eigs", shell=True)
+EOF
+printf 'print of 1\n' >"$WORK/tests/never_run.eigs"
+printf 'print of 1\n' >"$WORK/tests/does_run.eigs"
 cat >"$WORK/tests/phase2/slot_layer.sh" <<'EOF'
 python3 tools/phase2_inventory.py
 EOF
@@ -93,6 +102,17 @@ if grep -Fq $'tests/test_importer.py\ttools/orphan.py' "$WORK/edges"; then
     echo "  FAIL: print string falsely enrolled tools/orphan.py"; bad=1
 else
     echo "  PASS: print string is not an execution edge"
+fi
+# #2559: a Python file defines no shell function.  Read as shell, the call
+# statement `run_bounded()` was a definition of that launcher, so the string
+# the file hands to sh read as a launch of the program after it -- where sh
+# answers "run_bounded: not found" (127) and the program never runs.  The row
+# before it shows the file's shell strings are read at all.
+row "program run from a Python shell string" $'tests/test_helper_name.py\ttests/does_run.eigs'
+if grep -Fq $'tests/test_helper_name.py\ttests/never_run.eigs' "$WORK/edges"; then
+    echo "  FAIL: a Python call statement defined a shell launcher and falsely enrolled tests/never_run.eigs"; bad=1
+else
+    echo "  PASS: a Python call statement does not define a shell launcher"
 fi
 # A whole shell file the tokenizer stops on while `bash -n` accepts it must
 # fail the gate, naming file and line -- never pass on the prefix (#2559).

@@ -163,6 +163,14 @@ def _command_readings(cmd, bare: bool = False) -> list[tuple[str, ...]]:
     return readings
 
 
+@lru_cache(maxsize=2)
+def _tokens(text: str) -> tuple:
+    """TEXT's tokens, kept for the next reader: _info() asks for a file's
+    function definitions and then for its commands, and the file was being
+    tokenized once for each."""
+    return tuple(tokenize_prefix(text))
+
+
 @lru_cache(maxsize=8192)
 def _commands(text: str) -> tuple[tuple[str, ...], ...]:
     """Cache only pure parsing, never filesystem lookups or mutable generators.
@@ -172,7 +180,7 @@ def _commands(text: str) -> tuple[tuple[str, ...], ...]:
     launcher options cannot mutate a later cache hit.
     """
     commands = []
-    tokens = tokenize_prefix(text)
+    tokens = _tokens(text)
     # A substitution body is shell wherever it sits, quoted or not.
     for tok in tokens:
         for body in tok.subst:
@@ -250,11 +258,18 @@ def _info(path: Path) -> tuple[frozenset[str], tuple[Path, ...]]:
     if path not in _file_info:
         defs: set[str] = set()
         sourced: list[Path] = []
-        if (ROOT / path).is_file():
+        # A Python file defines no shell function and sources no shell file.
+        # Read as shell, its call statement `run_bounded()` is a definition,
+        # and the string it then hands to a shell (`run_bounded 30 $EIGS
+        # t.eigs`) reads as a launch -- where sh answers "run_bounded: not
+        # found" and the program never runs.  (.py files are read only through
+        # the AST, as the driver below says; tokenizing each one as shell was
+        # also half of this file's run time.)
+        if (ROOT / path).is_file() and path.suffix != ".py":
             text = (ROOT / path).read_text(errors="replace")
             # Definitions the shell executes: not ones inside a here-document,
             # a string or a comment (the line regex this replaced read those).
-            defs.update(function_definitions(tokenize_prefix(text)))
+            defs.update(function_definitions(_tokens(text)))
             for words in shell_commands(text):
                 if len(words) > 1 and words[0] in {".", "source"}:
                     target = executable_path(words[1], path)
