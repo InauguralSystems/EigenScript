@@ -1,0 +1,1 @@
+- Add a tokenizer-backed precheck for undefined uppercase variables in suite fragments, calibrated against bash and planted faults (#2544).

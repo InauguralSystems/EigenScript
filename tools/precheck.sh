@@ -201,6 +201,7 @@ run|tools/gfx_guard_order_check.sh
 run|tools/tape_kinds_check.sh
 run|tools/vendor_llhttp_check.sh
 run|tools/lsp_builtin_index_check.sh
+run|tools/section_undefined_vars.py
 run|tools/section_fragments_check.sh --no-new-inline $BASE
 run|tools/changelog_fragments.sh check $BASE
 portability|tools/portability_parse_check.sh

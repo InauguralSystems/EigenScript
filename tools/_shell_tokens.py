@@ -45,7 +45,8 @@ Tokens are (kind, text, line, start, end, subst, heredoc, role):
   subst    for a word: the bodies of $(...), `...`, <(...), >(...) found at
            any quoting depth of that word -- in quotes, ${...}, $((...)),
            an assignment's [subscript] and an array value (not nested inside
-           each other: a consumer recurses by tokenizing a body); for a
+           each other: a consumer recurses by tokenizing a body; bodies are
+           str subclasses retaining their immediate quoted-$(...) context); for a
            `<<`/`<<-` redirection with an unquoted delimiter, the bodies of
            the $(...) and `...` in the here-document body
   heredoc  for a `<<`/`<<-` redirection: the body text, else None
@@ -82,6 +83,8 @@ from __future__ import annotations
 import bisect
 import functools
 import re
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import NamedTuple
 
 
@@ -125,6 +128,23 @@ EXTGLOB_LEADS = frozenset("?*+@!")
 COMPOUND_CLOSERS = frozenset({"fi", "done", "esac", "}"})
 
 
+class ShellText(str):
+    """A substitution body keeps its immediate parser quote context.
+    Bash removes ANSI quotes in arithmetic parsed inside a quoted $(...),
+    but not in an unquoted nested $(...) or in backquotes (parse.y P_DQUOTE).
+    Slices retain it so Token.text and Expansion operands do not lose it.
+    """
+    def __new__(cls, value, quoted_substitution=False, source_line=None):
+        obj = super().__new__(cls, value)
+        obj.quoted_substitution = quoted_substitution
+        obj.source_line = source_line
+        return obj
+
+    def __getitem__(self, key):
+        value = super().__getitem__(key)
+        return ShellText(value, self.quoted_substitution) if isinstance(key, slice) else value
+
+
 class _Lexer:
     def __init__(self, text: str, roles: bool = True):
         self.text = text
@@ -139,6 +159,9 @@ class _Lexer:
         self.comments: list[tuple[int, int]] = []        # [start, end) spans
         self.heredocs: list[tuple[int, int, bool]] = []  # body spans, <<- flag
         self.arith_memo: dict[int, bool] = {}
+        self.arith_substitutions: dict[int, tuple] = {}
+        self.command_substitutions: dict[int, tuple] = {}
+        self.array_indices: list[tuple[int, int, int]] = []
         self.openers: list[int] = []   # offsets of every recorded $( / <( / >( body's opener
         # `$(cat <<E)`: a here-document still pending when its substitution
         # closes is read from the lines after the current one (bash 5.2,
@@ -168,9 +191,10 @@ class _Lexer:
         if not self.breaks and (not self.cuts
                                 or self.text.find("\\\n", max(start - 1, 0), end + 1) < 0):
             return self.text[start:end]
-        return "".join(
+        cleaned = "".join(
             ("\n" if i in self.breaks else "") + self.text[i] for i in range(start, end)
             if i not in self.cuts and i - 1 not in self.cuts)
+        return ShellText(cleaned, getattr(self.text, "quoted_substitution", False))
 
     # ---- quoted and nested word parts.  Each takes the position of the
     # ---- opening character(s) and returns the position after the close.
@@ -227,7 +251,7 @@ class _Lexer:
             self.openers.append(j)
             return end
         if nxt == "(":
-            return self.cmdsub(j + 2, subst, j)
+            return self.cmdsub(j + 2, subst, j, in_double)
         if nxt == "{":
             return self.param(j + 2, subst, j, in_double)
         if nxt == "[":
@@ -243,6 +267,7 @@ class _Lexer:
     def old_arith(self, j: int, subst: list, opener: int) -> int:
         """`$[ expr ]`, bash's obsolete arithmetic: brackets balance, and
         `<` `>` `(` inside are arithmetic, not shell operators."""
+        start, first = j, len(subst)
         depth = 0
         while j < self.n:
             c = self.text[j]
@@ -262,6 +287,7 @@ class _Lexer:
                 depth += 1
             elif c == "]":
                 if depth == 0:
+                    self.expanded_in_quotes(start, j, subst, first)
                     return j + 1
                 depth -= 1
             j += 1
@@ -287,18 +313,19 @@ class _Lexer:
                 continue
             if c == "`":
                 subst.append("".join(body))
+                subst[-1] = ShellText(subst[-1], source_line=self.line_of(i + 1))
                 return j + 1
             body.append(c)
             j += 1
         self.err("unterminated backquote", i)
 
-    def cmdsub(self, body_start: int, subst: list, opener: int) -> int:
-        return self.substitution(body_start, subst, opener, "$(...)")
+    def cmdsub(self, body_start: int, subst: list, opener: int, in_double=False) -> int:
+        return self.substitution(body_start, subst, opener, "$(...)", in_double)
 
     def procsub(self, body_start: int, subst: list, opener: int) -> int:
         return self.substitution(body_start, subst, opener, "process substitution")
 
-    def substitution(self, body_start: int, subst: list, opener: int, what: str) -> int:
+    def substitution(self, body_start: int, subst: list, opener: int, what: str, in_double=False) -> int:
         sub = _Body(self, body_start, closer=")")
         end = sub.run()
         if end is None:
@@ -311,7 +338,9 @@ class _Lexer:
             # reads the body from the lines after this one.  The recorded
             # body gets it in line, as bash's own reprint lays it out.
             body += "\n" + self.deferred_heredocs(sub, end)
-        subst.append(body)
+        subst.append(ShellText(body, in_double, self.line_of(body_start)))
+        if what == "$(...)":
+            self.command_substitutions[opener] = (end + 1, subst[-1])
         self.openers.append(opener)
         return end + 1
 
@@ -377,9 +406,13 @@ class _Lexer:
         return result
 
     def arith(self, j: int, opener: int, subst: list) -> int:
+        first = len(subst)
         end = self.arith_scan(j, subst)
         if end is None:
             self.err("unterminated $((...))", opener)
+        # Parsing pairs quotes; expansion subsequently uses Q_DOUBLE_QUOTES.
+        self.expanded_in_quotes(j, end - 2, subst, first)
+        self.arith_substitutions[opener] = (end, tuple(subst[first:]))
         return end
 
     def param(self, j: int, subst: list, opener: int, in_double: bool = False) -> int:
@@ -442,7 +475,23 @@ class _Lexer:
                 if c == "\\":
                     k += 2
                 elif c in "$`":
-                    k = self.dollar_or_backtick(k, found, in_double=True)
+                    if self.text.startswith("$((", k) and k in self.arith_substitutions:
+                        k, bodies = self.arith_substitutions[k]
+                        found.extend(bodies)
+                    elif self.text.startswith("$(", k) and k in self.command_substitutions:
+                        # The parser already read this body. Re-reading it at
+                        # every runtime quote pass doubles work per nesting.
+                        k, body = self.command_substitutions[k]
+                        found.append(body)
+                    else:
+                        opener, first_new = k, len(found)
+                        k = self.dollar_or_backtick(k, found, in_double=True)
+                        # Q_DOUBLE_QUOTES controls expansion here. A command
+                        # first parsed at runtime does not inherit P_DQUOTE.
+                        found[first_new:] = [ShellText(body, False, getattr(body, 'source_line', None))
+                                             for body in found[first_new:]]
+                        if opener in self.command_substitutions and found[first_new:]:
+                            self.command_substitutions[opener] = (k, found[first_new])
                 else:
                     k += 1
         except ShellLexError:
@@ -533,6 +582,8 @@ class _Lexer:
                 close = self.match_subscript(j, subst, lexer=True)
                 if close is None:
                     self.err("unterminated [ subscript", j)
+                if self.text.startswith(('=', '+='), close):
+                    self.array_indices.append((opener, j + 1, close - 1))
                 j = close
                 continue
             if array and c in "<>" and self.text[j + 1:j + 2] == "(":
@@ -1274,7 +1325,7 @@ class TokenizerGap(RuntimeError):
 _GAP_PLANT = "SHELL_TOKENS_PLANT_GAP"
 
 
-def tokenize_file(text: str, name: str) -> list[Token]:
+def tokenize_file(text: str, name: str, *, effects=False) -> list[Token]:
     """Tokens of a WHOLE tracked file, for a gate.  Text the shell rejects too
     is read up to the line where tokenizing stopped (tokenize_prefix); text
     `bash -n` accepts but the tokenizer stops on raises TokenizerGap naming
@@ -1285,13 +1336,13 @@ def tokenize_file(text: str, name: str) -> list[Token]:
         if marker and marker in text:
             line = text[:text.index(marker)].count("\n") + 1
             raise ShellLexError(f"planted gap ({_GAP_PLANT})", line)
-        return tokenize(text)
+        return runtime_substitutions(tokenize(text)) if effects else tokenize(text)
     except ShellLexError as e:
         if _bash_accepts(text):
             raise TokenizerGap(f"{name}:{e.line}: the shell tokenizer stopped ({e.reason}) "
                                "on a file `bash -n` accepts; everything after that line "
                                "would go unread") from None
-        return tokenize_prefix(text)
+        return runtime_substitutions(tokenize_prefix(text)) if effects else tokenize_prefix(text)
 
 
 def _bash_accepts(text: str) -> bool:
@@ -1422,7 +1473,7 @@ def _unquote(word: str, expansions: list | None) -> str:
                         out.append(word[j:k])
                     else:
                         k = _expansion_end(word, j, in_double=True)
-                        (expansions if k > j + 1 else out).append(word[j:k])
+                        (expansions if k > j + 1 else out).append(Expansion(word[j:k], True, j))
                     j = k
                     continue
                 out.append(word[j])
@@ -1438,7 +1489,7 @@ def _unquote(word: str, expansions: list | None) -> str:
                 out.append(word[i:k])
             else:
                 k = _expansion_end(word, i)
-                (expansions if k > i + 1 else out).append(word[i:k])
+                (expansions if k > i + 1 else out).append(Expansion(word[i:k], False, i))
             i = k
         else:
             out.append(c)
@@ -1582,3 +1633,637 @@ def function_definitions(tokens):
 
 def _plain_name(word: str) -> bool:
     return bool(word) and not any(c in word for c in "'\"\\$`=/") and not word[0].isdigit()
+
+# Variable effects are a tokenizer API, so consumers never parse ${...} or
+# arithmetic/expanded here-document text themselves. Offsets are source-relative.
+class Expansion(ShellText):
+    def __new__(cls, value, quoted=False, start=0):
+        obj = super().__new__(cls, value)
+        obj.quoted, obj.start = quoted, start
+        obj.quoted_substitution = getattr(value, 'quoted_substitution', False)
+        return obj
+
+
+_IDENT = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*')
+
+
+def parameter_parts(expansion):
+    """(name, operator, operand, operand offset, subscript, indirect/length).
+    EXPANSION is one ${...} supplied by unquote(), not arbitrary shell text.
+    """
+    body = expansion[2:-1]
+    prefix = body[:1] if body[:1] in ('!', '#') and len(body) > 1 else ''
+    pos = len(prefix)
+    match = _IDENT.match(body, pos)
+    if not match:
+        return '', '', '', 2, '', prefix
+    name, pos = match.group(), match.end()
+    sub = ''
+    if body[pos:pos + 1] == '[':
+        end = _Lexer(body, roles=False).match_subscript(pos, [])
+        if end:
+            sub, pos = body[pos + 1:end - 1], end
+    tail = body[pos:]
+    op = next((o for o in (':-', ':=', ':+', ':?', '##', '%%', '//', '^^', ',,',
+                           '-', '=', '+', '?', '#', '%', '/', '^', ',', ':', '@')
+               if tail.startswith(o)), '')
+    # ${!prefix*} and ${!prefix@} enumerate names, not prefix's value.
+    if prefix == '!' and tail in ('*', '@'):
+        name = ''
+    return name, op, tail[len(op):], 2 + pos + len(op), sub, prefix
+
+
+def expanded_expressions(text):
+    """Expansions where quotes are literal (heredocs and arithmetic).
+    Also return escaped literal atoms, used only by the arithmetic reader.
+    Nested command/parameter boundaries use the shared lexer, not delimiters.
+    """
+    found, escaped = [], []
+    i = 0
+    while i < len(text):
+        if text[i] == "\\":
+            nxt = text[i + 1:i + 2]
+            if nxt in ('$', '`'):
+                escaped.append((i, _expansion_end(text, i + 1, in_double=True)))
+            elif _IDENT.match(text, i + 1):
+                escaped.append((i, _IDENT.match(text, i + 1).end()))
+            i += 2; continue
+        if text[i] in '$`' and text[i:i + 2] not in ("$'", '$"'):
+            end = _expansion_end(text, i, in_double=True)
+            if end > i + 1:
+                found.append(Expansion(text[i:end], True, i))
+                i = end; continue
+        i += 1
+    return found, escaped
+
+
+def arithmetic_source(text):
+    """ANSI quote removal during arithmetic parsing in a quoted $(...).
+    Return cooked text and source offsets. Nested expansions keep their own
+    boundaries and are processed by expansion_effects, not by this pass.
+    """
+    if not getattr(text, 'quoted_substitution', False):
+        return text, list(range(len(text)))
+    out, origins, i = [], [], 0
+    lx = _Lexer(text, roles=False)
+    while i < len(text):
+        if text.startswith("$'", i):
+            end = lx.ansi_c(i)
+            cooked = unquote(text[i:end])
+            out.append(cooked)
+            positions, k = [], i + 2
+            while k < end - 1:
+                decoded, stop = _ansi_escape(text, k) if text[k] == "\\" else (text[k], k + 1)
+                positions.extend([k] * len(decoded)); k = stop
+            origins.extend(positions[:len(cooked)])
+        else:
+            end = i + 2 if text[i] == "\\" else (_expansion_end(text, i, True) if text[i] in '$`' else i + 1)
+            end = min(end, len(text))
+            out.append(text[i:end]); origins.extend(range(i, end))
+        i = end
+    return ShellText(''.join(out), True), origins
+
+
+_ASSOCIATIVES = ContextVar('shell_associative_arrays', default=frozenset())
+
+
+@contextmanager
+def array_context(names):
+    """Supply derived Bash/source array attributes to variable-effect APIs."""
+    token = _ASSOCIATIVES.set(frozenset(names))
+    try:
+        yield
+    finally:
+        _ASSOCIATIVES.reset(token)
+
+
+@functools.lru_cache(maxsize=8192)
+def assignment_indices(word):
+    """Source spans of actual lvalue indices, including compound array entries.
+    The existing array lexer identifies element boundaries and quoted literals;
+    a data word such as '[NAME]=text' never becomes a designator after unquote.
+    """
+    pair = assignment_split(word)
+    if not pair:
+        return ()
+    name, value = pair
+    lexer = _Lexer(word, roles=False)
+    result = []
+    if word[len(name):len(name) + 1] == '[':
+        close = lexer.match_subscript(len(name), [])
+        result.append((len(name) + 1, close - 1))
+    start = len(word) - len(value)
+    if value.startswith('('):
+        lexer.paren_group(start + 1, [], start, array=True)
+        result.extend((a, b) for opener, a, b in lexer.array_indices if opener == start)
+    return tuple(result)
+
+
+def index_effects(word, start, end):
+    """Explicit expansions in assignment indices; bare index names are ignored."""
+    name, value = assignment_split(word)
+    index = word[start:end]
+    compound = value.startswith('(') and start > len(word) - len(value)
+    if name in _ASSOCIATIVES.get():
+        if not compound:
+            index, _ = arithmetic_source(index)
+        return variable_effects(index)
+    if compound:
+        reads, sets = variable_effects(ShellText(unquote(index), False), expanded=True)
+        return [(n, max(0, index.find(n))) for n, _ in reads], sets
+    return variable_effects(ShellText(index, False), expanded=True)
+
+def arithmetic_indices(text):
+    """Bare array-reference indices in arithmetic, outside opaque expansions
+    and literal single-quoted arithmetic text. Boundaries use match_subscript.
+    """
+    if '[' not in text:
+        return []
+    found, escaped = expanded_expressions(text)
+    chars = list(text)
+    for a, b in escaped + [(e.start, e.start + len(e)) for e in found]:
+        chars[a:b] = [' '] * (b - a)
+    masked = ''.join(chars)
+    i, result = 0, []
+    while i < len(masked):
+        if masked[i] == "'":
+            i = _Lexer(masked, roles=False).single(i); continue
+        match = _IDENT.match(masked, i)
+        if not match:
+            i += 1; continue
+        end = match.end()
+        while end < len(text) and text[end].isspace():
+            end += 1
+        if text[end:end + 1] == '[':
+            close = _Lexer(text, roles=False).match_subscript(end, [])
+            if close:
+                result.append((match.group(), end + 1, close - 1)); i = close; continue
+        i = match.end()
+    return result
+
+def arithmetic_effects(text):
+    """Shell expansion first, then arithmetic identifiers and lvalues.
+    Command bodies stay opaque; Token.subst owns their independent reading.
+    Single quotes survive expansion as literal arithmetic characters, while
+    shell double quotes are removed by unquote(). Source offsets are retained.
+    """
+    text, source_origins = arithmetic_source(text)
+    extra_reads, extra_sets = [], set()
+    chars = list(text)
+    for name, a, b in arithmetic_indices(text):
+        if name in _ASSOCIATIVES.get():
+            r, st = variable_effects(text[a:b])
+            extra_reads.extend((n, a + pos) for n, pos in r); extra_sets.update(st)
+            chars[a:b] = ['\n' if c == '\n' else ' ' for c in chars[a:b]]
+    text = ShellText(''.join(chars), getattr(text, 'quoted_substitution', False))
+    found, escaped = expanded_expressions(text)
+    chars = list(text)
+    for start, end in escaped + [(e.start, e.start + len(e)) for e in found]:
+        chars[start:end] = ['\n' if c == '\n' else ' ' for c in chars[start:end]]
+    masked = ''.join(chars)
+    single = []
+    i = 0
+    while i < len(masked):
+        if masked[i] == "'":
+            end = _Lexer(masked, roles=False).single(i)
+            single.append((i, end)); i = end
+        else:
+            i += 1
+    reads, sets = extra_reads, extra_sets
+    for exp in found:
+        quoted = any(a < exp.start < b for a, b in single)
+        r, s = expansion_effects(exp, arithmetic=not quoted)
+        reads.extend((n, exp.start + p) for n, p in r); sets.update(s)
+    for start, end in single:
+        chars[start:end] = ['\n' if c == '\n' else ' ' for c in chars[start:end]]
+    masked = ''.join(chars)
+    literal = unquote(masked)
+    origins, cursor = [], 0
+    # Quote removal here only deletes punctuation: all identifier characters
+    # are unchanged, so their earliest subsequence origin is exact.
+    for char in literal:
+        cursor = masked.index(char, cursor)
+        origins.append(cursor); cursor += 1
+    i = 0
+    while i < len(literal):
+        if literal[i] in "'\"":
+            lx = _Lexer(literal, roles=False)
+            i = lx.single(i) if literal[i] == "'" else lx.double(i, [])
+            continue
+        if literal[i].isdigit():
+            m = re.match(r'[0-9][a-zA-Z0-9_#@]*', literal[i:])
+            i += len(m.group()); continue
+        m = _IDENT.match(literal, i)
+        if not m:
+            i += 1; continue
+        name, end = m.group(), m.end()
+        after = literal[end:].lstrip()
+        if after.startswith('['):
+            opening = end + len(literal[end:]) - len(after)
+            close = _Lexer(literal, roles=False).match_subscript(opening, [])
+            if close:
+                r, s = (variable_effects(literal[opening + 1:close - 1]) if name in _ASSOCIATIVES.get() else arithmetic_effects(literal[opening + 1:close - 1]))
+                reads.extend((n, origins[opening + 1 + pos]) for n, pos in r); sets.update(s)
+                after = literal[close:].lstrip(); end = close
+        assign = re.match(r'(?:<<|>>|[+*/%&^|\-])?=(?!=)', after)
+        increment = after.startswith(('++', '--')) or literal[:i].rstrip().endswith(('++', '--'))
+        if assign or increment:
+            sets.add(name)
+        if not assign or assign.group() != '=':
+            reads.append((name, origins[i]))
+        i = end
+    return [(n, source_origins[p]) for n, p in reads], sets
+
+
+def expansion_effects(expansion, *, arithmetic=False):
+    """Variable reads and setters of ONE expansion from unquote().
+    Default/alternate/assignment operators exempt their parameter, while their
+    operands are still visited. Pattern and substring operands expand too.
+    """
+    exp = expansion
+    if exp.startswith('${'):
+        name, op, operand, offset, sub, prefix = parameter_parts(exp)
+        safe = op in (':-', '-', ':=', '=', ':+', '+')
+        reads = [(name, 2 + len(prefix))] if name and not safe else []
+        sets = {name} if name and op in (':=', '=') else set()
+        if sub and sub not in ('@', '*'):
+            r, s = (arithmetic_effects(ShellText(sub, False)) if arithmetic and name not in _ASSOCIATIVES.get()
+                    else variable_effects(sub, expanded=name not in _ASSOCIATIVES.get()))
+            reads.extend((n, 2 + len(name) + p) for n, p in r); sets.update(s)
+        # Single quotes are literal in a default operand inside double quotes;
+        # pattern operators instead retain normal quote removal (parse.y).
+        quoted = getattr(expansion, 'quoted', False) and op in (':-', '-', ':=', '=', ':+', '+', ':?', '?')
+        if arithmetic and (safe or op == ':'):
+            r, s = arithmetic_effects(operand)
+        else:
+            r, s = variable_effects(operand, expanded=quoted or op == ':')
+        reads.extend((n, offset + p) for n, p in r); sets.update(s)
+        return reads, sets
+    if exp.startswith('$((') and _Lexer(exp, roles=False).arith_closes(3):
+        reads, sets = arithmetic_effects(ShellText(exp[3:-2], getattr(exp, 'quoted_substitution', False) and not exp.quoted))
+        return [(name, pos + 3) for name, pos in reads], sets
+    if exp.startswith('$['):
+        reads, sets = variable_effects(exp[2:-1], expanded=True)
+        return [(name, pos + 2) for name, pos in reads], sets
+    if exp.startswith('$') and _IDENT.fullmatch(exp[1:]):
+        return [(exp[1:], 1)], set()
+    return [], set()                 # command bodies come from Token.subst
+
+
+def variable_effects(word, *, expanded=False, arithmetic=False, assignment=False):
+    """(reads, setters) for explicit expansions or a $(( )) / (( )) body.
+    expanded=True means here-document quoting: quotes are literal and only
+    backslash before $, backtick, backslash or newline suppresses expansion.
+    Command bodies are deliberately left to the consumer's Token.subst walk.
+    """
+    if arithmetic:
+        return arithmetic_effects(word)
+    extra, assigned = [], set()
+    pair = assignment_split(word) if assignment else None
+    indices = assignment_indices(word) if pair else ()
+    if indices:
+        chars = list(word)
+        for start, end in indices:
+            r, st = index_effects(word, start, end)
+            extra.extend((n, start + pos) for n, pos in r); assigned.update(st)
+            chars[start:end] = ['\n' if c == '\n' else ' ' for c in chars[start:end]]
+        word = ShellText(''.join(chars), getattr(word, 'quoted_substitution', False))
+    if '$' not in word and '`' not in word:
+        return extra, assigned
+    found = []
+    if expanded:
+        found, _ = expanded_expressions(word)
+    else:
+        # Process substitutions are shell bodies, not ordinary word text.
+        # Reuse the lexer's recorded openers and matching reader; masking
+        # preserves offsets while leaving their reads to Token.subst recursion.
+        if '<(' in word or '>(' in word:
+            lx = _Lexer(word, roles=False)
+            for opener in scan_full(word)[3]:
+                if word[opener:opener + 2] in ('<(', '>('):
+                    end = lx.procsub(opener + 2, [], opener)
+                    word = word[:opener] + 'x' * (end - opener) + word[end:]
+        unquote(word, found)
+    reads, sets = extra, assigned
+    for exp in found:
+        r, s = expansion_effects(exp)
+        reads.extend((n, exp.start + p) for n, p in r); sets.update(s)
+    return reads, sets
+
+
+def setter_targets(command):
+    """Builtin operands only, from a simple command's command/argument roles."""
+    operands = [t for t in command if t.role in ('command', 'argument')]
+    names = set()
+    for i, token in enumerate(operands):
+        if token.role == 'command':
+            words = [unquote(t.text) for t in operands[i:]]
+            names.update(_setter_operands(words[:]))
+            empty = emptied(token.text)
+            if empty is not None:
+                names.update(_setter_operands([empty, *words[1:]]))
+    return names
+
+
+def _setter_operands(words):
+    while words and words[0] in ('builtin', 'command'):
+        wrapper = words.pop(0)
+        if wrapper == 'command' and words and words[0] in ('-v', '-V'):
+            return set()
+        if wrapper == 'command' and words and words[0] == '-p':
+            words.pop(0)
+        if words and words[0] == '--':
+            words.pop(0)
+    if not words:
+        return set()
+    cmd, args = words[0], words[1:]
+    names = set()
+    if cmd in ('export', 'local', 'declare', 'typeset', 'readonly'):
+        parsed = declaration_options(words)
+        if parsed is None:
+            return names
+        options, args = parsed
+        nonsetting = 'pfF' if cmd in ('declare', 'local', 'typeset') else 'fF'
+        if any(c in options for c in nonsetting):
+            return names
+        for arg in args:
+            pair = assignment_split(arg)
+            if pair:
+                names.add(pair[0])
+    elif cmd in ('read', 'mapfile', 'readarray'):
+        operands, array_target, poll_only = [], None, False
+        takes_value = 'adinNptu' if cmd == 'read' else 'dnOsuCc'
+        flags = 'ers' if cmd == 'read' else 't'
+        i = 0
+        while i < len(args):
+            arg = args[i]; i += 1
+            if arg == '--':
+                operands.extend(args[i:]); break
+            if not arg.startswith('-') or arg == '-':
+                operands.append(arg); continue
+            for pos, option in enumerate(arg[1:], 2):
+                if option in takes_value:
+                    value = arg[pos:]
+                    if not value:
+                        if i >= len(args):
+                            return set()
+                        value = args[i]; i += 1
+                    if cmd == 'read' and option == 'a':
+                        array_target = value
+                    if cmd == 'read' and option == 't':
+                        try:
+                            poll_only = float(value) == 0
+                        except ValueError:
+                            pass
+                    break
+                if option not in flags:
+                    return set()
+        if poll_only:
+            return set()
+        if cmd == 'read':
+            # -a ignores the other destination operands (bash read.def).
+            names.update(operands if array_target is None else [array_target])
+        else:
+            names.update(operands[:1])
+    elif cmd == 'printf':
+        target, i = None, 0
+        while i < len(args):
+            arg = args[i]; i += 1
+            if arg == '--':
+                break
+            if not arg.startswith('-') or arg == '-':
+                i -= 1; break
+            if not arg.startswith('-v'):
+                return set()
+            target = arg[2:]
+            if not target:
+                if i >= len(args):
+                    return set()
+                target = args[i]; i += 1
+        if target is not None and i < len(args):
+            names.add(target)
+    elif cmd == 'getopts':
+        names.update(args[1:2])
+    elif cmd == 'let':
+        for arg in args:
+            names.update(_literal_arithmetic_effects(arg)[1])
+    return {n for n in names if not n.endswith('+')
+            and (_IDENT.fullmatch(n) or cmd in ('read', 'printf'))
+            and (pair := assignment_split(n + '=')) and pair[1] == ''}
+
+
+def setter_names(command):
+    """Variable bases genuinely assigned by builtin operands, from roles."""
+    return {assignment_split(target + '=')[0] for target in setter_targets(command)}
+
+
+def _literal_arithmetic_effects(text):
+    """After shell quote removal, literal dollars/backquotes do not expand again."""
+    chars = list(text)
+    found, _ = expanded_expressions(text)
+    indices = arithmetic_indices(text)
+    for exp in found:
+        if not any(a <= exp.start < b for _, a, b in indices):
+            chars[exp.start:exp.start + len(exp)] = [' '] * len(exp)
+    if ''.join(chars).lstrip().startswith('['):
+        return [], set()
+    return arithmetic_effects(''.join(chars))
+
+
+def _builtin_readings(command):
+    return _cached_builtin_readings(tuple((t.role, t.text) for t in command if t.role in ('command', 'argument')))
+
+
+@functools.lru_cache(maxsize=8192)
+def _cached_builtin_readings(operands):
+    # Pure role/quote-removal result, independent of type attributes and lines.
+    words = [unquote(text) for _, text in operands]
+    result = []
+    for i, (role, text) in enumerate(operands):
+        if role != 'command':
+            continue
+        for first in (words[i], emptied(text)):
+            if first is None:
+                continue
+            rest = [first, *words[i + 1:]]
+            while rest and rest[0] in ('builtin', 'command'):
+                wrapper = rest.pop(0)
+                if wrapper == 'command' and rest and rest[0] in ('-v', '-V'):
+                    rest = []; break
+                if wrapper == 'command' and rest and rest[0] == '-p':
+                    rest.pop(0)
+                if rest and rest[0] == '--':
+                    rest.pop(0)
+            if rest:
+                result.append(tuple(rest))
+
+
+    return tuple(result)
+
+
+def declaration_options(words):
+    """Validated prefix options and operands of the variable declarations."""
+    if not words:
+        return None
+    cmd, args = words[0], words[1:]
+    flags = ('aAfFgiIlnrtuxp' if cmd in ('declare', 'local', 'typeset') else
+             'aAfp' if cmd == 'readonly' else 'fnp' if cmd == 'export' else '')
+    if not flags:
+        return None
+    active, i = set(), 0
+    while i < len(args) and args[i].startswith(('-', '+')) and args[i] not in ('-', '+'):
+        option = args[i]; i += 1
+        if option == '--':
+            break
+        if any(c not in flags for c in option[1:]):
+            return None
+        if option[0] == '-':
+            active.update(option[1:])
+        else:
+            active.difference_update(option[1:])
+    return active, args[i:]
+
+
+def declared_attributes(tokens, attribute):
+    result = set()
+    for command in simple_commands(tokens):
+        for words in _builtin_readings(command):
+            parsed = declaration_options(words)
+            if parsed is None:
+                continue
+            options, args = parsed
+            if attribute in options and not options.intersection('pfF'):
+                for arg in args:
+                    pair = assignment_split(arg)
+                    name = pair[0] if pair else arg
+                    if _IDENT.fullmatch(name):
+                        result.add(name)
+    return result
+
+
+def associative_declarations(tokens):
+    return declared_attributes(tokens, 'A')
+
+
+def assignment_words(tokens):
+    for token in tokens:
+        if token.role == 'assignment':
+            yield token, token.text
+    for command in simple_commands(tokens):
+        declarations = False
+        for words in _builtin_readings(command):
+            parsed = declaration_options(words)
+            if parsed is not None:
+                options, _ = parsed
+                nonsetting = 'pfF' if words[0] in ('declare', 'local', 'typeset') else 'fF'
+                declarations |= not any(c in options for c in nonsetting)
+        if declarations:
+            for token in command:
+                if token.role == 'argument':
+                    word = token.text if assignment_split(token.text) else unquote(token.text)
+                    if assignment_split(word):
+                        yield token, word
+
+
+def implicit_arithmetic_effects(tokens):
+    """Explicit expansions in declaration/builtin indices after quote removal.
+    Retained from the implicit reader for dollar reads only: bare names in
+    these indices, numeric tests, integer values and let are not read here.
+    """
+    for token, word in assignment_words(tokens):
+        if word == token.text:
+            continue  # ordinary word expansion is already read by the consumer
+        for start, end in assignment_indices(word):
+            refs, sets = index_effects(word, start, end)
+            if refs or sets:
+                yield token, [(n, max(0, token.text.find(n))) for n, _ in refs], sets
+    for command in simple_commands(tokens):
+        for target in setter_targets(command):
+            if '[' not in target:
+                continue
+            token = next((t for t in command if target in unquote(t.text)), None)
+            if token is not None:
+                refs, sets = variable_effects(target + '=', assignment=True)
+                normal, _ = variable_effects(token.text)
+                extra = [(n, max(0, token.text.find(n))) for n, _ in refs
+                         if n not in {name for name, _ in normal}]
+                if extra or sets:
+                    yield token, extra, sets
+
+
+def word_substitutions(word):
+    found, bodies = [], []
+    unquote(word, found)
+    lexer = _Lexer(word, roles=False)
+    for exp in found:
+        lexer.dollar_or_backtick(exp.start, bodies, getattr(exp, 'quoted', False))
+    return bodies
+
+
+def runtime_substitutions(tokens):
+    """Complete Token.subst from role-derived lvalue and parameter indices.
+    Indexed keys expand as arithmetic; associative keys retain shell quoting.
+    Bodies that exist only in the former carry a type guard for consumers.
+    """
+    if not any('[' in t.text or "$'" in t.text for t in tokens if t.kind == 'word'):
+        return tokens
+    indices = {}
+    def target(token, word):
+        pair = assignment_split(word)
+        if pair:
+            indices.setdefault(token.start, []).extend((pair[0], word[a:b], word == token.text) for a, b in assignment_indices(word))
+    for token, word in assignment_words(tokens):
+        target(token, word)
+    for command in simple_commands(tokens):
+        if any(w[0] in ('read', 'printf') for w in _builtin_readings(command)):
+            for name in setter_targets(command):
+                if '[' in name:
+                    token = next((t for t in command if name in unquote(t.text)), None)
+                    if token is not None:
+                        target(token, name + '=')
+    for token in tokens:
+        if token.kind != 'word' or '${' not in token.text or '[' not in token.text:
+            continue
+        found = []; unquote(token.text, found)
+        for exp in found:
+            if exp.startswith('${'):
+                name, _, _, _, sub, _ = parameter_parts(exp)
+                if sub and sub not in ('@', '*'):
+                    indices.setdefault(token.start, []).append((name, sub, True))
+    if not indices:
+        return tokens
+    from collections import Counter
+    result = []
+    for token in tokens:
+        bodies = list(token.subst)
+        used = Counter()
+        for name, index, guard_existing in indices.get(token.start, ()):
+            math = []
+            lexer = _Lexer(ShellText(index, False), roles=False)
+            lexer.expanded_in_quotes(0, len(index), math, 0)
+            ordinary = Counter(map(str, word_substitutions(index)))
+            for body in math:
+                matching = [i for i, old in enumerate(bodies) if str(old) == str(body)]
+                pos = matching[used[str(body)]] if used[str(body)] < len(matching) else None
+                guarded = not ordinary[str(body)] and (pos is None or guard_existing)
+                if ordinary[str(body)]:
+                    ordinary[str(body)] -= 1
+                if pos is None:
+                    body = ShellText(body, getattr(body, 'quoted_substitution', False))
+                    bodies.append(body)
+                else:
+                    body = bodies[pos]
+                if guarded:
+                    body = ShellText(body, getattr(body, 'quoted_substitution', False), getattr(body, 'source_line', None))
+                    body.array_guard = name
+                    if pos is None:
+                        bodies[-1] = body
+                    else:
+                        bodies[pos] = body
+                used[str(body)] += 1
+        result.append(token._replace(subst=tuple(bodies)))
+    return result
+
+
+# Public role-derived command readings, shared with literal source consumers.
+builtin_readings = _builtin_readings
