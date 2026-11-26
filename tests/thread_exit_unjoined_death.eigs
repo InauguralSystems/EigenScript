@@ -1,6 +1,11 @@
 # #1745: preserving the existing fire-and-forget rule: an unjoined worker's
 # uncaught death still makes an otherwise completed run exit 1.
-define die() as:
+# The worker dies only after main has printed MARK_END (it waits on `go`), so
+# the order of the two lines does not depend on thread timing (#2492).
+go is channel of 1
+define die(ch) as:
+    recv of ch
     missing_thread_unjoined
-h is spawn of die
+h is spawn of [die, go]
 print of "MARK_END"
+send of [go, 1]
