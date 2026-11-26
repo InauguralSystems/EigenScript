@@ -215,6 +215,24 @@ gref=$(env "${REF[@]}" EIGS_OBS_GATE_STATS=1 timeout 30 "$EIG" "$T/elide.eigs" 2
 gobs=$(env "${OBS[@]}" EIGS_OBS_GATE_STATS=1 timeout 30 "$EIG" "$T/elide.eigs" 2>&1 >/dev/null | grep -o 'obs-gate: [a-z]*' | head -1)
 [ "$gref" = "obs-gate: unobserved" ] && [ "$gobs" = "obs-gate: observed" ] || {
   echo "jit_diff: FAIL: OBS and REF do not differ in gate state ($gref vs $gobs)"; exit 1; }
+# cna_show LABEL A B: the normalized outputs' unified diff, or "identical".
+# Bounded to its first and last 40 lines, with the elided count printed.
+cna_show() {
+  norm "$2" > "$T/cna_a"; norm "$3" > "$T/cna_b"
+  if cmp -s "$T/cna_a" "$T/cna_b"; then
+    echo "  $1: identical"
+    return
+  fi
+  echo "  $1: differ (diff -u, normalized):"
+  diff -u "$T/cna_a" "$T/cna_b" | sed '1,2d' > "$T/cna_d"
+  awk -v keep=40 '{ line[NR] = $0 }
+    END {
+      if (NR <= 2 * keep) { for (i = 1; i <= NR; i++) print "    " line[i]; exit }
+      for (i = 1; i <= keep; i++) print "    " line[i]
+      print "    ... " (NR - 2 * keep) " diff lines elided ..."
+      for (i = NR - keep + 1; i <= NR; i++) print "    " line[i]
+    }' "$T/cna_d"
+}
 # $1 arm, $2 timeout. $T/ref and $T/arm are already filled. $row is the ledger name.
 consider() {
   local arm="$1" sec="$2" tag rr ar
@@ -239,6 +257,12 @@ consider() {
   # arm, or a JIT/OSR defect confined to the gate-closed path. Fail closed and
   # put the category in the ledger rather than silently accepting the pair.
   could_not_adjudicate=$((could_not_adjudicate + 1))
+  # Name the outputs in the log, so the next row like this can be read
+  # without a re-run (#2492): the pair that disagreed, then each side's two runs.
+  echo "jit_diff: $row $tag COULD_NOT_ADJUDICATE: the outputs it could not adjudicate:"
+  cna_show "REF vs $tag, first runs" "$T/ref" "$T/arm"
+  cna_show "REF, first vs second run" "$T/ref" "$T/ref2"
+  cna_show "$tag, first vs second run" "$T/arm" "$T/arm2"
   echo "$row $tag COULD_NOT_ADJUDICATE" >> "$got"
 }
 if [ -z "${JIT_DIFF_OBS_ONLY:-}" ]; then
