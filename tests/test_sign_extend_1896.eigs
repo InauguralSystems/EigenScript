@@ -1,25 +1,19 @@
-failures is 0
-define check(label, got, want) as:
-    if got == want:
-        print of f"PASS: {label}"
-    else:
-        print of f"FAIL: {label}: got {got}, want {want}"
-        failures += 1
+# test_sign_extend_1896.eigs: sign_extend masks to the low `bits` bits, then
+# sign-extends, for widths 1 to 64; other widths return the value (#1896).
+load_file of "lib/test.eigs"
 
-check of ["low byte with high one bits", sign_extend of [0x1FF, 8], 0 - 1]
-check of ["low zero byte", sign_extend of [0x100, 8], 0]
-check of ["negative input is masked", sign_extend of [0 - 1, 8], 0 - 1]
-check of ["one bit", sign_extend of [1, 1], 0 - 1]
-check of ["32 bits", sign_extend of [2147483648, 32], 0 - 2147483648]
-check of ["one bit masks the high bits", sign_extend of [3, 1], 0 - 1]
-check of ["32 bits masks bit 32", sign_extend of [0x1FFFFFFFF, 32], 0 - 1]
-check of ["63 bits", sign_extend of [4611686018427387904, 63], 0 - 4611686018427387904]
-check of ["64 bits maximum", sign_extend of [9223372036854775807, 64], 9223372036854775807]
-check of ["64 bits minimum", sign_extend of [0 - 9223372036854775807 - 1, 64], 0 - 9223372036854775807 - 1]
-check of ["integral floats", sign_extend of [511.0, 8.0], 0 - 1]
-check of ["zero width remains passthrough", sign_extend of [511, 0], 511]
-check of ["width above 64 remains passthrough", sign_extend of [511, 65], 511]
+assert_eq of [sign_extend of [0x1FF, 8], 0 - 1, "low byte with high one bits"]
+assert_eq of [sign_extend of [0x100, 8], 0, "low zero byte"]
+assert_eq of [sign_extend of [0 - 1, 8], 0 - 1, "negative input is masked"]
+assert_eq of [sign_extend of [1, 1], 0 - 1, "one bit"]
+assert_eq of [sign_extend of [2147483648, 32], 0 - 2147483648, "32 bits"]
+assert_eq of [sign_extend of [3, 1], 0 - 1, "one bit masks the high bits"]
+assert_eq of [sign_extend of [0x1FFFFFFFF, 32], 0 - 1, "32 bits masks bit 32"]
+assert_eq of [sign_extend of [4611686018427387904, 63], 0 - 4611686018427387904, "63 bits"]
+assert_eq of [sign_extend of [9223372036854775807, 64], 9223372036854775807, "64 bits maximum"]
+assert_eq of [sign_extend of [0 - 9223372036854775807 - 1, 64], 0 - 9223372036854775807 - 1, "64 bits minimum"]
+assert_eq of [sign_extend of [511.0, 8.0], 0 - 1, "integral floats"]
+assert_eq of [sign_extend of [511, 0], 511, "zero width remains passthrough"]
+assert_eq of [sign_extend of [511, 65], 511, "width above 64 remains passthrough"]
 
-if failures > 0:
-    print of f"{failures} sign_extend checks failed"
-    exit of 1
+test_summary of null
