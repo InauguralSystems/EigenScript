@@ -116,9 +116,11 @@ BLIND SPOTS (what no oracle here can see):
     and spans lines is a syntax error when its file is SOURCED, though
     `bash -n` and running the file accept it (read as the script runs);
     `$[ ... ]` holding an unbalanced `]` inside a `$( )` fails when expanded.
-  * the plants and the locale A/A run on every 8th file plus the incidents
-    and the programs composed into every 8th wrapper; O7's plants are
-    judged against one execution of its programs.
+  * the plants are judged on the incidents and the programs composed into
+    every 8th wrapper, never on tracked files (a verdict that rests on which
+    files the tree holds changes when an unrelated file is added); the
+    locale A/A reads every 8th tracked file as well; O7's plants are judged
+    against one execution of its programs.
 """
 from __future__ import annotations
 
@@ -882,6 +884,11 @@ INCIDENTS = [
     (": $((c1); if) ; c2\n", [[":", "$((c1); if)"], ["c2"]], [], ["(c1); if"]),
     (": $((c1) ; c2 ; ) d3\n", [[":", "$((c1) ; c2 ; )", "d3"]], [], ["(c1) ; c2 ; "]),
     (": $((c1) ; : ')' ; c2 )\n", [[":", "$((c1) ; : ')' ; c2 )"]], [], ["(c1) ; : ')' ; c2 "]),
+    # A line continuation inside double quotes is removed (bash: the value is
+    # `arm_set occ_set trace_shutdown`).  The plant double-quote-escape-ignored
+    # needs O3 to see this, and its only witness was a tracked file.
+    ('SITES="arm_set occ_set \\\ntrace_shutdown"\nafter\n',
+     [['SITES="arm_set occ_set trace_shutdown"'], ["after"]], []),
 ]
 
 
@@ -1546,11 +1553,17 @@ def selftest():
     else:
         rc = 1
         print("  FAIL: A/A rerun differs")
-    # every 8th tracked file, the incidents, and every construct composed
-    # into every 8th wrapper (each construct, in several contexts): the
-    # locale A/A and the plants run on this subset to bound the selftest
-    subset = tree[::8] + incident_items() + [
+    # The incidents and every construct composed into every 8th wrapper (each
+    # construct, in several contexts): the plants are judged on these, and on
+    # nothing that depends on which files the tree holds.  They used to be
+    # judged on every 8th tracked file too.  The plant double-quote-escape-
+    # ignored had its only O3 witness there (tests/test_arming_mt.sh); main
+    # gained one shell file, the sample shifted, and this self-test went red
+    # in CI on a merge that touched neither (PR #2559 at 9dbfcf5).
+    fixed = incident_items() + [
         it for it in composed_items() if int(it[0].split("#")[1].split(".")[0]) % 8 == 0]
+    # the locale A/A reads every 8th tracked file as well, to bound the selftest
+    subset = tree[::8] + fixed
     sub_base, _ = run_corpus(subset)
     other, _ = run_corpus(subset, locale="C.UTF-8")
     if other == sub_base:
@@ -1567,7 +1580,7 @@ def selftest():
         if not expect <= _oracles_of(found):
             # the quick oracles did not show every one named: ask the corpus
             # and the composed programs too (each asks bash thousands of times)
-            found += run_corpus(subset, mod=mod)[0]
+            found += run_corpus(fixed, mod=mod)[0]
             found += composed_findings(mod)[0]
         tags = _oracles_of(found)
         if found and expect <= tags:
