@@ -1,0 +1,1 @@
+- The docs-claims self-test runs again: its audio plant anchors on a sentence that is in BUILTINS.md (#2564).
