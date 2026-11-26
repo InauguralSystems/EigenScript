@@ -95,7 +95,9 @@ import re
 import sys
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _shell_tokens import REDIRECTIONS, TokenizerGap, parsed_prefix, tokenize_file, tokenize_prefix
+from _shell_tokens import (ShellLexError, TokenizerGap, assignment_split,
+                           parsed_prefix, tokenize, tokenize_file,
+                           tokenize_prefix, unquote)
 
 NAME_RE = re.compile(r"eigenscript(?:-[a-z0-9]+)*")
 FULL_NAME_RE = re.compile(r"^eigenscript(?:-[a-z0-9]+)*$")
@@ -125,8 +127,6 @@ KEYWORDS = {
 
 SHELL_SHEBANG = re.compile(r"^#!.*\b(ba|da|k|z|a)?sh\b")
 DEFAULT_EXPANSION = re.compile(r"\$\{[A-Za-z_][A-Za-z0-9_]*(?::?[-=])([^}]*)\}")
-# NAME=, NAME+= and NAME[subscript]= are assignments (DevBox on #2559).
-ASSIGN_RE = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)(?:\[[^]]*\])?\+?=(.*)$")
 EIGS_CALL_RE = re.compile(
     r"\bexec_capture\s+of\s*\(?\s*\[\s*\[?\s*[\"']([^\"']*)[\"']"
 )
@@ -184,41 +184,68 @@ def _require_tokenizable(text, name):
         sys.exit(2)
 
 
-def shell_lines(text):
-    """Yield (lineno, line) per logical command line: comments, line
-    continuations and here-document BODIES removed (a body is data, not
-    commands); a quoted string or substitution spanning lines stays whole."""
-    for lineno, toks in parsed_prefix(text):
-        yield (lineno, " ".join(t.text for t in toks))
+def shell_token_lines(text):
+    """Yield (lineno, tokens) per logical command line: comments, line
+    continuations and here-document BODIES removed (a body is data; the
+    substitutions an unquoted body expands hang off its `<<` token), a quoted
+    string or substitution spanning lines whole.
+
+    The tokens are the ones the shell reads IN CONTEXT.  The scanners used to
+    join each line's tokens back into text and tokenize that text again on
+    its own, which reads a word by the wrong rules whenever the rule depends
+    on what came before it: a case pattern `x[*)` is a pattern in its `case`
+    and an unterminated subscript alone -- the second reading stopped, and
+    the line's commands went unread."""
+    return parsed_prefix(text)
 
 
-def _split_words(line):
-    """Split shell text into words and separators, respecting quotes."""
-    return [";" if t.kind == "newline" else t.text for t in tokenize_prefix(line)]
+def _raw_words(fragment):
+    """Words of a RAW line fragment, which may be a comment, a here-document
+    body or YAML: the tokenizer's words where the fragment tokenizes, a plain
+    blank split where it does not.  Over-broad, never empty-handed."""
+    try:
+        return [t.text for t in tokenize(fragment) if t.kind != "newline"]
+    except ShellLexError:
+        return fragment.split()
 
 
 SEPARATORS = {";", ";;", ";&", ";;&", "|", "|&", "||", "&&", "&", "(", ")",
               "$(", "`", "{", "}"}
 
 
-# CA-GUARD:subst-body
-def _subst_bodies(tok):
-    """Bodies of $(...) / `...` / <(...) inside tok that are not single-quoted."""
-    out = []
-    for t in tokenize_prefix(tok):
-        out.extend(t.subst)
-    return out
-# CA-GUARD:end-subst-body
+def _runtime_name(raw):
+    """RAW (a word as written) if it spells a runtime name once its quotes
+    are removed -- by this file's own reading, or by the shell's
+    (tokenizer's): `$'eigenscript-full'` is the name too.  Else None."""
+    for reading in (_unquote(raw), unquote(raw)):
+        reading = reading.strip()
+        if FULL_NAME_RE.match(reading):
+            return reading
+    return None
 
 
 def scan_shell(text, hits, path, line_offset=0):
     """Record (name, lineno) for every invocation position in shell text."""
-    for lineno, line in shell_lines(text):
-        scan_shell_line(line, hits, path, lineno + line_offset)
+    for lineno, toks in shell_token_lines(text):
+        scan_shell_tokens(toks, hits, path, lineno + line_offset)
 
 
-def scan_shell_line(line, hits, path, lineno, depth=0):
-    toks = _split_words(line)
+def scan_shell_tokens(toks, hits, path, lineno, depth=0):
+    first = len(hits)
+    _scan_positions(toks, hits, path, lineno, depth)
+    # The tokenizer says which word each simple command RUNS (role 'command';
+    # tools/shell_oracle.py checks that against what bash executes).  The
+    # position rules above are this file's own and over-broad on purpose;
+    # they must never see LESS than that: `coproc eigenscript-full x` and
+    # `$'eigenscript-full' x` are commands the rules above do not know.
+    for t in toks:
+        if t.kind == "word" and t.role == "command":
+            name = _runtime_name(t.text)
+            if name and (name, path, lineno) not in hits[first:]:
+                hits.append((name, path, lineno))
+
+
+def _scan_positions(toks, hits, path, lineno, depth):
     cmdpos = True
     pending_prefix = ""
     # CA-GUARD:for-list
@@ -231,25 +258,33 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
     # A redirection's target is a file name, not a command; the command
     # position is unchanged by it (`< <(c) cmd`, `< f cmd` run `cmd`).
     skip_target = False
-    for tok in toks:
+    for t in toks:
+        tok = ";" if t.kind == "newline" else t.text
+        # CA-GUARD:subst-body
+        # The bodies of `$(...)`, `` `...` `` and `<(...)` are SHELL wherever
+        # they sit -- inside double quotes (ROUND 8, finding 5:
+        # `BIN="$(command -v eigenscript-full)"` derived nothing), in a
+        # redirection's target, in an unquoted here-document's body -- so the
+        # tokenizer records them on the token and every one is scanned.
+        if depth < 4:
+            for body in t.subst:
+                scan_shell_tokens(tokenize_prefix(body), hits, path, lineno, depth + 1)
+        # CA-GUARD:end-subst-body
         if tok in SEPARATORS:
             cmdpos = True
             pending_prefix = ""
             for_state = 0
             continue
-        if tok in REDIRECTIONS:
+        if t.kind == "redir":
             skip_target = True
             continue
-        word = _unquote(tok)
+        word = _runtime_name(tok) or _unquote(tok)
         # ${VAR:-eigenscript-x} defaults are invocation-shaped wherever
         # they appear: the value is what a later `$VAR` runs.
         for dflt in DEFAULT_EXPANSION.findall(tok):
-            cand = _unquote(dflt).strip()
-            if FULL_NAME_RE.match(cand):
+            cand = _runtime_name(dflt)
+            if cand:
                 hits.append((cand, path, lineno))
-        if depth < 4:
-            for body in _subst_bodies(tok):
-                scan_shell_line(body, hits, path, lineno, depth + 1)
         if skip_target:
             skip_target = False
             continue
@@ -275,10 +310,19 @@ def scan_shell_line(line, hits, path, lineno, depth=0):
             if word in ("for", "select"):
                 for_state = 1
             continue
-        m = ASSIGN_RE.match(word)
-        if m:
-            val = _unquote(m.group(2)).strip()
-            if FULL_NAME_RE.match(val):
+        # An assignment word is what bash's own test says it is, on the word
+        # as written: NAME=, NAME+=, NAME[subscript]=, NAME[subscript]+=, the
+        # subscript closed where bash closes it.  (A regex that stopped at the
+        # first `]` lost the command after `m[${k[1]}]=<(c) cmd`: DevBox on
+        # #2559.)  The same test on the UNQUOTED word is kept beside it: an
+        # operand of `env`/`export`/`sudo` is read after quote removal
+        # (`export "X=v"`), and for a bare `"A=1" cmd` -- where bash runs a
+        # command named `A=1` -- reading on is over-broad, which is this
+        # file's safe direction.
+        assigned = assignment_split(tok) or assignment_split(word)
+        if assigned:
+            val = _runtime_name(assigned[1])
+            if val:
                 hits.append((val, path, lineno))
             continue  # assignment prefix: still a command position
         if pending_prefix:
@@ -456,7 +500,7 @@ def scan_path_edits(text, edits, path, line_offset=0):
             # component. Take every quoted or bare word before the redirect
             # that is not the command itself.
             head = line[:gm.start()]
-            toks = _split_words(head)
+            toks = _raw_words(head)
             for tok in toks[1:]:
                 if tok in SEPARATORS or tok.startswith("-"):
                     continue
@@ -722,6 +766,39 @@ def selftest():
             "< f eigenscript-rc x\n"
             "cat > eigenscript-not-run\n"
         )}, {"eigenscript-ra", "eigenscript-rb", "eigenscript-rc"}),
+        # #2559 (DevBox on 61d65f6, then the execution oracle): each line
+        # was put to bash, and bash ran the name on it -- or, for the two
+        # `not-run` names, did not.  A subscript that holds a `]`; an
+        # assignment after a redirection; `coproc`; a name in $'...'; the
+        # $( ) of an unquoted here-document body; a here-document read below
+        # the $( ) that opened it; a case pattern `x[*)`; single quotes in a
+        # double-quoted ${x:-word}; `for (( ))` before a subscript with `<<`.
+        ("shell-command-words-as-bash-runs-them", {"run.sh": (
+            "#!/bin/bash\n"
+            "m[${k[1]}]=<(c) eigenscript-sa x\n"
+            "m[$[ 1 ]]=<(c) eigenscript-sb x\n"
+            "m[$(a ${k[1]})]=<(c) eigenscript-sc x\n"
+            "m[${k[1]}]=v eigenscript-sd x\n"
+            "x=1 <f y=2 eigenscript-se x\n"
+            "coproc eigenscript-sf x\n"
+            "$'eigenscript-sg' x\n"
+            "cat <<E\n"
+            "$(eigenscript-sh x)\n"
+            "E\n"
+            "x=$(cat <<'E')\n"
+            "$(eigenscript-not-run x) it's\n"
+            "E\n"
+            "case $v in\n"
+            "  x[*) eigenscript-si x ;;\n"
+            "esac\n"
+            ": \"${u:-'$(eigenscript-sj x)'}\" \"${s%'$(eigenscript-not-run-either x)'}\"\n"
+            "for ((i=0;i<1;i++)); do a[1<<2]=x; eigenscript-sk x; done\n"
+            "export \"EIGS=eigenscript-sl\"\n"
+            "time -p eigenscript-sm x\n"
+        )}, {"eigenscript-sa", "eigenscript-sb", "eigenscript-sc", "eigenscript-sd",
+             "eigenscript-se", "eigenscript-sf", "eigenscript-sg", "eigenscript-sh",
+             "eigenscript-si", "eigenscript-sj", "eigenscript-sk", "eigenscript-sl",
+             "eigenscript-sm"}),
         ("shell-exec-env-timeout-xvfb", {"run.sh": (
             "#!/bin/bash\n"
             "exec eigenscript-a x\n"

@@ -4,6 +4,7 @@ expected answers, never the tokenizer itself.
 
     python3 tools/shell_oracle.py [--json] [FILE...]   # default: tracked *.sh
     python3 tools/shell_oracle.py --selftest           # plants + A/A + corpus
+    python3 tools/shell_oracle.py --execution 4,5,6 2000   # O7 on more programs
 
 ORACLES (each is an answer the real shell gives, compared with ours)
 
@@ -30,14 +31,30 @@ ORACLES (each is an answer the real shell gives, compared with ours)
               the start of a line we say is CODE (in a file holding a
               here-document) it must make `bash -n` reject.  This is bash's
               own answer to "is this text shell or data".
+  O5 composed every construct inside every wrapper, a marker command after
+              it: a syntax error planted before the marker tells whether bash
+              reads the marker line as code, and the tokenizer must agree.
+  O6 openers  a syntax error planted right after every `$(`, `<(`, `>(`:
+              bash parses a substitution there  <=>  we recorded a body there.
+  O7 execution bash RUNS seeded generated programs (tools/_shell_exec.py)
+              whose commands are names no machine has; the names bash tried
+              to run are the expected answer.  The words we give role
+              'command' must be exactly those names, and the two consumers
+              (tools/_derive_variants.py, tools/enrolment_edges.py) must
+              report every one.  This is the only oracle that reaches the
+              consumers' own command-position rules.
   H  incidents hand-checked expected tokens for the shapes that bit the line
               scanners before (CA-GUARD rounds in tools/_derive_variants.py,
-              hq#58) and for constructs the tree does not contain.
+              hq#58) and for constructs the tree does not contain; each row
+              about what RUNS was first put to bash (O7's harness).
 
 RESOLUTION is stated, not assumed: --selftest applies source mutations
 (PLANTS) to a copy of the tokenizer and requires each to be caught by the
-oracle(s) listed for it, and runs the whole oracle twice (and under a second
-locale) requiring byte-identical findings (A/A).
+oracle(s) listed for it, applies source mutations to copies of the two
+consumers (CONSUMER_PLANTS, one of them the regression a review found in
+61d65f6) and requires O7 to catch each, and runs the whole oracle twice (and
+under a second locale) requiring byte-identical findings (A/A; for O7, the
+same names run in a second execution of the same programs).
 
 BLIND SPOTS (what no oracle here can see):
   * words holding $..., `...`, ~, <(...): O2 does not replay them (that would
@@ -53,9 +70,10 @@ BLIND SPOTS (what no oracle here can see):
     last body line (--full lifts the caps).
   * O3 normalizes what bash's reprint rewrites (spacing, `-n` inside [[ ]],
     $'...' spelling, `case X in` layout, an implicit `for` list, the order of
-    redirections, here-document continuations) and does not compare
-    redirection targets; a file whose reprint misplaces a here-document from
-    an `if`/`while` header is counted as o3_reprint_unusable, not compared.
+    redirections, here-document continuations, a here-document read below
+    the substitution that opened it) and does not compare redirection
+    targets; a file whose reprint misplaces a here-document from an
+    `if`/`while` header is counted as o3_reprint_unusable, not compared.
   * not modelled, and not in the tree: an operator split by a line
     continuation (`<\\<newline><EOF`), posix-mode quoting inside ${...}
     (`${x:?it's}` in a dash file), a `<<-` delimiter that itself holds a
@@ -65,11 +83,30 @@ BLIND SPOTS (what no oracle here can see):
   * the dialect is bash's: in a `#!/bin/sh` file dash reads `((cmd))` as
     two subshells, the tokenizer as an arithmetic command (dash corpus of
     the r5 review: 1 such miss in 501).
-  * a here-document opened inside a $( ) that closes on the same line
-    (`$(cat <<EOF)`), and a function defined in a pipeline element or a
-    backgrounded group (subshells bash discards), are read differently from
-    bash; none occurs in the tree.  `!(` at a command position is read as
-    negation (extglob off, as in scripts); elsewhere as an extglob group.  The plants run on every 4th file plus the incidents.
+  * a function defined in a pipeline element or a backgrounded group
+    (subshells bash discards) is read differently from bash; none occurs in
+    the tree.  `!(` at a command position is read as negation (extglob off,
+    as in scripts); elsewhere as an extglob group.
+  * a here-document opened inside a $( ) that closes first (`$(cat <<EOF)`)
+    is read from the lines below, as bash 5.2 reads it (with a warning);
+    where that line ends inside a quoted string or another multi-line word
+    the tokenizer stops (ShellLexError) -- a refusal, not a reading.
+  * O7 runs what its generator can write: no aliases, `eval`, traps,
+    `select`, extglob or commands named by an expansion; no program that is
+    a wrapper (`env`, `timeout`, `sudo`...; only the `command` builtin), so
+    the consumers' wrapper-option rules have no oracle here; no dead code
+    (every command is live by construction, so O7 says nothing about an
+    `else` arm not taken -- O1-O6 read those).  A substitution bash parses
+    but this program never expands (`a[1]=$(c) cmd`: bash rejects the
+    assignment first; the unused side of `${set:-$(c)}`) may be reported;
+    running one is a finding.  bash 5.2 only.
+  * dialect quirks measured and not modelled: a `((` that is not arithmetic
+    and spans lines is a syntax error when its file is SOURCED, though
+    `bash -n` and running the file accept it (read as the script runs);
+    `$[ ... ]` holding an unbalanced `]` inside a `$( )` fails when expanded.
+  * the plants and the locale A/A run on every 8th file plus the incidents
+    and the programs composed into every 8th wrapper; O7's plants are
+    judged against one execution of its programs.
 """
 from __future__ import annotations
 
@@ -88,6 +125,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(HERE))
 
+import _shell_exec as EX    # noqa: E402
 import _shell_tokens as ST  # noqa: E402
 
 RESERVED_LEAD = {"if", "then", "else", "elif", "fi", "do", "done", "while",
@@ -218,8 +256,16 @@ def _word_shape(text, subst, mod, depth):
     skeleton = text
     bodies = []
     for body in subst:
-        if body and body in skeleton:
-            skeleton = skeleton.replace(body, "", 1)
+        # A here-document read BELOW the substitution that opened it is
+        # recorded in line (as bash's reprint lays it out): in the original
+        # only the body's first line(s) stand inside the word.
+        cuts = [len(body)]
+        if "<<" in body and body not in skeleton:
+            cuts += [i for i in range(len(body) - 1, 0, -1) if body[i] == "\n"]
+        for cut in cuts:
+            if body[:cut] and body[:cut] in skeleton:
+                skeleton = skeleton.replace(body[:cut], "", 1)
+                break
         bodies.append(shape(body, mod, depth + 1))
     skeleton = _ansi_as_single(skeleton, mod)
     skeleton = re.sub(r"\s+", " ", skeleton) if subst else skeleton
@@ -749,6 +795,93 @@ INCIDENTS = [
     ("y=$(( ')' ))\n", [["y=$(( ')' ))"]], [], []),
     # ${x:-...} with a nested substitution and a `}` in quotes.
     ('echo ${x:-"}"$(y)} t\n', [["echo", '${x:-"}"$(y)}', "t"]], []),
+    # ---- each row below was put to bash first: the comment says what RAN.
+    # NAME[ at a command position is matched to its `]` whatever follows:
+    # bash ran a command named `x[1 d1 ]`, then `real`.
+    ("x[1 d1 ]\nreal\n", [["x[1 d1 ]"], ["real"]], []),
+    ("a[ ( ]=3 :\n", [["a[ ( ]=3", ":"]], []),
+    # the LEXER matches a `<(` inside the subscript as parentheses, the
+    # ASSIGNMENT test does not: bash ran `c2 ]` and a command named
+    # `m[/dev/fd/63]=1`, never c1.
+    ("m[<(c2 ])]=1 c1 x\n", [["m[<(c2 ])]=1", "c1", "x"]], [], ["c2 ]"]),
+    # ... and where the word IS an assignment bash parses the `<( )` (a
+    # syntax error inside it is one) and never runs it: bash ran c1 only.
+    ("m[<(c2)]=1 c1 x\n", [["m[<(c2)]=1", "c1", "x"]], [], ["c2"]),
+    # that `<( )` is a command list: a case pattern's `)` does not end it and
+    # a `[` inside it is not the subscript's.  bash ran c1.
+    ("x[<(case p in p) c1 x[1;; esac)]\nreal\n",
+     [["x[<(case p in p) c1 x[1;; esac)]"], ["real"]], [], ["case p in p) c1 x[1;; esac"]),
+    # DevBox on 61d65f6: a subscript that holds a `]`.  bash ran `real x`.
+    ("m[${k[1]}]=<(c) real x\n", [["m[${k[1]}]=<(c)", "real", "x"]], [], ["c"]),
+    ("m[$[ 1 ]]=<(c) real x\n", [["m[$[ 1 ]]=<(c)", "real", "x"]], [], ["c"]),
+    ("m[$(a ${k[1]})]=<(c) real x\n", [["m[$(a ${k[1]})]=<(c)", "real", "x"]], [],
+     ["a ${k[1]}", "c"]),
+    # a here-document still pending when its $( ) closes is read from the
+    # lines below (bash 5.2 warns): bash ran `cat` and `real`, never d.
+    ("x=$(cat <<'E')\n$(d) `d` it's\nE\nreal\n", [["x=$(cat <<'E')"], ["real"]], [],
+     ["cat <<'E'\n$(d) `d` it's\nE\n"]),
+    # ... the substitution's own document first, then the line's: bash ran
+    # c1 (the unquoted body) and `real`, never d.
+    (": $(cat <<E) <<'F'\n$(c1)\nE\n$(d)\nF\nreal\n", [[":", "$(cat <<E)"], ["real"]],
+     ["$(d)\n"], ["cat <<E\n$(c1)\nE\n"]),
+    # in double quotes the word of ${x:-word} is expanded with its single
+    # quotes as plain characters -- except after a pattern operator.  bash
+    # ran c1 and c2, never d.
+    (": \"${u:-'$(c1)'}\" ${u:-'$(d)'} \"${s%'$(d)'}\" \"${s/'$(d)'/x}\" \"${s:+'`c2`'}\"\n",
+     [[":", "\"${u:-'$(c1)'}\"", "${u:-'$(d)'}", "\"${s%'$(d)'}\"", "\"${s/'$(d)'/x}\"",
+       "\"${s:+'`c2`'}\""]], [], ["c1", "c2"]),
+    ("cat <<E\n${u:-'$(c1)'} ${s%'$(d)'}\nE\n", [["cat"]], ["${u:-'$(c1)'} ${s%'$(d)'}\n"],
+     ["c1"]),
+    # `for (( ))` has no NAME: the first word of its body is a command
+    # position, where `a[1<<2]=x` is an assignment.  bash ran `real`.
+    ("for ((i=0;i<1;i++)); do a[1<<2]=x; real; done\n",
+     [["for"], ["do", "a[1<<2]=x"], ["real"], ["done"]], []),
+    ("for ((i=0;i<1;i++))\ndo\na[1<<2]=x\nreal\ndone\n",
+     [["for"], ["do"], ["a[1<<2]=x"], ["real"], ["done"]], []),
+    # a case pattern is not a place for a subscript: `x[*` is a pattern.
+    ("case $v in\n  x[*) c1 ;;\nesac\n", [["case", "$v", "in"], ["c1"], ["esac"]], []),
+    # bash takes ANY word before a lone `{` for a coproc's name.
+    ("coproc a-b { c1; }\n", [["coproc", "a-b"], ["{"], ["c1"], ["}"]], []),
+]
+
+
+# (text, [(word, role), ...] over its word and pattern tokens).  Each row was
+# put to bash: the 'command' words are the commands bash ran.
+ROLE_INCIDENTS = [
+    ("x=1 <f y=2 cmd a\n", [("x=1", "assignment"), ("f", "target"), ("y=2", "assignment"),
+                             ("cmd", "command"), ("a", "argument")]),
+    ('"A=1" cmd\n', [('"A=1"', "command"), ("cmd", "argument")]),
+    ("< f if x\n", [("f", "target"), ("if", "command"), ("x", "argument")]),
+    ("time -p c1 a\n", [("time", "reserved"), ("-p", "reserved"), ("c1", "command"),
+                         ("a", "argument")]),
+    ("coproc c1 a\n", [("coproc", "reserved"), ("c1", "command"), ("a", "argument")]),
+    ("coproc CP { c1; }\n", [("coproc", "reserved"), ("CP", "name"), ("{", "reserved"),
+                              ("c1", "command"), ("}", "reserved")]),
+    ("for v in a b; do c1; done\n",
+     [("for", "reserved"), ("v", "name"), ("in", "reserved"), ("a", "list"), ("b", "list"),
+      ("do", "reserved"), ("c1", "command"), ("done", "reserved")]),
+    ("for ((i=0;i<1;i++)); do c1; done\n",
+     [("for", "reserved"), ("do", "reserved"), ("c1", "command"), ("done", "reserved")]),
+    ("fn () { c1; }; fn a\n", [("fn", "name"), ("{", "reserved"), ("c1", "command"),
+                               ("}", "reserved"), ("fn", "command"), ("a", "argument")]),
+    ("function fn { c1; }\n", [("function", "reserved"), ("fn", "name"), ("{", "reserved"),
+                               ("c1", "command"), ("}", "reserved")]),
+    ("case $w in a|b) c1 x;; esac\n",
+     [("case", "reserved"), ("$w", "subject"), ("in", "reserved"), ("a", "pattern"),
+      ("b", "pattern"), ("c1", "command"), ("x", "argument"), ("esac", "reserved")]),
+    ("m[<(c2 ])]=1 c1 x\n", [("m[<(c2 ])]=1", "command"), ("c1", "argument"), ("x", "argument")]),
+    ("m[k]=1 v+=2 c1 w=3\n", [("m[k]=1", "assignment"), ("v+=2", "assignment"),
+                              ("c1", "command"), ("w=3", "argument")]),
+    ("[[ -n $x ]] && c1\n", [("[[", "reserved"), ("-n", "test"), ("$x", "test"),
+                             ("]]", "reserved"), ("c1", "command")]),
+    ("local v=1 w\n", [("local", "command"), ("v=1", "argument"), ("w", "argument")]),
+    ("c1 <<E a\nbody\nE\n", [("c1", "command"), ("E", "delimiter"), ("a", "argument")]),
+    ("if c1; then c2; elif c3; then c4; else c5; fi\n",
+     [("if", "reserved"), ("c1", "command"), ("then", "reserved"), ("c2", "command"),
+      ("elif", "reserved"), ("c3", "command"), ("then", "reserved"), ("c4", "command"),
+      ("else", "reserved"), ("c5", "command"), ("fi", "reserved")]),
+    ("! c1 | c2 a\n", [("!", "reserved"), ("c1", "command"), ("c2", "command"),
+                       ("a", "argument")]),
 ]
 
 
@@ -806,6 +939,14 @@ def check_incidents(mod=ST):
             subs = [b for t in toks for b in t.subst]
             if subs != row[3]:
                 F.append(f"H {text!r}: substitution bodies {subs!r}, want {row[3]!r}")
+    for text, want in ROLE_INCIDENTS:
+        try:
+            got = [(t.text, t.role) for t in mod.tokenize(text) if t.kind in ("word", "pattern")]
+        except Exception as e:
+            F.append(f"H {text!r}: tokenizer raised {e}")
+            continue
+        if got != want:
+            F.append(f"H {text!r}: roles {got!r}, want {want!r}")
     return F
 
 
@@ -838,8 +979,9 @@ PLANTS = [
      "    def in_pattern(self) -> bool:\n        return bool(self.case) and self.case[-1] == \"pattern\"",
      "    def in_pattern(self) -> bool:\n        return False", {"H", "O3"}),
     ("dbracket-operands-as-operators",
-     "                self.dbracket = True\n",
-     "                self.dbracket = False\n", {"H"}),
+     '            self.dbracket = True\n            self.cmdpos = False\n            return "reserved"',
+     '            self.dbracket = False\n            self.cmdpos = False\n            return "reserved"',
+     {"H"}),
     ("arith-expansion-read-as-command-substitution",
      'if t.startswith("$((", j) and self.arith_closes(j + 3):',
      'if False:', {"H"}),
@@ -867,8 +1009,10 @@ PLANTS = [
      "                                                 and not self.cmdpos):",
      "                                                 ):", {"H"}),
     ("subscript-bodies-dropped",
-     "                    j = lx.subscript(j + 1, close - 1, subst)",
-     "                    j = close", {"H", "O6"}),
+     "                close = lx.match_subscript(j, subst, lexer=True)\n"
+     "                if close is None:\n                    lx.err(",
+     "                close = lx.match_subscript(j, [], lexer=True)\n"
+     "                if close is None:\n                    lx.err(", {"H", "O7"}),
     ("array-process-substitution-dropped",
      '            if array and c in "<>" and self.text[j + 1:j + 2] == "(":',
      '            if False and self.text[j + 1:j + 2] == "(":', {"H", "O6"}),
@@ -882,16 +1026,95 @@ PLANTS = [
     ("quoted-heredoc-delimiter-not-unquoted",
      "            self.pending.append((idx, unquote(word), strip, quoted))",
      "            self.pending.append((idx, word, strip, quoted))", {"H", "O1", "O3", "O4"}),
+    # ---- the rules O7 bought (each is a shape bash was asked about)
+    ("subscript-process-substitution-not-parsed",
+     '            if c == "(" and gtlt and lexer:',
+     '            if False:', {"H", "O6", "O7"}),
+    ("assignment-test-matches-like-the-lexer",
+     "            i = _Lexer(word).match_subscript(i, [])",
+     "            i = _Lexer(word).match_subscript(i, [], lexer=True)", {"H", "O7"}),
+    ("subscript-matched-only-before-equals",
+     'lx.err("unterminated [ subscript", j)\n                j = close\n',
+     'lx.err("unterminated [ subscript", j)\n'
+     '                j = close if t[close:close + 1] in ("=", "+") else j + 1\n', {"H"}),
+    ("pending-heredoc-not-read-after-its-substitution",
+     "        if sub.pending:\n            # `$(cat <<E)` closing",
+     "        if False:\n            # `$(cat <<E)` closing", {"H", "O7"}),
+    ("heredoc-read-below-is-read-again-as-code",
+     "        resume = self.lx.skips.get(self.i)",
+     "        resume = None", {"H", "O7"}),
+    ("every-word-is-a-command",
+     '        if self.has_command:\n            return "argument"',
+     '        if False:\n            return "argument"', {"H", "O7"}),
+    ("function-name-is-a-command",
+     '            if prev is not None and prev.kind == "word" and prev.role == "command" \\',
+     '            if False and prev.kind == "word" and prev.role == "command" \\', {"H"}),
+    ("arithmetic-for-keeps-waiting-for-its-name",
+     "                self.for_header = 0           # `for ((...))` has no NAME: `do` comes next\n",
+     "", {"H"}),
+    ("time-option-is-the-command",
+     '        if self.after_time and (word == "--" or (word == "-p" and self.after_time == 1)):',
+     '        if False:', {"H", "O7"}),
+    ("single-quotes-quote-in-a-double-quoted-expansion",
+     '                if in_double and state != "quote":\n                    literal_quotes = True',
+     '                if False:\n                    literal_quotes = True', {"H", "O7"}),
+    ("pattern-operator-quotes-are-plain",
+     '            if state == "param" and c in "%#/^," and j > start:',
+     '            if False:', {"H", "O7"}),
+    ("reserved-word-after-a-leading-redirection",
+     "            self.redir_only = True\n        self.cmdpos = False\n",
+     "            self.redir_only = True\n", {"H"}),
+    ("coproc-name-must-be-an-identifier",
+     '            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\\t", "\\n")):',
+     '            if _plain_ident(word) and rest[:1] in ("{", "("):', {"H"}),
 ]
+
+# Source mutations of the CONSUMERS: (name, module, [(old, new), ...], the
+# O7 check that must catch it).  The second is the regression a review found
+# in 61d65f6, re-planted: an assignment regex that stops at the first `]`.
+_OLD_ASSIGN = ('(lambda m: m and (m.group(1), m.group(2)))(re.match('
+               'r"^([A-Za-z_][A-Za-z0-9_]*)(?:\\[[^]]*\\])?\\+?=(.*)$", word))')
+_NO_NET = ('        if t.kind == "word" and t.role == "command":\n            name = _runtime_name(t.text)',
+           '        if False:\n            name = _runtime_name(t.text)')
+_ONE_READING = ("        for start in sorted({0, runs}):", "        for start in (0,):")
+CONSUMER_PLANTS = [
+    ("deriver-without-the-command-word-net", "_derive_variants", [_NO_NET], "deriver"),
+    ("deriver-assignment-regex-stops-at-the-first-bracket", "_derive_variants",
+     [_NO_NET, ("        assigned = assignment_split(tok) or assignment_split(word)",
+                "        assigned = " + _OLD_ASSIGN)], "deriver"),
+    ("deriver-reads-quotes-its-own-way-only", "_derive_variants",
+     [("    for reading in (_unquote(raw), unquote(raw)):",
+       "    for reading in (_unquote(raw),):")], "deriver"),
+    ("deriver-skips-a-here-document-body's-substitutions", "_derive_variants",
+     [("            for body in t.subst:\n                scan_shell_tokens(",
+       '            for body in (() if t.kind == "redir" else t.subst):\n'
+       "                scan_shell_tokens(")], "deriver"),
+    ("edges-without-the-command-word-reading", "enrolment_edges", [_ONE_READING], "edges"),
+    ("edges-assignment-regex-stops-at-the-first-bracket", "enrolment_edges",
+     [_ONE_READING, ("                  or assignment_split(raws[0]) is not None",
+                     '                  or re.match(r"^[A-Za-z_]\\w*(?:\\[[^]]*\\])?\\+?=", words[0])')],
+     "edges"),
+]
+O7_SEEDS, O7_N = (1, 2, 3), 500
+
+
+def mutated_source(module, edits):
+    """MODULE's source with every (old, new) of EDITS applied; each old text
+    must occur exactly once, so a plant cannot go stale unnoticed."""
+    src = (HERE / f"{module}.py").read_text()
+    for old, new in edits:
+        if src.count(old) != 1:
+            raise SystemExit(f"INSTRUMENT ERROR: plant text occurs {src.count(old)} times "
+                             f"in {module}.py:\n{old}")
+        src = src.replace(old, new)
+    return src
 
 
 def load_mutant(old, new):
-    src = (HERE / "_shell_tokens.py").read_text()
-    if src.count(old) != 1:
-        raise SystemExit(f"INSTRUMENT ERROR: plant text occurs {src.count(old)} times:\n{old}")
     spec = importlib.util.spec_from_loader("_shell_tokens_mutant", loader=None)
     mod = importlib.util.module_from_spec(spec)
-    exec(compile(src.replace(old, new), "_shell_tokens_mutant", "exec"), mod.__dict__)
+    exec(compile(mutated_source("_shell_tokens", [(old, new)]), "_shell_tokens_mutant", "exec"),
+         mod.__dict__)
     mod.ShellLexError = ST.ShellLexError     # one exception class for the harness
     return mod
 
@@ -899,7 +1122,7 @@ def load_mutant(old, new):
 def _oracles_of(findings):
     tags = set()
     for f in findings:
-        m = re.search(r"\b(O[1-6]|CRASH)\b", f)
+        m = re.search(r"\b(O[1-7]|CRASH)\b", f)
         if f.startswith("H "):
             tags.add("H")
         elif f.startswith("R "):
@@ -1057,7 +1280,7 @@ def selftest():
     tree = load_items(tracked_shell_files())
     items = tree + incident_items() + composed_items()
     rc = 0
-    print(f"PLAN: {5 + len(PLANTS)}")
+    print(f"PLAN: {7 + len(PLANTS) + len(CONSUMER_PLANTS)}")
 
     o5, o5_kept = composed_findings()
     if o5:
@@ -1079,6 +1302,31 @@ def selftest():
     else:
         print(f"  PASS: {ROBUST_N} generated inputs: tokenize() and unquote() only ever "
               "return or raise ShellLexError")
+
+    # O7: bash runs the generated programs once; every later judgement (the
+    # A/A, the plants) is against these executions or a fresh one.
+    ran = {}
+    derived, edges = EX.deriver_reader(), EX.edges_reader()
+    o7, o7_counts = EX.run(O7_SEEDS, O7_N, derived=derived, edges=edges, cache=ran)
+    print(f"execution: bash={EX.bash_version()} "
+          + " ".join(f"{k}={v}" for k, v in sorted(o7_counts.items())))
+    if o7:
+        rc = 1
+        print(f"  FAIL: execution: {len(o7)} finding(s)")
+        for f in o7[:20]:
+            print("    " + f)
+    else:
+        print(f"  PASS: execution: bash ran {o7_counts['names_run']} names in "
+              f"{o7_counts['executed']} generated programs; the tokenizer's command words are "
+              "exactly those names, and the deriver and the enrolment reader report every one")
+    ran_again = {}
+    EX.run(O7_SEEDS, O7_N, role=False, cache=ran_again)
+    if ran_again == ran:
+        print("  PASS: execution A/A: a second run of the same programs ran the same names")
+    else:
+        rc = 1
+        differ = sorted(k for k in ran if ran_again.get(k) != ran[k])
+        print(f"  FAIL: execution A/A: {len(differ)} program(s) ran different names: {differ[:5]}")
 
     base, counts = run_corpus(items)
     base += check_incidents()
@@ -1113,10 +1361,14 @@ def selftest():
 
     for name, old, new, expect in PLANTS:
         mod = load_mutant(old, new)
-        found, _ = run_corpus(subset, mod=mod)
-        found += check_incidents(mod)
+        found = check_incidents(mod)
         found += [f"R {t!r}: {e}" for t, e in robustness(mod)]
-        found += composed_findings(mod)[0]
+        found += EX.run(O7_SEEDS, O7_N, mod=mod, cache=ran)[0]
+        if not expect <= _oracles_of(found):
+            # the quick oracles did not show every one named: ask the corpus
+            # and the composed programs too (each asks bash thousands of times)
+            found += run_corpus(subset, mod=mod)[0]
+            found += composed_findings(mod)[0]
         tags = _oracles_of(found)
         if found and expect <= tags:
             print(f"  PASS: plant {name} caught by {','.join(sorted(tags))} "
@@ -1125,6 +1377,17 @@ def selftest():
             rc = 1
             print(f"  FAIL: plant {name} caught by {sorted(tags) or 'nothing'}; "
                   f"expected at least {sorted(expect)}")
+    for name, module, edits, check in CONSUMER_PLANTS:
+        source = mutated_source(module, edits)
+        readers = {"derived": EX.deriver_reader(source)} if check == "deriver" \
+            else {"edges": EX.edges_reader(source)}
+        found = [f for f in EX.run(O7_SEEDS, O7_N, role=False, cache=ran, **readers)[0]
+                 if f" O7 {check}: " in f]
+        if found:
+            print(f"  PASS: consumer plant {name} caught by O7 ({len(found)} findings)")
+        else:
+            rc = 1
+            print(f"  FAIL: consumer plant {name}: O7 found nothing")
     print(f"shell-oracle selftest: {'OK' if rc == 0 else 'FAILED'}")
     return rc
 
@@ -1135,6 +1398,18 @@ def main(argv):
     if not BASH:
         print("INSTRUMENT ERROR: bash not found")
         return 2
+    if "--execution" in argv:
+        # O7 alone, over more programs: --execution SEED[,SEED...] N
+        rest = argv[argv.index("--execution") + 1:]
+        seeds = [int(x) for x in rest[0].split(",")] if rest else list(O7_SEEDS)
+        n = int(rest[1]) if len(rest) > 1 else O7_N
+        findings, counts = EX.run(seeds, n, derived=EX.deriver_reader(), edges=EX.edges_reader())
+        for f in findings:
+            print(f)
+        print(f"shell-oracle execution: bash={EX.bash_version()} "
+              + " ".join(f"{k}={v}" for k, v in sorted(counts.items()))
+              + f" findings={len(findings)}")
+        return 1 if findings else 0
     want_json = "--json" in argv
     paths = [a for a in argv if not a.startswith("--")] or tracked_shell_files()
     items = load_items(paths)

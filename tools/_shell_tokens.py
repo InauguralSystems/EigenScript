@@ -18,16 +18,19 @@ TEXT, not lines, and knows:
   * operators: control operators and redirections (with an IO number such as
     the `2` of `2>&1` folded into the redirection);
   * here-documents: the body after the opener's line is consumed and attached
-    to the `<<` / `<<-` token, so it is never read as commands;
+    to the `<<` / `<<-` token, so it is never read as commands -- also when
+    the opener sits in a `$( )` that closes on its own line (`x=$(cat <<E)`),
+    where bash 5.2 reads the body from the lines below;
   * `case` patterns (`a)` closes a pattern, not a substitution) and `[[ ]]`
     (whose `<`, `&&`, `(` are operands, not shell operators).
 
 The expected answers come from outside this file: tools/shell_oracle.py checks
 the tokenizer against `bash -n`, `dash -n`, bash's own reprint of a parsed
-function (`declare -f`), and bash's own quote removal.  See that file for the
-measured resolution and blind spots.
+function (`declare -f`), bash's own quote removal, and -- for which words are
+commands -- what bash RUNS when it executes generated programs.  See that file
+for the measured resolution and blind spots.
 
-Tokens are (kind, text, line, start, end, subst, heredoc):
+Tokens are (kind, text, line, start, end, subst, heredoc, role):
 
   kind     'word' | 'pattern' (a case pattern) | 'arith' (a `(( ))` command or
            `for (( ))` header) | 'op' | 'redir' | 'newline'
@@ -41,6 +44,24 @@ Tokens are (kind, text, line, start, end, subst, heredoc):
            `<<`/`<<-` redirection with an unquoted delimiter, the bodies of
            the $(...) and `...` in the here-document body
   heredoc  for a `<<`/`<<-` redirection: the body text, else None
+  role     for a word, what the shell takes it for where it stands:
+             'command'     the word a simple command runs
+             'assignment'  NAME=value before the command word
+             'argument'    a word after the command word
+             'reserved'    a reserved word recognised as one (`if`, `do`, `{`,
+                           `in`, `]]`, the `-p` of `time -p`...)
+             'name'        a `for`/`select` variable, or the NAME of a function
+                           or coproc being defined
+             'list'        a word of a `for NAME in ...` list
+             'subject'     the word a `case` matches
+             'pattern'     a case pattern
+             'test'        an operand or operator inside [[ ]]
+             'target'      a redirection's target
+             'delimiter'   a here-document's delimiter word
+           One simple command has at most one 'command' word: it is the first
+           word, redirections aside, that bash's assignment test rejects
+           (`x=1 <f y=2 cmd` runs `cmd`; `"A=1" cmd` runs `A=1`).  Consumers
+           read the role instead of guessing a position from the text.
 
 tokenize() raises ShellLexError for text the shell would reject lexically:
 an unterminated quote, substitution, expansion or `[[`.  A here-document with
@@ -68,6 +89,7 @@ class Token(NamedTuple):
     end: int
     subst: tuple = ()
     heredoc: str | None = None
+    role: str = ""
 
 
 # Longest first: the scanner takes the first that matches.
@@ -100,6 +122,11 @@ class _Lexer:
         self.heredocs: list[tuple[int, int, bool]] = []  # body spans, <<- flag
         self.arith_memo: dict[int, bool] = {}
         self.openers: list[int] = []   # offsets of every recorded $( / <( / >( body's opener
+        # `$(cat <<E)`: a here-document still pending when its substitution
+        # closes is read from the lines after the current one (bash 5.2,
+        # measured).  newline offset -> where reading resumes after the bodies.
+        self.skips: dict[int, int] = {}
+        self.skips_taken: set[int] = set()
         self.line_starts = [0]
         for i, c in enumerate(text):
             if c == "\n":
@@ -168,7 +195,7 @@ class _Lexer:
         if nxt == "(":
             return self.cmdsub(j + 2, subst, j)
         if nxt == "{":
-            return self.param(j + 2, subst, j)
+            return self.param(j + 2, subst, j, in_double)
         if nxt == "[":
             return self.old_arith(j + 2, subst, j)
         if nxt and nxt in "$?#!-@*0123456789":
@@ -232,22 +259,37 @@ class _Lexer:
         self.err("unterminated backquote", i)
 
     def cmdsub(self, body_start: int, subst: list, opener: int) -> int:
+        return self.substitution(body_start, subst, opener, "$(...)")
+
+    def procsub(self, body_start: int, subst: list, opener: int) -> int:
+        return self.substitution(body_start, subst, opener, "process substitution")
+
+    def substitution(self, body_start: int, subst: list, opener: int, what: str) -> int:
         sub = _Body(self, body_start, closer=")")
         end = sub.run()
         if end is None:
-            self.err("unterminated $(...)", opener)
-        subst.append(self.clean(body_start, end))
+            self.err(f"unterminated {what}", opener)
+        body = self.clean(body_start, end)
+        if sub.pending:
+            # `$(cat <<E)` closing before its here-document was read: bash
+            # reads the body from the lines after this one.  The recorded
+            # body gets it in line, as bash's own reprint lays it out.
+            body += "\n" + self.deferred_heredocs(sub, end)
+        subst.append(body)
         self.openers.append(opener)
         return end + 1
 
-    def procsub(self, body_start: int, subst: list, opener: int) -> int:
-        sub = _Body(self, body_start, closer=")")
-        end = sub.run()
-        if end is None:
-            self.err("unterminated process substitution", opener)
-        subst.append(self.clean(body_start, end))
-        self.openers.append(opener)
-        return end + 1
+    def deferred_heredocs(self, sub: "_Body", close: int) -> str:
+        """Read SUB's pending here-documents from the lines after the one
+        holding CLOSE; return that text (bodies and their delimiter lines)."""
+        nl = self.text.find("\n", close)
+        if nl < 0:
+            nl = self.n                       # no later line: delimited by end of file
+        start = self.skips.get(nl, min(nl + 1, self.n))
+        sub.i = start
+        sub.read_heredocs()
+        self.skips[nl] = sub.i
+        return self.text[start:sub.i]
 
     def arith_scan(self, j: int, subst: list) -> int | None:
         """End (after `))`) of an arithmetic body starting at j, or None if
@@ -286,13 +328,14 @@ class _Lexer:
             return self.arith_memo[j]
         cuts = set(self.cuts)
         comments, heredocs, openers = list(self.comments), list(self.heredocs), list(self.openers)
+        skips = dict(self.skips)
         try:
             result = self.arith_scan(j, []) is not None
         except ShellLexError:
             result = False
         finally:
             self.cuts, self.comments, self.heredocs = cuts, comments, heredocs
-            self.openers = openers
+            self.openers, self.skips = openers, skips
         self.arith_memo[j] = result
         return result
 
@@ -302,48 +345,129 @@ class _Lexer:
             self.err("unterminated $((...))", opener)
         return end
 
-    def param(self, j: int, subst: list, opener: int) -> int:   # after ${
+    def param(self, j: int, subst: list, opener: int, in_double: bool = False) -> int:
+        """`${ ... }`; j is after the `${`.  IN_DOUBLE: the expansion sits in
+        double quotes or a here-document body.
+
+        The closing `}` is found with quotes paired, as bash's parser pairs
+        them (`"${x:-it's}"` is a syntax error).  What RUNS is a second
+        question inside double quotes: there the word of `${x:-word}` is
+        expanded with its single quotes as plain characters, so
+        `"${x:-'$(cmd)'}"` runs cmd -- unless the operator takes a pattern
+        (`%`, `#`, `/`, `^`, `,`), where the quotes do quote.  (bash 5.2,
+        measured; the state names are parse.y's dolbrace_state.)"""
+        start, first = j, len(subst)
+        state = "param"            # -> "op" -> "word", or "quote" for a pattern operator
+        literal_quotes = False
         while j < self.n:
             c = self.text[j]
+            if state == "param" and c in "%#/^," and j > start:
+                state = "quote"
+            elif state == "param" and c in "#%^,~:-=?+/":
+                state = "op"
+            elif state == "op" and c not in "#%^,~:-=?+/":
+                state = "word"
             if c == "\\":
                 if self.text[j + 1:j + 2] == "\n":
                     self.cuts.add(j)
                 j += 2
                 continue
             if c == "}":
+                if literal_quotes:
+                    self.expanded_in_quotes(start, j, subst, first)
                 return j + 1
             if c == "'":
+                if in_double and state != "quote":
+                    literal_quotes = True
                 j = self.single(j)
                 continue
             if c == '"':
                 j = self.double(j, subst)
                 continue
             if c in "$`":
-                j = self.dollar_or_backtick(j, subst, in_double=False)
+                j = self.dollar_or_backtick(j, subst, in_double)
                 continue
             j += 1
         self.err("unterminated ${...}", opener)
 
-    def subscript(self, j: int, close: int, subst: list) -> int:
-        """Read an assignment subscript `[...]` from j up to its `]` at close,
-        recording $( ), backquote and ${ } bodies (they run).  Returns the
-        index after the `]`."""
-        while j < close:
-            c = self.text[j]
+    def expanded_in_quotes(self, a: int, b: int, subst: list, first: int):
+        """Replace the bodies recorded for text[a:b] (SUBST[first:]) by the
+        ones that run when that text is expanded inside double quotes, where
+        a single quote is a plain character.  bash parses none of the newly
+        seen ones before run time, so no opener, comment or here-document
+        span is recorded for them."""
+        saved = (list(self.comments), list(self.heredocs), list(self.openers), dict(self.skips))
+        found: list = []
+        try:
+            k = a
+            while k < b:
+                c = self.text[k]
+                if c == "\\":
+                    k += 2
+                elif c in "$`":
+                    k = self.dollar_or_backtick(k, found, in_double=True)
+                else:
+                    k += 1
+        except ShellLexError:
+            return                 # keep the parser's reading
+        finally:
+            self.comments, self.heredocs, self.openers, self.skips = saved
+        subst[first:] = found
+
+    def match_subscript(self, j: int, subst: list, lexer: bool = False) -> int | None:
+        """j is at a `[`.  The index after the `]` that closes it, or None if it
+        never closes.  Nested [ ], quotes, $( ), ${ }, $[ ], $(( )) and
+        backquotes inside do not close it, and a newline does not end it.
+        Bodies of the substitutions inside go to SUBST.
+
+        bash closes a subscript in two places that do not agree, and both are
+        modelled (measured on bash 5.2: `m[<(c ])]=1 d` runs `c ]`, not `d`):
+          * LEXER -- where the WORD ends (parse_matched_pair with P_ARRAYSUB):
+            a `<(` or `>(` inside the subscript is parsed as a process
+            substitution, a command list of its own, so a `]` inside it does
+            not close (and a syntax error inside it is one: `bash -n` rejects
+            `m[<(&& c)]=1`).
+          * not LEXER -- whether the finished word is an ASSIGNMENT
+            (skipsubscript): `<(` is not special there, so the first `]` it
+            meets closes, and `m[<(c ])]=1` is not an assignment.
+        A process substitution inside the subscript of a word that IS an
+        assignment is parsed and never run; it is recorded all the same."""
+        depth = 0
+        k = j
+        gtlt = False        # bash's LEX_GTLT: the last character was a lone < or >
+        while k < self.n:
+            c = self.text[k]
             if c == "\\":
-                j += 2
+                if self.text[k + 1:k + 2] == "\n":
+                    self.cuts.add(k)
+                k += 2
+                gtlt = False
                 continue
             if c == "'":
-                j = self.single(j)
+                k = self.single(k)
+                gtlt = False
                 continue
             if c == '"':
-                j = self.double(j, subst)
+                k = self.double(k, subst)
+                gtlt = False
                 continue
             if c in "$`":
-                j = self.dollar_or_backtick(j, subst, in_double=False)
+                k = self.dollar_or_backtick(k, subst, in_double=False)
+                gtlt = False
                 continue
-            j += 1
-        return close + 1
+            if c == "(" and gtlt and lexer:
+                k = self.procsub(k + 1, subst, k - 1)
+                gtlt = False
+                continue
+            if c == "[":
+                depth += 1
+            elif c == "]":
+                depth -= 1
+                if depth == 0:
+                    return k + 1
+            gtlt = c in "<>" and not gtlt
+            k += 1
+        return None
 
     def paren_group(self, j: int, subst: list, opener: int, array: bool = False) -> int:
         """A balanced ( ... ) that is part of a word: an extglob group or an
@@ -365,6 +489,14 @@ class _Lexer:
                 continue
             if c in "$`":
                 j = self.dollar_or_backtick(j, subst, in_double=False)
+                continue
+            if array and depth == 0 and c == "[" and self.text[j - 1] in " \t\n(":
+                # `[subscript]=value` element: at the start of an element bash
+                # matches the subscript to its `]` (so `[ ( ]=x` is one word)
+                close = self.match_subscript(j, subst, lexer=True)
+                if close is None:
+                    self.err("unterminated [ subscript", j)
+                j = close
                 continue
             if array and c in "<>" and self.text[j + 1:j + 2] == "(":
                 # anywhere in an element: `[k]=<(cmd)`, `x<(cmd)` (DevBox r6)
@@ -402,13 +534,25 @@ class _Body:
         self.dbracket = False
         self.expect_delim = None       # (token idx, strip) awaiting the delimiter word
         self.regex_next = False        # the word after `=~` inside [[ ]]
+        # The three facts bash's lexer keeps about the last token read, which
+        # decide what the next word may be (parse.y: reserved_word_acceptable,
+        # assignment_acceptable, PST_REDIRLIST):
+        #   cmdpos       a reserved word (and `((`, `[[`) may start here
+        #   last_assign  the last word was an assignment word
+        #   redir_only   only redirections have been read in this simple command
+        # An assignment -- and NAME[ opening a subscript matched to its `]` --
+        # is acceptable when any of the three holds (assign_ok()).
+        self.last_assign = False
+        self.redir_only = False
+        self.expect_target = False     # the next word is a redirection's target
         self.after_for = False         # `for` was just read: `((` is arithmetic
-        self.after_time = False        # `time` was just read: its -p keeps cmdpos
-        self.assigned = False          # this command began with NAME=value
+        self.after_time = 0            # 1: `time` was just read; 2: `time -p`
         self.after_coproc = False      # `coproc` was just read
         self.after_function = False    # `function` was just read: next is the NAME
         self.split_next = False        # a word here starts a new command
         self.for_header = 0            # 1: `for` read; 2: its NAME read
+        self.for_list = False          # reading the words of `for NAME in ...`
+        self.has_command = False       # this simple command's command word was read
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -431,11 +575,15 @@ class _Body:
             if c in "$`":
                 j = lx.dollar_or_backtick(j, subst, in_double=False)
                 continue
-            if c == "[" and self.cmdpos and lx.clean(start, j).isidentifier():
-                close = _subscript_end(t, j)  # `a[1<<3]=x`: an assignment's subscript
-                if close is not None and t[close:close + 1] in ("=", "+"):
-                    j = lx.subscript(j + 1, close - 1, subst)
-                    continue
+            if c == "[" and self.assign_ok() and _plain_ident(lx.clean(start, j)):
+                # NAME[ where an assignment is acceptable: bash reads on to the
+                # matching `]` whatever is inside (`a[1<<3]=x`, `m[ ( ]=v`),
+                # and whatever follows it.
+                close = lx.match_subscript(j, subst, lexer=True)
+                if close is None:
+                    lx.err("unterminated [ subscript", j)
+                j = close
+                continue
             if c == "(":
                 prefix = lx.clean(start, j)
                 if _is_array_assign(prefix) or (prefix and prefix[-1] in EXTGLOB_LEADS
@@ -507,11 +655,11 @@ class _Body:
                 self.i = end
                 continue
             if c == "\n" and self.dbracket and not self.pending:
-                self.i += 1                   # `[[ a &&<newline> b ]]`: one command
+                self.next_line()              # `[[ a &&<newline> b ]]`: one command
                 continue
             if c == "\n":
                 self.emit(Token("newline", "\n", lx.line_of(self.i), self.i, self.i + 1))
-                self.i += 1
+                self.next_line()
                 if self.pending:
                     self.read_heredocs()
                 self.after_separator()
@@ -527,9 +675,11 @@ class _Body:
                                 self.i, end, tuple(subst)))
                 self.i = end
                 self.after_for = False
+                self.for_header = 0           # `for ((...))` has no NAME: `do` comes next
                 # `(( x )) then` / `for ((...)) do`: a reserved word may
                 # follow a compound command with no separator.
                 self.cmdpos = True
+                self.last_assign = self.redir_only = False
                 continue
             self.after_for = False
             op = None if (self.dbracket and self.regex_next) else self.match_op()
@@ -539,7 +689,7 @@ class _Body:
             # A word (or, inside [[ ]], an operator-looking operand).
             if self.dbracket and op:
                 end = self.i + len(op)
-                self.emit(Token("word", op, lx.line_of(self.i), self.i, end))
+                self.emit(Token("word", op, lx.line_of(self.i), self.i, end, role="test"))
                 self.i = end
                 continue
             if self.dbracket and self.regex_next:
@@ -563,12 +713,24 @@ class _Body:
                 self.emit(Token("op", ";", lx.line_of(self.i), self.i, self.i))
             self.emit(Token(kind, text, lx.line_of(self.i), self.i, end, tuple(subst)))
             self.i = end
-            self.after_word(text)
+            at = len(self.tokens) - 1
+            role = self.after_word(text)
+            self.tokens[at] = self.tokens[at]._replace(role=role)
         if self.closer:
             return None
         if self.dbracket:
             lx.err("unterminated [[", lx.n - 1)
         return lx.n
+
+    def next_line(self):
+        """Step over the newline at self.i -- and over here-document bodies a
+        substitution on this line already read from the lines below."""
+        resume = self.lx.skips.get(self.i)
+        if resume is None:
+            self.i += 1
+        else:
+            self.lx.skips_taken.add(self.i)
+            self.i = resume
 
     def match_op(self) -> str | None:
         t, i = self.lx.text, self.i
@@ -588,20 +750,25 @@ class _Body:
         if kind == "redir":
             if op in HEREDOC_OPS:
                 self.expect_delim = (len(self.tokens) - 1, op == "<<-")
+            else:
+                self.expect_target = True
             return
         if op == "(":
+            prev = self.tokens[-2] if len(self.tokens) > 1 else None
+            if prev is not None and prev.kind == "word" and prev.role == "command" \
+                    and lx.text[self.i:].lstrip(" \t")[:1] == ")":
+                # `NAME()` / `NAME ( )`: a function definition; NAME is not run here
+                self.tokens[-2] = prev._replace(role="name")
             if not self.in_pattern():         # `(a)` pattern: the optional lead
                 self.parens += 1
             self.after_separator()
         elif op == ")":
             if self.in_pattern():
                 self.case[-1] = "body"
-                self.cmdpos = True
+                self.after_separator()
                 return
             self.parens = max(0, self.parens - 1)
-            self.cmdpos = True                # `f()` is followed by its body
-            self.assigned = False             # `(v=1) then`: the subshell's assignment ended
-            self.after_time = False
+            self.after_separator()            # `f()` is followed by its body; `(v=1) then`
         elif op in (";;", ";&", ";;&"):
             if self.case:
                 self.case[-1] = "pattern"
@@ -611,105 +778,175 @@ class _Body:
 
     def after_separator(self):
         self.cmdpos = True
-        self.assigned = False
+        self.last_assign = False
+        self.redir_only = False
+        self.expect_target = False
         self.after_coproc = False
-        self.after_time = False
+        self.after_time = 0
+        self.for_list = False
+        self.has_command = False
 
     def in_pattern(self) -> bool:
         return bool(self.case) and self.case[-1] == "pattern"
 
-    def after_word(self, word: str):
+    def assign_ok(self) -> bool:
+        """bash's assignment_acceptable(): the next word may be an assignment,
+        and NAME[ opens a subscript, at the start of a command, after an
+        assignment word, or while only redirections have been read -- not in
+        a case pattern, a `for`/`case`/`function` header or `[[ ]]`.
+        (Measured against bash 5.2 with `m[ ( ]=v`, which only parses where
+        the subscript is matched: accepted after `<f`, `x=1`, `!`, `time -p`,
+        `coproc`; rejected after `x=1 <f`, `local`, a command word.)"""
+        if self.dbracket or self.for_header or self.after_function \
+                or self.expect_delim is not None or self.expect_target:
+            return False
+        if self.case and self.case[-1] != "body":
+            return False
+        return self.cmdpos or self.last_assign or self.redir_only
+
+    def after_redirection_word(self):
+        """After a redirection's target or a here-document delimiter.  For bash
+        the last token is then a plain word: a reserved word no longer starts
+        anything (`<f if x` runs a command named `if`), but an assignment is
+        still acceptable while only redirections have been read."""
+        if self.cmdpos or self.redir_only:
+            self.redir_only = True
+        self.cmdpos = False
+        self.last_assign = False
+        self.after_coproc = False
+        self.after_time = 0
+
+    def after_word(self, word: str) -> str:
+        """Advance the state past WORD; return the role it has here."""
         if self.expect_delim is not None:
             idx, strip = self.expect_delim
             self.expect_delim = None
             quoted = any(c in word for c in "'\"\\")
             self.pending.append((idx, unquote(word), strip, quoted))
-            return
+            self.after_redirection_word()
+            return "delimiter"
+        if self.expect_target:
+            self.expect_target = False
+            self.after_redirection_word()
+            return "target"
         if self.dbracket:
             if word == "=~":
                 self.regex_next = True
             if word == "]]":
                 self.dbracket = False
-                self.cmdpos = True                # `[[ x ]] then`: a reserved word may follow
+                self.after_separator()            # `[[ x ]] then`: a reserved word may follow
                 self.split_next = True
-            return
+                return "reserved"
+            return "test"
         if self.case and self.case[-1] == "word":
             self.case[-1] = "in" if word else "word"
-            return
+            return "subject"
         if self.case and self.case[-1] == "in":
             if word == "in":
                 self.case[-1] = "pattern"
-            return
+                return "reserved"
+            return "subject"
         if self.case and self.case[-1] == "pattern":
             if word == "esac":
                 self.case.pop()
-                self.cmdpos = True
-            return
+                self.after_separator()
+                self.split_next = True
+                return "reserved"
+            return "pattern"
         if self.for_header == 1:              # `for NAME`
             self.for_header = 2
-            return
+            return "name"
         if self.for_header == 2:
             self.for_header = 0
             if word == "do":                  # `for NAME do` (implicit "$@")
-                self.cmdpos = True
+                self.after_separator()
                 self.split_next = True
-                return
-        if word == "{" and self.cmdpos:
-            self.split_next = True
-            return                            # a group or function body opens
-        if self.cmdpos and self.after_time and word.startswith("-"):
-            return                            # `time -p`: still a command position
-        self.after_time = False
-        if self.cmdpos and self.assigned:
-            # After `NAME=value` the next word is a command NAME, never a
-            # keyword: `x=1 [[ a ]]` runs a command called `[[`.
-            if not _is_assignment(word):
-                self.cmdpos = False
-            return
-        if self.cmdpos and word in ("for", "select"):
-            self.after_for = True
-            self.for_header = 1
-        if self.cmdpos and word == "time":
-            self.after_time = True
-        if self.cmdpos and self.after_coproc:
-            self.after_coproc = False
-            rest = self.lx.text[self.i:].lstrip(" \t")
-            if _plain_ident(word) and rest[:1] in ("{", "("):
-                self.split_next = True
-                return                        # `coproc NAME { ...; }`: NAME, then a compound
-        if self.cmdpos and word == "coproc":
-            self.after_coproc = True
-            return
-        if self.cmdpos and _is_assignment(word):
-            self.assigned = True
-            return
-        if self.cmdpos and word == "function":
-            self.after_function = True
-            self.cmdpos = False
-            return
+                return "reserved"
+            if word == "in":
+                self.for_list = True
+                return "reserved"
         if self.after_function:
             self.after_function = False
-            self.cmdpos = True                # `function NAME {` / `function NAME ()`
+            self.after_separator()            # `function NAME {` / `function NAME ()`
             self.split_next = True
-            return
-        if self.cmdpos and word in COMPOUND_CLOSERS:
+            return "name"
+        acceptable = self.cmdpos or self.last_assign or self.redir_only
+        self.last_assign = False
+        if not self.cmdpos:
+            # Not a reserved-word position.  Where an assignment is still
+            # acceptable (after one, or after leading redirections) the word
+            # is an assignment or the command word; otherwise an argument.
+            if acceptable:
+                self.last_assign = assignment_split(word) is not None
+                self.redir_only = False
+            return self.word_role(word)
+        # ---- a reserved word may start here
+        if word == "{":
             self.split_next = True
-            return                            # `done then`, `fi }`: still a reserved-word position
-        if self.cmdpos:
-            if word == "case":
-                self.case.append("word")
-                self.cmdpos = False
-                return
-            if word == "esac" and self.case:
-                self.case.pop()
-                return
-            if word == "[[":
-                self.dbracket = True
-                self.cmdpos = False
-                return
-            if word in RESERVED_OPENERS or _is_assignment(word):
-                return                        # still a command position
+            return "reserved"                 # a group or function body opens
+        if self.after_time and (word == "--" or (word == "-p" and self.after_time == 1)):
+            self.after_time = 0 if word == "--" else 2
+            return "reserved"                 # `time -p`, `time --`: still a command position
+        self.after_time = 0
+        if self.after_coproc:
+            self.after_coproc = False
+            rest = self.lx.text[self.i:].lstrip(" \t")
+            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")):
+                # `coproc NAME { ...; }` / `coproc NAME ( ... )`: bash takes ANY
+                # word before a lone `{` for the name (parse.y special_case_tokens),
+                # and refuses a name that is not an identifier only when it runs
+                self.split_next = True
+                return "name"
+        if word in ("for", "select"):
+            self.after_for = True
+            self.for_header = 1
             self.cmdpos = False
+            return "reserved"
+        if word == "time":
+            self.after_time = 1
+            return "reserved"
+        if word == "coproc":
+            self.after_coproc = True
+            return "reserved"
+        if word == "function":
+            self.after_function = True
+            self.cmdpos = False
+            return "reserved"
+        if word == "esac" and self.case:
+            self.case.pop()
+        if word in COMPOUND_CLOSERS:
+            self.split_next = True
+            return "reserved"                 # `done then`, `fi }`: still a reserved-word position
+        if word == "case":
+            self.case.append("word")
+            self.cmdpos = False
+            return "reserved"
+        if word == "[[":
+            self.dbracket = True
+            self.cmdpos = False
+            return "reserved"
+        if word in RESERVED_OPENERS:
+            return "reserved"                 # still a command position
+        # An assignment word, or the command word of this simple command.
+        self.last_assign = assignment_split(word) is not None
+        self.cmdpos = False
+        self.redir_only = False
+        return self.word_role(word)
+
+    def word_role(self, word: str) -> str:
+        """The role of an ordinary word of a simple command, decided the way
+        bash decides it when the command runs (separate_out_assignments): the
+        leading words its assignment test accepts are assignments, the next
+        word is the command, the rest are arguments -- wherever redirections
+        sit between them."""
+        if self.for_list:
+            return "list"
+        if self.has_command:
+            return "argument"
+        if assignment_split(word) is not None:
+            return "assignment"
+        self.has_command = True
+        return "command"
 
     def emit(self, tok: Token):
         self.split_next = False
@@ -778,27 +1015,6 @@ def _body_substitutions(body: str) -> list:
     return out, lx.openers
 
 
-def _subscript_end(t: str, j: int) -> int | None:
-    """Index after the `]` matching the `[` at j, or None."""
-    depth = 0
-    k = j
-    while k < len(t):
-        c = t[k]
-        if c == "\\":
-            k += 2
-            continue
-        if c == "[":
-            depth += 1
-        elif c == "]":
-            depth -= 1
-            if depth == 0:
-                return k + 1
-        elif c == "\n":
-            return None
-        k += 1
-    return None
-
-
 def _is_fd_name(word: str) -> bool:
     """`{name}` before a redirection: bash's named file descriptor."""
     return len(word) > 2 and word[0] == "{" and word[-1] == "}" and _plain_ident(word[1:-1])
@@ -808,16 +1024,39 @@ def _plain_ident(name: str) -> bool:
     return name.isidentifier() and name.isascii()
 
 
+def assignment_split(word: str):
+    """(name, value) if WORD -- a token's text, quotes kept -- is an assignment
+    word as bash's assignment() decides it: NAME=value, NAME+=value,
+    NAME[subscript]=value or NAME[subscript]+=value.  Otherwise None.
+
+    The subscript closes the way bash's skipsubscript closes it
+    (match_subscript), so `m[${k[1]}]=v`, `m[$[ 1 ]]=v` and `h["]"]=v` are
+    assignments and `m[<(c ])]=1` is not.  This is the one recogniser: the
+    lexer's own state and every consumer use it, so "is this word an
+    assignment" has a single answer."""
+    n = len(word)
+    if not n or not (word[0].isascii() and (word[0].isalpha() or word[0] == "_")):
+        return None
+    i = 1
+    while i < n and word[i].isascii() and (word[i].isalnum() or word[i] == "_"):
+        i += 1
+    name = word[:i]
+    if i < n and word[i] == "[":
+        try:
+            i = _Lexer(word).match_subscript(i, [])
+        except ShellLexError:
+            return None
+        if i is None:
+            return None
+    if word.startswith("+=", i):
+        return name, word[i + 2:]
+    if word.startswith("=", i):
+        return name, word[i + 1:]
+    return None
+
+
 def _is_assignment(word: str) -> bool:
-    eq = word.find("=")
-    if eq <= 0:
-        return False
-    name = word[:eq]
-    if name.endswith("+"):
-        name = name[:-1]
-    if "[" in name and name.endswith("]"):
-        name = name[:name.index("[")]
-    return name.isidentifier() and name.isascii()
+    return assignment_split(word) is not None
 
 
 def _is_array_assign(prefix: str) -> bool:
@@ -839,6 +1078,13 @@ def scan_full(text: str):
     lx = _Lexer(text)
     body = _Body(lx, 0, closer=None)
     body.run()
+    untaken = sorted(p for p in lx.skips if p not in lx.skips_taken and p < lx.n)
+    if untaken:
+        # the line a substitution's here-document was read after ends inside a
+        # quoted string or another multi-line word: not modelled, so stop
+        # (tokenize_file turns this into a refusal, never a silent misread)
+        lx.err("a here-document opened inside a substitution that closes first is "
+               "read from inside a multi-line word", untaken[0])
     return body.tokens, sorted(lx.comments), sorted(lx.heredocs), sorted(set(lx.openers))
 
 
@@ -951,14 +1197,6 @@ def simple_commands(tokens):
         cur = []
     if cur:
         out.append(cur)
-    return out
-
-
-def all_substitutions(text: str):
-    """Bodies of $(...), `...`, <(...), >(...) in a fragment of shell text."""
-    out = []
-    for tok in tokenize(text):
-        out.extend(tok.subst)
     return out
 
 

@@ -17,7 +17,7 @@ from pathlib import Path
 import yaml
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _shell_tokens import (TokenizerGap, function_definitions, simple_commands,
+from _shell_tokens import (TokenizerGap, assignment_split, function_definitions, simple_commands,
                            tokenize_file, tokenize_prefix, unquote)
 
 
@@ -28,8 +28,13 @@ def rel(path: Path) -> str:
     return path.resolve().relative_to(ROOT).as_posix()
 
 
-# NAME=, NAME+= and NAME[subscript]= are assignments, not command words.
-_ASSIGNMENT = r"^[A-Za-z_]\w*(?:\[[^]]*\])?\+?="
+# A NAME=value OPERAND of `env`, `sudo` or a suite launcher, which that command
+# reads after quote removal.  A shell assignment word -- the prefix of a simple
+# command -- is not matched by a regex: bash's own test decides it
+# (assignment_split, on the word as written).
+_ASSIGNMENT = r"^[A-Za-z_]\w*="
+_KEYWORDS = frozenset({"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{"})
+_WRAPPERS = frozenset({"command", "exec", "nohup", "sudo", "xvfb-run"})
 
 
 def emit(src: str, dst: str) -> None:
@@ -90,6 +95,40 @@ def shell_commands(text: str):
         yield list(words)
 
 
+def _command_words(cmd) -> tuple[str, ...]:
+    """The words of the simple command CMD (tokens) from its command word on:
+    reserved words, assignments, wrappers and their options stripped."""
+    raws = [t.text for t in cmd]
+    words = [unquote(raw) for raw in raws]
+    # The command word is the first word that is neither a reserved word,
+    # a wrapper, nor an assignment.  Before any wrapper an assignment is
+    # what bash says it is: `m[${k[1]}]=<(c) bash t.sh` runs `bash`, and
+    # `"A=1" bash t.sh` runs a command named `A=1`.  After one, the
+    # wrapper reads its NAME=value operands unquoted (`sudo "A=1" cmd`).
+    wrapped = False
+    while words:
+        if words[0] in _WRAPPERS:
+            wrapped = True
+        elif not (words[0] in _KEYWORDS
+                  or assignment_split(raws[0]) is not None
+                  or (wrapped and re.match(_ASSIGNMENT, words[0]))):
+            break
+        words.pop(0)
+        raws.pop(0)
+    if words and words[0] == "env":
+        words.pop(0)
+        while words and (words[0].startswith("-")
+                         or re.match(_ASSIGNMENT, words[0])
+                         or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
+                             and words[0] not in {"$EIGS", "${EIGS}"})):
+            words.pop(0)
+    if words and words[0] == "timeout":
+        words.pop(0)
+        while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
+            words.pop(0)
+    return tuple(words)
+
+
 @lru_cache(maxsize=8192)
 def _commands(text: str) -> tuple[tuple[str, ...], ...]:
     """Cache only pure parsing, never filesystem lookups or mutable generators.
@@ -105,22 +144,19 @@ def _commands(text: str) -> tuple[tuple[str, ...], ...]:
         for body in tok.subst:
             commands.extend(_commands(body))
     for cmd in simple_commands(tokens):
-        words = [unquote(t.text) for t in cmd]
-        while words and (re.match(_ASSIGNMENT, words[0]) or words[0] in {"if", "then", "elif", "else", "do", "while", "until", "time", "!", "{", "command", "exec", "nohup", "sudo", "xvfb-run"}):
-            words.pop(0)
-        if words and words[0] == "env":
-            words.pop(0)
-            while words and (words[0].startswith("-")
-                             or re.match(_ASSIGNMENT, words[0])
-                             or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
-                                 and words[0] not in {"$EIGS", "${EIGS}"})):
-                words.pop(0)
-        if words and words[0] == "timeout":
-            words.pop(0)
-            while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
-                words.pop(0)
-        if words:
-            commands.append(tuple(words))
+        # Two readings of one simple command, each kept once.  The first
+        # strips a prefix by its words, as this file always did.  The second
+        # starts at the word the tokenizer says the command RUNS (role
+        # 'command', which tools/shell_oracle.py checks against what bash
+        # executes): `time -p bash t.sh` and `coproc bash t.sh` run `bash`,
+        # and the first reading takes `-p` and `coproc` for the command.
+        runs = next((i for i, t in enumerate(cmd) if t.role == "command"), 0)
+        readings = []
+        for start in sorted({0, runs}):
+            words = _command_words(cmd[start:])
+            if words and words not in readings:
+                readings.append(words)
+        commands.extend(readings)
     return tuple(commands)
 
 
