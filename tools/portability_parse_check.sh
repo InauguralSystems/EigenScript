@@ -46,7 +46,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path.cwd() / "tools"))
 from _derive_variants import SEPARATORS, shell_token_lines
-from _shell_tokens import TokenizerGap, assignment_split, tokenize_file, tokenize_prefix
+from _shell_tokens import (TokenizerGap, assignment_split, emptied, tokenize_file,
+                           tokenize_prefix, unquote)
 
 ALLOW = {
     ("tests/test_ci_portability.sh", "sed -i"): (
@@ -62,28 +63,37 @@ CONTROL = {"if", "then", "elif", "else", "do", "while", "until", "!", "time"}
 WRAPPERS = {"command", "builtin", "exec", "env", "sudo", "nohup"}
 
 
-def plain(word):
-    if len(word) >= 2 and word[0] == word[-1] and word[0] in "'\"":
-        return word[1:-1]
-    return word
-
-
 def _argv(raw):
-    """One command's argv from its words as written: a leading reserved word,
-    assignment or wrapper (with its options) is not the command."""
-    seg = [plain(x) for x in raw]
+    """One command's argv from its words as written: leading reserved
+    words, assignments and wrappers (with their options), in whatever order
+    they come, are not the command."""
     raw = list(raw)
-    # A leading assignment is what bash's own test says it is
-    # (`m[${k[1]}]=v sed -i`), or -- as before -- any NAME=... once quotes
-    # are stripped: over-broad keeps a flag in view, never hides one.
-    while seg and (seg[0] in CONTROL or assignment_split(raw[0]) is not None or
-                   ("=" in seg[0] and seg[0].split("=", 1)[0].replace("_", "a").isalnum())):
+    # Quote removal is the shell's (the tokenizer's): `'sed' -i`, `s\ed -i`
+    # and `$'sed' -i` all run sed.
+    seg = [unquote(x) for x in raw]
+    wrapped = False
+    while seg:
+        # The word in front, with its expansions taken as empty when that
+        # leaves a word: `${TMO:+$TMO }sed -i` and `$(Q)sed -i` run `sed`
+        # when the expansion is empty.
+        reading = emptied(raw[0])
+        if reading:
+            seg[0] = reading
+        word = seg[0]
+        # A leading assignment is what bash's own test says it is
+        # (`m[${k[1]}]=v sed -i`), or -- as before -- any NAME=... once
+        # quotes are stripped: over-broad keeps a flag in view, never hides
+        # one.  A word that is nothing but expansions (`$TMO sed -i`,
+        # `${WRAP:+nice} sed -i`, `"${run[@]}" sed -i`) holds a wrapper or
+        # nothing, and the word after it is what runs.
+        if word in WRAPPERS:
+            wrapped = True
+        elif not (word in CONTROL or reading == "" or assignment_split(raw[0]) is not None
+                  or ("=" in word and word.split("=", 1)[0].replace("_", "a").isalnum())
+                  or (wrapped and (word.startswith("-") or "=" in word))):
+            break
         seg.pop(0)
         raw.pop(0)
-    while seg and seg[0] in WRAPPERS:
-        seg.pop(0)
-        while seg and (seg[0].startswith("-") or "=" in seg[0]):
-            seg.pop(0)
     return seg
 
 
@@ -92,23 +102,25 @@ def commands(toks):
     included), the readings of its argv: a list, the usual reading first.
 
     TOKS are tokens the shell tokenizer read in context (shell_token_lines);
-    a substitution's body is a command list of its own.  The second reading,
-    present only when it differs, starts at the word the tokenizer says the
-    command RUNS (role 'command'): `time -p sed -i x` and `coproc sed -i x`
-    run `sed`, and the first reading takes `-p` and `coproc` for it."""
+    a substitution's body is a command list of its own.  A redirection and
+    its target are not words of the command (`env -i < f sed -i x`).  The
+    second reading, present only when it differs, starts at the word the
+    tokenizer says the command RUNS (role 'command'): `time -p sed -i x` and
+    `coproc sed -i x` run `sed`, and the first reading takes `-p` and
+    `coproc` for it."""
     for tok in toks:
         for body in tok.subst:
             yield from commands(tokenize_prefix(body))
     texts = [";" if t.kind == "newline" else t.text for t in toks]
     start = 0
     for end in range(len(texts) + 1):
-        if end != len(texts) and texts[end] not in SEPARATORS:
+        if end != len(texts) and (toks[end].kind == "word" or texts[end] not in SEPARATORS):
             continue
-        kept = [i for i in range(start, end) if texts[i] not in ("<", ">")]
+        kept = [i for i in range(start, end)
+                if toks[i].kind == "word" and toks[i].role not in ("target", "delimiter")]
         start = end + 1
         readings = [_argv([texts[i] for i in kept])]
-        runs = next((n for n, i in enumerate(kept)
-                     if toks[i].kind == "word" and toks[i].role == "command"), 0)
+        runs = next((n for n, i in enumerate(kept) if toks[i].role == "command"), 0)
         if runs:
             second = _argv([texts[i] for i in kept[runs:]])
             if second != readings[0]:
@@ -213,6 +225,8 @@ def violation(argv):
     return None
 
 
+# ---- driver: everything above is also loaded by tools/_shell_exec.py, which
+# checks commands() against the commands bash runs (oracle O7)
 hits = []
 gaps = 0
 for name in sys.argv[1:]:

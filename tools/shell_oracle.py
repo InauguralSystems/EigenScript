@@ -39,8 +39,9 @@ ORACLES (each is an answer the real shell gives, compared with ours)
   O7 execution bash RUNS seeded generated programs (tools/_shell_exec.py)
               whose commands are names no machine has; the names bash tried
               to run are the expected answer.  The words we give role
-              'command' must be exactly those names, and the two consumers
-              (tools/_derive_variants.py, tools/enrolment_edges.py) must
+              'command' must be exactly those names, and the three consumers
+              (tools/_derive_variants.py, tools/enrolment_edges.py, the
+              GNU-flag scanner in tools/portability_parse_check.sh) must
               report every one.  This is the only oracle that reaches the
               consumers' own command-position rules.
   H  incidents hand-checked expected tokens for the shapes that bit the line
@@ -50,7 +51,7 @@ ORACLES (each is an answer the real shell gives, compared with ours)
 
 RESOLUTION is stated, not assumed: --selftest applies source mutations
 (PLANTS) to a copy of the tokenizer and requires each to be caught by the
-oracle(s) listed for it, applies source mutations to copies of the two
+oracle(s) listed for it, applies source mutations to copies of the three
 consumers (CONSUMER_PLANTS, one of them the regression a review found in
 61d65f6) and requires O7 to catch each, and runs the whole oracle twice (and
 under a second locale) requiring byte-identical findings (A/A; for O7, the
@@ -92,14 +93,25 @@ BLIND SPOTS (what no oracle here can see):
     where that line ends inside a quoted string or another multi-line word
     the tokenizer stops (ShellLexError) -- a refusal, not a reading.
   * O7 runs what its generator can write: no aliases, `eval`, traps,
-    `select`, extglob or commands named by an expansion; no program that is
-    a wrapper (`env`, `timeout`, `sudo`...; only the `command` builtin), so
-    the consumers' wrapper-option rules have no oracle here; no dead code
-    (every command is live by construction, so O7 says nothing about an
-    `else` arm not taken -- O1-O6 read those).  A substitution bash parses
-    but this program never expands (`a[1]=$(c) cmd`: bash rejects the
-    assignment first; the unused side of `${set:-$(c)}`) may be reported;
-    running one is a finding.  bash 5.2 only.
+    `select`, extglob, or a command named by an expansion's VALUE (`$cmd x`
+    with cmd set, `${x:-cmd} y`); the wrappers `env`, `sudo`, `nohup` and
+    `exec` are shell functions that run their operand -- the consumers'
+    contract, not the real programs -- and the wrappers one consumer knows
+    and another does not (`timeout`, `xvfb-run`, `nice`) are not generated,
+    so those rules have no oracle here; no dead code (every command is live
+    by construction, so O7 says nothing about an `else` arm not taken --
+    O1-O6 read those).  A substitution bash parses but this program never
+    expands (`a[1]=$(c) cmd`: bash rejects the assignment first; the unused
+    side of `${set:-$(c)}`) may be reported; running one is a finding.  bash
+    5.2 only.
+  * measured on bash 5.2 and NOT modelled (tools/_shell_exec.py says how
+    each was seen): a `$( )` body is run from bash's own reprint of it, so a
+    command NAMED like a reserved word after a leading redirection is the
+    reserved word again there (`$(> f else x)`); arithmetic is expanded as
+    if in double quotes, so `$(( '$(c)' ))`, `a['$(c)']=1` and `${v:'$(c)'}`
+    run c; a here-document read below its substitution that ends on a line
+    going on as shell text, and one read from inside a multi-line word, are
+    refused (ShellLexError), not read.
   * dialect quirks measured and not modelled: a `((` that is not arithmetic
     and spans lines is a syntax error when its file is SOURCED, though
     `bash -n` and running the file accept it (read as the script runs);
@@ -116,6 +128,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -843,6 +856,32 @@ INCIDENTS = [
     ("case $v in\n  x[*) c1 ;;\nesac\n", [["case", "$v", "in"], ["c1"], ["esac"]], []),
     # bash takes ANY word before a lone `{` for a coproc's name.
     ("coproc a-b { c1; }\n", [["coproc", "a-b"], ["{"], ["c1"], ["}"]], []),
+    # Inside a substitution a here-document also ends at a line that BEGINS
+    # with its delimiter and has a `)` further on (`E)`); the rest of that
+    # line is shell text.  The recorded body gets a newline there, so that it
+    # reads the same on its own.  bash ran c1, c2 and c3 in the first and
+    # third rows, c1 and c3 in the second.
+    ("x=$(c1 <<E\nbody $(c2)\nE)\nc3\n",
+     [["x=$(c1 <<E\nbody $(c2)\nE\n)"], ["c3"]], [], ["c1 <<E\nbody $(c2)\nE\n"]),
+    ("x=$(c1 <<'E'\n$(d1) it's\nE ) ; c3\n",
+     [["x=$(c1 <<'E'\n$(d1) it's\nE\n )"], ["c3"]], [], ["c1 <<'E'\n$(d1) it's\nE\n "]),
+    ("x=$(c1 <<E\nbody\nEc2) ; c3\n",
+     [["x=$(c1 <<E\nbody\nE\nc2)"], ["c3"]], [], ["c1 <<E\nbody\nE\nc2"]),
+    (": <(c1 <<-E\n\tbody\n\tE) ; c3\n",
+     [[":", "<(c1 <<-E\n\tbody\n\tE\n)"], ["c3"]], [], ["c1 <<-E\n\tbody\n\tE\n"]),
+    # ... what follows the delimiter may be a comment that hides the `)`
+    (": $(c1 <<E\nx\nE#) d1\nc2 ) ; c3\n",
+     [[":", "$(c1 <<E\nx\nE\n#) d1\nc2 )"], ["c3"]], [], ["c1 <<E\nx\nE\n#) d1\nc2 "]),
+    # ... not at top level, and not after a leading blank
+    ("c1 <<E\nE)\nbody2\nE\nc3\n", [["c1"], ["c3"]], ["E)\nbody2\n"], []),
+    ("x=$(c1 <<E\nbody\n E)\nE\n); c3\n",
+     [["x=$(c1 <<E\nbody\n E)\nE\n)"], ["c3"]], [], ["c1 <<E\nbody\n E)\nE\n"]),
+    # `$((` that is not arithmetic ends where its parentheses do: bash -n
+    # never parses what is inside (the first row cannot run, and bash ran
+    # c2 after it), and quotes count.
+    (": $((c1); if) ; c2\n", [[":", "$((c1); if)"], ["c2"]], [], ["(c1); if"]),
+    (": $((c1) ; c2 ; ) d3\n", [[":", "$((c1) ; c2 ; )", "d3"]], [], ["(c1) ; c2 ; "]),
+    (": $((c1) ; : ')' ; c2 )\n", [[":", "$((c1) ; : ')' ; c2 )"]], [], ["(c1) ; : ')' ; c2 "]),
 ]
 
 
@@ -883,6 +922,49 @@ ROLE_INCIDENTS = [
       ("else", "reserved"), ("c5", "command"), ("fi", "reserved")]),
     ("! c1 | c2 a\n", [("!", "reserved"), ("c1", "command"), ("c2", "command"),
                        ("a", "argument")]),
+    # A command word that is nothing but expansions and expands to no word:
+    # bash ran c1.  (x, y unset; a an empty array.)
+    ("$x c1 a\n", [("$x", "command"), ("c1", "command"), ("a", "argument")]),
+    ("$(c2) `c3` c1 a\n", [("$(c2)", "command"), ("`c3`", "command"), ("c1", "command"),
+                            ("a", "argument")]),
+    ('"${a[@]}" c1\n', [('"${a[@]}"', "command"), ("c1", "command")]),
+    ('"${!a[@]}" c1\n', [('"${!a[@]}"', "command"), ("c1", "command")]),
+    ('"$x$@" c1\n', [('"$x$@"', "command"), ("c1", "command")]),
+    # ... a quoted scalar is always a word: bash ran a command named ''
+    ('"$x" c1\n', [('"$x"', "command"), ("c1", "argument")]),
+    ('"${a[*]}" c1\n', [('"${a[*]}"', "command"), ("c1", "argument")]),
+    ('"$@""" c1\n', [('"$@"""', "command"), ("c1", "argument")]),
+    ('$x "$y" c1\n', [("$x", "command"), ('"$y"', "command"), ("c1", "argument")]),
+    # ... and so is an expansion that always has a value: bash ran `0`, `0`, `1`
+    ("$? c1\n", [("$?", "command"), ("c1", "argument")]),
+    ("${#x} c1\n", [("${#x}", "command"), ("c1", "argument")]),
+    ("$(( 1 )) c1\n", [("$(( 1 ))", "command"), ("c1", "argument")]),
+    # After a word that vanished the next word is the command whatever it
+    # looks like: bash ran `v=1`, `w=2` and `time`, with c1 as the argument.
+    ("$x v=1 c1\n", [("$x", "command"), ("v=1", "command"), ("c1", "argument")]),
+    ("v=1 $x w=2 c1\n", [("v=1", "assignment"), ("$x", "command"), ("w=2", "command"),
+                         ("c1", "argument")]),
+    ("$x time c1\n", [("$x", "command"), ("time", "command"), ("c1", "argument")]),
+    ("${x}c1 a\n", [("${x}c1", "command"), ("a", "argument")]),
+    # `$((` that is not arithmetic ends where its parentheses do, comment or
+    # not (a `$( (` would read on to the next line): bash -n accepts this,
+    # cannot run the first line ("bad substitution") and ran c2.
+    (": $((c1) # x)\nc2\n", [(":", "command"), ("$((c1) # x)", "argument"), ("c2", "command")]),
+]
+
+
+# (word, emptied(word)): the word with its expansions taken as empty -- what
+# bash ran for the first seven with every variable unset -- or None where
+# there is no such reading.
+EMPTIED_INCIDENTS = [
+    ("${T:+$T }c1", "c1"), ("$(Q)c1", "c1"), ("c1${EXE}", "c1"), ('"$V"c1', "c1"), ("`:`c1", "c1"),
+    ('"${V}c1"', "c1"), ('"$@"c1', "c1"), ("x${V}c1", "xc1"), ("c${a[$(d)]}1", "c1"),
+    ("$'c'$V", "c"), ("$V", ""), ('"$V"', ""), ("${V}${W}", ""),
+    # no expansion, or an expansion that always has a value
+    ("c1", None), ("'$V'c1", None), ("a\\$Vb", None), ("$?c1", None), ("${#v}c1", None),
+    ("$((1))c1", None),
+    # ... `${?%0}` can be empty: bash ran c1
+    ("${?%0}c1", "c1"),
 ]
 
 
@@ -948,6 +1030,10 @@ def check_incidents(mod=ST):
             continue
         if got != want:
             F.append(f"H {text!r}: roles {got!r}, want {want!r}")
+    for word, want in EMPTIED_INCIDENTS:
+        got = mod.emptied(word)
+        if got != want:
+            F.append(f"H emptied {word!r}: {got!r}, want {want!r}")
     return F
 
 
@@ -984,8 +1070,8 @@ PLANTS = [
      '            self.dbracket = False\n            self.cmdpos = False\n            return "reserved"',
      {"H"}),
     ("arith-expansion-read-as-command-substitution",
-     'if t.startswith("$((", j) and self.arith_closes(j + 3):',
-     'if False:', {"H"}),
+     '            if self.arith_closes(j + 3):\n                return self.arith(j + 3, j, subst)',
+     '            if False:\n                return self.arith(j + 3, j, subst)', {"H"}),
     ("arith-command-read-as-subshells",
      '            if t.startswith("((", self.i) and not self.dbracket and \\',
      '            if False and \\', {"H"}),
@@ -1032,8 +1118,8 @@ PLANTS = [
      '            if c == "(" and gtlt and lexer:',
      '            if False:', {"H", "O6", "O7"}),
     ("assignment-test-matches-like-the-lexer",
-     "            i = _Lexer(word).match_subscript(i, [])",
-     "            i = _Lexer(word).match_subscript(i, [], lexer=True)", {"H", "O7"}),
+     "            i = _Lexer(word, roles=False).match_subscript(i, [])",
+     "            i = _Lexer(word, roles=False).match_subscript(i, [], lexer=True)", {"H", "O7"}),
     ("subscript-matched-only-before-equals",
      'lx.err("unterminated [ subscript", j)\n                j = close\n',
      'lx.err("unterminated [ subscript", j)\n'
@@ -1068,6 +1154,44 @@ PLANTS = [
     ("coproc-name-must-be-an-identifier",
      '            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\\t", "\\n")):',
      '            if _plain_ident(word) and rest[:1] in ("{", "("):', {"H"}),
+    # ---- the rules the mutants bought (tools/_shell_exec.py --mutants)
+    ("expansion-only-command-word-never-vanishes",
+     "        self.vanishing = self.lx.roles and may_vanish(word)\n"
+     "        self.has_command = not self.vanishing",
+     "        self.vanishing = False\n        self.has_command = True", {"H", "O7"}),
+    ("quoted-scalar-vanishes",
+     "        if quoted and not any(_LIST_EXPANSION.match(t) for t in texts):\n            return False",
+     "        if False:\n            return False", {"H", "O7"}),
+    ("always-valued-expansion-vanishes",
+     "        if any(_ALWAYS_VALUED.match(t) for t in texts):\n            return False\n    return True",
+     "        if False:\n            return False\n    return True", {"H", "O7"}),
+    ("assignment-after-a-vanished-word",
+     "        if not self.vanishing and assignment_split(word) is not None:",
+     "        if assignment_split(word) is not None:", {"H", "O7"}),
+    ("no-empty-expansion-reading",
+     "    if not found or any(_ALWAYS_VALUED.match(x) for x in found):\n        return None\n    return text",
+     "    return None", {"H", "O7"}),
+    ("empty-expansion-reading-of-a-valued-expansion",
+     "    if not found or any(_ALWAYS_VALUED.match(x) for x in found):",
+     "    if not found:", {"H", "O7"}),
+    ("heredoc-never-ends-at-delimiter-and-paren",
+     '                if self.closer == ")" and cmp.startswith(delim) and ")" in cmp[len(delim):]:',
+     '                if False:', {"H", "O7"}),
+    ("heredoc-ends-at-delimiter-and-paren-at-top-level-too",
+     '                if self.closer == ")" and cmp.startswith(delim) and ")" in cmp[len(delim):]:',
+     '                if cmp.startswith(delim) and ")" in cmp[len(delim):]:', {"H", "O7"}),
+    ("no-line-break-after-a-delimiter-that-shares-its-line",
+     "                    lx.breaks.add(self.i)\n", "", {"H", "O7"}),
+    ("assignment-test-not-remembered",
+     "@functools.lru_cache(maxsize=8192)\ndef assignment_split(word: str):",
+     "def assignment_split(word: str):", {"R"}),
+    ("vanishing-probe-asks-for-roles-again",
+     "    lx = _Lexer(word, roles=False)\n    n, i, group, out = len(word), 0, None, []",
+     "    lx = _Lexer(word)\n    n, i, group, out = len(word), 0, None, []", {"R"}),
+    ("non-arithmetic-double-paren-parsed-as-commands",
+     "            end = self.paren_group(j + 2, [], j)\n"
+     "            subst.append(self.clean(j + 2, end - 1))\n"
+     "            self.openers.append(j)\n            return end\n", "", {"H"}),
 ]
 
 # Source mutations of the CONSUMERS: (name, module, [(old, new), ...], the
@@ -1075,9 +1199,9 @@ PLANTS = [
 # in 61d65f6, re-planted: an assignment regex that stops at the first `]`.
 _OLD_ASSIGN = ('(lambda m: m and (m.group(1), m.group(2)))(re.match('
                'r"^([A-Za-z_][A-Za-z0-9_]*)(?:\\[[^]]*\\])?\\+?=(.*)$", word))')
-_NO_NET = ('        if t.kind == "word" and t.role == "command":\n            name = _runtime_name(t.text)',
-           '        if False:\n            name = _runtime_name(t.text)')
-_ONE_READING = ("        for start in sorted({0, runs}):", "        for start in (0,):")
+_NO_NET = ('        if t.kind == "word" and t.role == "command":\n            name = _command_name(t.text)',
+           '        if False:\n            name = _command_name(t.text)')
+_ONE_READING = ("        for start in sorted({0} | runs):", "        for start in (0,):")
 CONSUMER_PLANTS = [
     ("deriver-without-the-command-word-net", "_derive_variants", [_NO_NET], "deriver"),
     ("deriver-assignment-regex-stops-at-the-first-bracket", "_derive_variants",
@@ -1090,11 +1214,47 @@ CONSUMER_PLANTS = [
      [("            for body in t.subst:\n                scan_shell_tokens(",
        '            for body in (() if t.kind == "redir" else t.subst):\n'
        "                scan_shell_tokens(")], "deriver"),
+    ("deriver-takes-an-expansion-only-word-for-the-command", "_derive_variants",
+     [("        if expansion_only(tok):\n            # `$TIMEOUT cmd`",
+       "        if False:\n            # `$TIMEOUT cmd`")], "deriver"),
+    ("deriver-without-the-empty-expansion-reading", "_derive_variants",
+     [('    bare = (emptied(raw) or "").strip()', '    bare = ""'),
+      ("        if emptied(tok):\n            # `${TMO:+$TMO }eigenscript-full`",
+       "        if False:\n            # `${TMO:+$TMO }eigenscript-full`")], "deriver"),
     ("edges-without-the-command-word-reading", "enrolment_edges", [_ONE_READING], "edges"),
     ("edges-assignment-regex-stops-at-the-first-bracket", "enrolment_edges",
-     [_ONE_READING, ("                  or assignment_split(raws[0]) is not None",
-                     '                  or re.match(r"^[A-Za-z_]\\w*(?:\\[[^]]*\\])?\\+?=", words[0])')],
+     [_ONE_READING, ("        elif (word in _KEYWORDS or assignment_split(raws[0]) is not None",
+                     '        elif (word in _KEYWORDS or re.match(r"^[A-Za-z_]\\w*(?:\\[[^]]*\\])?\\+?=", word)')],
      "edges"),
+    ("edges-takes-an-expansion-only-word-for-the-command", "enrolment_edges",
+     [('        elif emptied(raws[0]) == "":', "        elif False:")], "edges"),
+    ("edges-without-the-empty-expansion-reading", "enrolment_edges",
+     [("            for bare in (False, True):", "            for bare in (False,):")], "edges"),
+    ("edges-wrappers-in-one-order-only", "enrolment_edges",
+     [('        elif word in ("env", "timeout"):\n'
+       '            wrapped, operands = wrapped or word == "env", word\n            drop()',
+       '        elif word in ("env", "timeout"):\n'
+       '            wrapped, operands = wrapped or word == "env", word\n            drop()\n'
+       "            while words and (words[0].startswith(\"-\") or re.match(_ASSIGNMENT, words[0])):\n"
+       "                drop()\n"
+       "            readings.append(tuple(words))\n            return readings")], "edges"),
+    ("edges-env-operands-not-skipped", "enrolment_edges",
+     [('        if operands == "env" and (word.startswith("-")',
+       '        if False and (word.startswith("-")')], "edges"),
+    ("flags-quotes-removed-its-own-way", "portability_flags",
+     [("    seg = [unquote(x) for x in raw]",
+       "    seg = [x[1:-1] if len(x) >= 2 and x[0] == x[-1] and x[0] in \"'\\\"\" else x for x in raw]")],
+     "flags"),
+    ("flags-takes-an-expansion-only-word-for-the-command", "portability_flags",
+     [('reading == "" or assignment_split', "False or assignment_split")], "flags"),
+    ("flags-without-the-empty-expansion-reading", "portability_flags",
+     [("        if reading:\n            seg[0] = reading", "        if False:\n            seg[0] = reading")],
+     "flags"),
+    ("flags-redirection-target-is-a-word", "portability_flags",
+     [('                if toks[i].kind == "word" and toks[i].role not in ("target", "delimiter")]',
+       '                if toks[i].kind == "word"]')], "flags"),
+    ("flags-without-the-command-word-reading", "portability_flags",
+     [("        if runs:\n            second", "        if False:\n            second")], "flags"),
 ]
 O7_SEEDS, O7_N = (1, 2, 3), 500
 
@@ -1102,13 +1262,27 @@ O7_SEEDS, O7_N = (1, 2, 3), 500
 def mutated_source(module, edits):
     """MODULE's source with every (old, new) of EDITS applied; each old text
     must occur exactly once, so a plant cannot go stale unnoticed."""
-    src = (HERE / f"{module}.py").read_text()
+    # (the GNU-flag scanner is Python inside tools/portability_parse_check.sh)
+    src = EX.flags_source() if module == "portability_flags" else (HERE / f"{module}.py").read_text()
     for old, new in edits:
         if src.count(old) != 1:
             raise SystemExit(f"INSTRUMENT ERROR: plant text occurs {src.count(old)} times "
-                             f"in {module}.py:\n{old}")
+                             f"in {module}:\n{old}")
         src = src.replace(old, new)
     return src
+
+
+def stale_plants():
+    """Names of the plants whose text to replace is not found exactly once:
+    asked before anything is run, so that a plant gone stale is reported at
+    once and with the others, not after minutes of the run."""
+    tokens = (HERE / "_shell_tokens.py").read_text()
+    stale = [name for name, old, _new, _expect in PLANTS if tokens.count(old) != 1]
+    for name, module, edits, _check in CONSUMER_PLANTS:
+        src = EX.flags_source() if module == "portability_flags" else (HERE / f"{module}.py").read_text()
+        if any(src.count(old) != 1 for old, _new in edits):
+            stale.append(name)
+    return stale
 
 
 def load_mutant(old, new):
@@ -1251,11 +1425,30 @@ def robustness(mod=ST):
     import time
     rng = random.Random(20261125)
     bad = []
-    deep = "x=" + "$(( $(" * 18 + "echo 1" + ") ))" * 18
-    t0 = time.monotonic()
-    mod.tokenize(deep)
-    if time.monotonic() - t0 > 1.0:
-        bad.append((deep[:40] + "...", f"18-deep $(( $( took {time.monotonic() - t0:.1f}s"))
+    # Work that doubles with each level of nesting does not finish: the
+    # clock is an alarm, so the check fails instead of hanging.
+    def too_slow(*_):
+        raise TimeoutError
+
+    for deep in ("x=" + "$(( $(" * 18 + "echo 1" + ") ))" * 18,
+                 "$(" * 24 + ":" + ")" * 24 + " x",
+                 "a[" + "$(a[" * 16 + "0" + "]=1)" * 16 + "]=1 x"):
+        old = signal.signal(signal.SIGALRM, too_slow)
+        signal.setitimer(signal.ITIMER_REAL, 3.0)
+        t0 = time.monotonic()
+        try:
+            mod.tokenize(deep)
+            took = time.monotonic() - t0
+        except TimeoutError:
+            took = None
+        except ST.ShellLexError:
+            took = time.monotonic() - t0
+        finally:
+            signal.setitimer(signal.ITIMER_REAL, 0)
+            signal.signal(signal.SIGALRM, old)
+        if took is None or took > 1.0:
+            bad.append((deep[:40] + "...", "deep nesting " + (
+                "did not finish in 3s" if took is None else f"took {took:.1f}s")))
     for _ in range(ROBUST_N):
         text = "".join(rng.choice(ROBUST_PARTS) for _ in range(rng.randint(1, 40)))
         if rng.random() < 0.5:                # an ANSI-C string of escapes
@@ -1277,6 +1470,11 @@ def selftest():
     if not BASH or not DASH:
         print("INSTRUMENT ERROR: shell_oracle needs bash and dash "
               f"(bash={BASH}, dash={DASH})")
+        return 2
+    stale = stale_plants()
+    if stale:
+        print("INSTRUMENT ERROR: the text of these plants is not found exactly once in the "
+              "source they mutate: " + ", ".join(stale))
         return 2
     tree = load_items(tracked_shell_files())
     items = tree + incident_items() + composed_items()
@@ -1307,8 +1505,8 @@ def selftest():
     # O7: bash runs the generated programs once; every later judgement (the
     # A/A, the plants) is against these executions or a fresh one.
     ran = {}
-    derived, edges = EX.deriver_reader(), EX.edges_reader()
-    o7, o7_counts = EX.run(O7_SEEDS, O7_N, derived=derived, edges=edges, cache=ran)
+    derived, edges, flags = EX.deriver_reader(), EX.edges_reader(), EX.flags_reader()
+    o7, o7_counts = EX.run(O7_SEEDS, O7_N, derived=derived, edges=edges, flags=flags, cache=ran)
     print(f"execution: bash={EX.bash_version()} "
           + " ".join(f"{k}={v}" for k, v in sorted(o7_counts.items())))
     if o7:
@@ -1319,7 +1517,8 @@ def selftest():
     else:
         print(f"  PASS: execution: bash ran {o7_counts['names_run']} names in "
               f"{o7_counts['executed']} generated programs; the tokenizer's command words are "
-              "exactly those names, and the deriver and the enrolment reader report every one")
+              "exactly those names, and the deriver, the enrolment reader and the GNU-flag "
+              "scanner report every one")
     ran_again = {}
     EX.run(O7_SEEDS, O7_N, role=False, cache=ran_again)
     if ran_again == ran:
@@ -1380,8 +1579,9 @@ def selftest():
                   f"expected at least {sorted(expect)}")
     for name, module, edits, check in CONSUMER_PLANTS:
         source = mutated_source(module, edits)
-        readers = {"derived": EX.deriver_reader(source)} if check == "deriver" \
-            else {"edges": EX.edges_reader(source)}
+        readers = {"deriver": lambda: {"derived": EX.deriver_reader(source)},
+                   "edges": lambda: {"edges": EX.edges_reader(source)},
+                   "flags": lambda: {"flags": EX.flags_reader(source)}}[check]()
         found = [f for f in EX.run(O7_SEEDS, O7_N, role=False, cache=ran, **readers)[0]
                  if f" O7 {check}: " in f]
         if found:
@@ -1404,7 +1604,8 @@ def main(argv):
         rest = argv[argv.index("--execution") + 1:]
         seeds = [int(x) for x in rest[0].split(",")] if rest else list(O7_SEEDS)
         n = int(rest[1]) if len(rest) > 1 else O7_N
-        findings, counts = EX.run(seeds, n, derived=EX.deriver_reader(), edges=EX.edges_reader())
+        findings, counts = EX.run(seeds, n, derived=EX.deriver_reader(), edges=EX.edges_reader(),
+                                  flags=EX.flags_reader())
         for f in findings:
             print(f)
         print(f"shell-oracle execution: bash={EX.bash_version()} "

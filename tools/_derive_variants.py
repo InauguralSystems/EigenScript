@@ -24,7 +24,19 @@ A name enters the set only from an INVOCATION POSITION:
       or the value of a variable assignment (`EIGS=eigenscript-full`,
       `export EIGENSCRIPT_BIN=eigenscript-full`) or of a `${VAR:-default}`
       expansion, or a literal word in the LIST of a `for`/`select` (the
-      values the loop body runs). The body of a `$(...)` or `` `...` ``
+      values the loop body runs), or an element of an array assignment
+      (`BINS=(eigenscript-full eigenscript-gfx)`). Expansions around the
+      COMMAND word are read as empty, which is what bash runs when they
+      are: a word that is nothing but expansions is read past (`$TMO
+      eigenscript-full`, `"${wrap[@]}" eigenscript-full`), and one written
+      against the name is dropped (`${TMO:+$TMO }eigenscript-full`,
+      `$(Q)eigenscript-full` in a recipe, `eigenscript-full${EXE}`). A
+      value is read the same way (`BIN=${PFX}eigenscript-full`), except
+      one that appends to its own variable: `LIST="${LIST:+$LIST,}
+      eigenscript-full"` and `LIST+=...` build a string. The word after
+      an expansion that belongs to another command is an argument (`echo
+      ${X} eigenscript-full`), and so is the word after a flag (`$CC -o
+      eigenscript-full x.c`). The body of a `$(...)` or `` `...` ``
       substitution is itself shell and is scanned recursively, INCLUDING
       inside double quotes, so the ordinary `BIN="$(command -v
       eigenscript-full)"` idiom derives the name (round 7 derived it only
@@ -96,8 +108,8 @@ import sys
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
 from _shell_tokens import (ShellLexError, TokenizerGap, assignment_split,
-                           parsed_prefix, tokenize, tokenize_file,
-                           tokenize_prefix, unquote)
+                           emptied, expansion_only, parsed_prefix, tokenize,
+                           tokenize_file, tokenize_prefix, unquote)
 
 NAME_RE = re.compile(r"eigenscript(?:-[a-z0-9]+)*")
 FULL_NAME_RE = re.compile(r"^eigenscript(?:-[a-z0-9]+)*$")
@@ -122,7 +134,7 @@ ASSIGN_KEYWORD = {"export", "declare", "typeset", "readonly", "local"}
 KEYWORDS = {
     "if", "then", "else", "elif", "fi", "while", "until", "do", "done",
     "case", "esac", "for", "select", "function", "in", "!", "{", "}",
-    "(", ")", "[[", "]]",
+    "(", ")", "[[", "]]", "coproc",
 }
 
 SHELL_SHEBANG = re.compile(r"^#!.*\b(ba|da|k|z|a)?sh\b")
@@ -224,6 +236,57 @@ def _runtime_name(raw):
     return None
 
 
+def _command_name(raw):
+    """RAW -- a command word, or a value a later `$VAR` runs -- if it is a
+    runtime name: it spells one (_runtime_name), or does once its expansions
+    are taken as empty, which is what bash runs when they are:
+    `${TMO:+$TMO }eigenscript-full`, `$(Q)eigenscript-full` (a Makefile
+    recipe), `eigenscript-full${EXE}`.
+
+    (The line splitter this file used to have cut a word at `{`, `}`, `(`,
+    `)` and a backquote, so it read the first two forms by accident, when
+    they were not quoted, and never the third.)"""
+    name = _runtime_name(raw)
+    if name:
+        return name
+    bare = (emptied(raw) or "").strip()
+    return bare if FULL_NAME_RE.match(bare) else None
+
+
+def _appends_to_itself(tok, name, value):
+    """Whether the assignment TOK (NAME=VALUE as written) builds on NAME's
+    own value: `NAME+=...`, or a value that expands NAME.  Such a value is a
+    list or a message being put together -- `mutated="${mutated:+$mutated,}
+    eigenscript-full"` in tools/consumer_acceptance.sh -- and is a runtime
+    name only where it is literally one."""
+    if re.match(re.escape(name) + r"(\[.*?\])?\+=", tok):
+        return True
+    found = []
+    unquote(value, found)
+    own = re.compile(r"\$\{?[#!]?" + re.escape(name) + r"(?![A-Za-z0-9_])")
+    return any(own.search(x) for x in found)
+
+
+def _array_elements(value):
+    """The element words of a compound assignment's value `( ... )`, a
+    `[key]=` in front of one dropped; [] for any other value."""
+    if not (value.startswith("(") and value.endswith(")")):
+        return []
+    try:
+        toks = tokenize_prefix(value[1:-1])
+    except ShellLexError:
+        return []
+    out = []
+    for t in toks:
+        if t.kind != "word":
+            continue
+        text = t.text
+        if text.startswith("[") and "]=" in text:
+            text = text.split("]=", 1)[1]
+        out.append(text)
+    return out
+
+
 def scan_shell(text, hits, path, line_offset=0):
     """Record (name, lineno) for every invocation position in shell text."""
     for lineno, toks in shell_token_lines(text):
@@ -240,7 +303,7 @@ def scan_shell_tokens(toks, hits, path, lineno, depth=0):
     # `$'eigenscript-full' x` are commands the rules above do not know.
     for t in toks:
         if t.kind == "word" and t.role == "command":
-            name = _runtime_name(t.text)
+            name = _command_name(t.text)
             if name and (name, path, lineno) not in hits[first:]:
                 hits.append((name, path, lineno))
 
@@ -258,6 +321,8 @@ def _scan_positions(toks, hits, path, lineno, depth):
     # A redirection's target is a file name, not a command; the command
     # position is unchanged by it (`< <(c) cmd`, `< f cmd` run `cmd`).
     skip_target = False
+    # The word before this one was nothing but expansions (see below).
+    after_expansion = False
     for t in toks:
         tok = ";" if t.kind == "newline" else t.text
         # CA-GUARD:subst-body
@@ -274,6 +339,7 @@ def _scan_positions(toks, hits, path, lineno, depth):
             cmdpos = True
             pending_prefix = ""
             for_state = 0
+            after_expansion = False
             continue
         if t.kind == "redir":
             skip_target = True
@@ -299,8 +365,9 @@ def _scan_positions(toks, hits, path, lineno, depth):
                 for_state = 0
                 cmdpos = True
                 continue
-            if FULL_NAME_RE.match(word):
-                hits.append((word, path, lineno))
+            listed = _command_name(tok)   # what `"$v" x` runs in the body
+            if listed:
+                hits.append((listed, path, lineno))
             continue
         if not cmdpos:
             continue
@@ -321,10 +388,40 @@ def _scan_positions(toks, hits, path, lineno, depth):
         # file's safe direction.
         assigned = assignment_split(tok) or assignment_split(word)
         if assigned:
-            val = _runtime_name(assigned[1])
-            if val:
-                hits.append((val, path, lineno))
+            # The value of an assignment is what a later `$VAR` runs; so is
+            # every element of an array (`BINS=(eigenscript-full
+            # eigenscript-gfx)`; the old splitter saw the first one only,
+            # because it cut at the parenthesis).  A value that appends to
+            # its own variable is read literally.
+            literal = _appends_to_itself(tok, assigned[0], assigned[1])
+            for value in [assigned[1]] + _array_elements(assigned[1]):
+                val = _runtime_name(value) if literal else _command_name(value)
+                if val:
+                    hits.append((val, path, lineno))
             continue  # assignment prefix: still a command position
+        if expansion_only(tok):
+            # `$TIMEOUT cmd`, `${WRAP:+nice} cmd`, `$(maybe) cmd`,
+            # `"${wrap[@]}" cmd`: a word that is nothing but expansions holds
+            # a wrapper or nothing at all, and either way the word after it
+            # is what ends up run (bash runs it itself when the expansion is
+            # empty).  Such a word is read as if it were not there.  The old
+            # splitter did that only by accident, by cutting at `{`, `}`,
+            # `(` and a backquote: `${T} cmd` but not `$T cmd`.
+            after_expansion = True
+            continue
+        if after_expansion:
+            after_expansion = False
+            if word.startswith("-") and not pending_prefix:
+                # `$CC -Wall -o eigenscript x.c`: a flag right after it says
+                # the expansion holds a program and these are its operands.
+                # (With the expansion empty bash would run `-Wall`.)
+                cmdpos = False
+                continue
+        if emptied(tok):
+            # `${TMO:+$TMO }eigenscript-full`, `${TMO:+$TMO }env A=1 cmd`:
+            # the word bash runs when the expansion written against it is
+            # empty -- the name, or a wrapper.
+            word = emptied(tok)
         if pending_prefix:
             if word.startswith("-"):
                 continue  # a flag of the prefix
@@ -799,6 +896,50 @@ def selftest():
              "eigenscript-se", "eigenscript-sf", "eigenscript-sg", "eigenscript-sh",
              "eigenscript-si", "eigenscript-sj", "eigenscript-sk", "eigenscript-sl",
              "eigenscript-sm"}),
+        # #2559 (the mutants and the line-shape differential): expansions
+        # around the command word.  A word that is nothing but expansions
+        # holds a wrapper or nothing, so the word after it is read; an
+        # expansion written against the command word is taken as empty;
+        # every element of an array is a value, and a value is read like a
+        # command word.  Each line was put to bash with the variables unset
+        # (`env` a function that runs its operand, `maybe` printing
+        # nothing): bash ran ea-ef, eh, ei, ep and -- through the loop's
+        # `"$b"` -- eq.  It did not run eg (`timeout $T`: the budget is in
+        # the variable) or ej (a quoted variable is a word even when empty:
+        # it holds the runner), and ek-eo and er are values.  The line
+        # splitter this file used to have derived seven of the eighteen, by
+        # accident: it cut words at `{`, `}`, `(`, `)` and a backquote, so
+        # `${T} cmd` but not `$T cmd`, and the first element of an array
+        # only.  The same cut made it derive the four `not-` names: the
+        # argument of `echo`, a name with text in front of it (bash runs
+        # `xeigenscript-not-run-either`), the operand of a flag, and a list
+        # being built.
+        ("shell-expansions-around-the-command-word", {"run.sh": (
+            "#!/bin/bash\n"
+            "$TMO eigenscript-ea x\n"
+            "\"${wrap[@]}\" env A=1 eigenscript-eb x\n"
+            "${TMO:+$TMO }eigenscript-ec x\n"
+            "$(maybe)eigenscript-ed x\n"
+            "eigenscript-ee${EXE} x\n"
+            "`maybe` eigenscript-ef x\n"
+            "timeout $T eigenscript-eg x\n"
+            "v=1 $TMO ${NICE} eigenscript-eh x\n"
+            "if $TMO eigenscript-ei x; then :; fi\n"
+            "\"$RUNNER\" eigenscript-ej x\n"
+            "BINS=(eigenscript-ek eigenscript-el \"eigenscript-em\" [3]=eigenscript-en)\n"
+            "declare -a MORE=( a eigenscript-eo )\n"
+            "coproc env A=1 eigenscript-ep x\n"
+            "for b in a ${PFX}eigenscript-eq; do \"$b\" x; done\n"
+            "BIN=\"${PFX}eigenscript-er\"\n"
+            "echo ${TMO} eigenscript-not-run x\n"
+            "x${TMO}eigenscript-not-run-either x\n"
+            "${CC} -Wall -o eigenscript-not-an-operand x.c\n"
+            "report=${report:+$report,}eigenscript-not-a-value\n"
+        )}, {"eigenscript-ea", "eigenscript-eb", "eigenscript-ec", "eigenscript-ed",
+             "eigenscript-ee", "eigenscript-ef", "eigenscript-eg", "eigenscript-eh",
+             "eigenscript-ei", "eigenscript-ej", "eigenscript-ek", "eigenscript-el",
+             "eigenscript-em", "eigenscript-en", "eigenscript-eo", "eigenscript-ep",
+             "eigenscript-eq", "eigenscript-er"}),
         ("shell-exec-env-timeout-xvfb", {"run.sh": (
             "#!/bin/bash\n"
             "exec eigenscript-a x\n"

@@ -35,6 +35,11 @@ bash tests/phase2/slot_layer.sh
 variant=$("$TESTS_DIR/../tools/subst_tool.sh" "$TESTS_DIR/..")
 inline=$(tools/bare_subst.sh)
 echo "$(tools/quoted_subst.sh)"
+$TMO python3 tools/after_expansion.py
+"$BASH" "$TESTS_DIR/../tools/after_quoted_expansion.sh"
+${TMO:+$TMO }bash tools/glued_expansion.sh
+env A=1 sudo bash tools/wrapper_chain.sh
+echo "$BASH" tools/argument_only.sh
 EOF
 cat >"$WORK/tests/test_importer.py" <<'EOF'
 import tools.ai_benchmark
@@ -48,10 +53,11 @@ EOF
 cat >"$WORK/bench/check_regression.sh" <<'EOF'
 bash tools/phase2_cost.sh
 EOF
-for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh subst_tool.sh bare_subst.sh quoted_subst.sh; do
+for f in freestanding_check.sh gen_lsp_stdlib_index.sh gen_lsp_builtin_index.sh phase2_cost.sh indented_check.sh subst_tool.sh bare_subst.sh quoted_subst.sh \
+         after_quoted_expansion.sh glued_expansion.sh wrapper_chain.sh argument_only.sh; do
     printf '#!/bin/sh\n' >"$WORK/tools/$f"
 done
-for f in ai_benchmark.py phase2_inventory.py orphan.py; do printf '# fixture\n' >"$WORK/tools/$f"; done
+for f in ai_benchmark.py phase2_inventory.py orphan.py after_expansion.py; do printf '# fixture\n' >"$WORK/tools/$f"; done
 
 python3 "$ROOT/tools/enrolment_edges.py" "$WORK" >"$WORK/edges"
 bad=0
@@ -70,6 +76,19 @@ row "indented make recipe reaches tool" $'@make:indented-check\ttools/indented_c
 row "command substitution in an assignment" $'tests/sections/fixture.sh\ttools/subst_tool.sh'
 row "bare command substitution" $'tests/sections/fixture.sh\ttools/bare_subst.sh'
 row "quoted command substitution" $'tests/sections/fixture.sh\ttools/quoted_subst.sh'
+# #2559: bash runs the word after one that is nothing but an expansion when
+# the expansion is empty (`$TMO python3 x.py`, as tools/phase2_plants.sh has
+# it), and an interpreter may be held in a variable (`"$BASH" x.sh`, as
+# tests/run_all_tests.sh has it).  A word after `echo` is an argument.
+row "command after a word that is only an expansion" $'tests/sections/fixture.sh\ttools/after_expansion.py'
+row "interpreter held in a quoted variable" $'tests/sections/fixture.sh\ttools/after_quoted_expansion.sh'
+row "expansion written against the command word" $'tests/sections/fixture.sh\ttools/glued_expansion.sh'
+row "wrappers in either order" $'tests/sections/fixture.sh\ttools/wrapper_chain.sh'
+if grep -Fq $'tests/sections/fixture.sh\ttools/argument_only.sh' "$WORK/edges"; then
+    echo "  FAIL: an argument after an expansion falsely enrolled tools/argument_only.sh"; bad=1
+else
+    echo "  PASS: an argument after an expansion is not an execution edge"
+fi
 if grep -Fq $'tests/test_importer.py\ttools/orphan.py' "$WORK/edges"; then
     echo "  FAIL: print string falsely enrolled tools/orphan.py"; bad=1
 else

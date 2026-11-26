@@ -3,6 +3,7 @@
 program, and the commands it ran are the expected answer.
 
     python3 tools/_shell_exec.py [--seeds 1,2,3] [--n 400] [--show SEED:INDEX]
+    python3 tools/_shell_exec.py --mutants SEEDS BASE PER      (see below)
 
 A seeded generator writes shell programs over a closed vocabulary.  Every
 command a program runs is a name no machine has (`eigenscript-ok12`), so bash
@@ -12,43 +13,74 @@ log -- not the generator's intent, and not the tokenizer -- says what ran.
   role     the words the tokenizer gives role 'command' (substitution bodies
            included) must be EXACTLY the names bash ran: a name bash ran and
            we do not have is a command a gate would never see; a name we have
-           and bash never ran is data read as a command.
+           and bash never ran is data read as a command.  A command word is
+           read two ways: after quote removal, and with its expansions taken
+           as empty (`${wrap}cmd`, `cmd$(maybe)`: bash runs `cmd` then).
   deriver  tools/_derive_variants.py must report every name bash ran.
   edges    tools/enrolment_edges.py must return a command for every name
            bash ran.
+  flags    the GNU-flag scanner in tools/portability_parse_check.sh must read
+           a command for every name bash ran.
 
 The generator keeps every command live so that "ran" and "is a command" are
 the same set: a condition is a leaf whose status is in its name (`...-okN`
 returns 0, `...-noN` returns 1), every `case` arm is selected, every loop body
 runs.  Two kinds of name must NOT run and are there to be mistaken for
 commands: `...-datN` (data: quoted text, comments, here-document bodies,
-arguments, case patterns) and `...-parN` (text bash parses as a substitution
-but this program never expands: inside `NAME[i]=...` before a command, which
-bash rejects as "not a valid identifier" before expanding anything, or the
-unused side of `${set:-...}`; reporting those is allowed, running them is
-not).  `...-wrpN` is run by the `command` builtin: the consumers must report
-it, the tokenizer's role need not.  `...-ambN` carries no claim at all -- is
+arguments, case patterns, the word after a command word that cannot vanish)
+and `...-parN` (text the tokenizer may report and this program never runs:
+inside `NAME[i]=...` before a command, which bash rejects as "not a valid
+identifier" before expanding anything; the unused side of `${set:-...}`; the
+word after an expansion that has a value here, `$set cmd`).  `...-wrpN` is run
+through a wrapper: the readers must report it, the tokenizer's role -- which
+names the wrapper -- need not.  `...-ambN` carries no claim at all -- is
 `$((a); b)` arithmetic? does `"${x:-'$(a)'}"` run a? -- bash's log decides
 and the tokenizer must agree.
+
+Wrappers.  `command` is the builtin.  `env`, `sudo`, `nohup` and `exec` are
+shell FUNCTIONS the harness defines, which skip their options the way the
+readers assume and run their operand: a model of the readers' contract, not
+the real programs.  Wrappers one reader knows and another does not
+(`timeout`, `xvfb-run`, `nice`) are not generated.
 
 INSTRUMENT findings are about the generator, not the tokenizer: a program
 `bash -n` rejects, a name the generator meant to run that did not, a `dat`/
 `par` name that ran, a program that did not finish.  With any of those the
 run proves nothing and says so.
 
-What is executed: only programs this file generates -- builtins, reserved
-words and names that do not exist -- in an empty temporary directory, with
-PATH pointing at an empty directory, no environment, stdin /dev/null, and a
-time limit.  Nothing read from a file or the network is ever run.
+--mutants is exploration, not a gate: each generated program is edited
+mechanically (a character or a token inserted, deleted, replaced; lines
+dropped, repeated, swapped, joined) and the edits bash still accepts are
+run.  Nothing is known about a mutant beforehand, so only what needs no
+label is judged: a name bash RAN must be a command word, and every reader
+must report it; the tokenizer must not stop on a program bash accepts.
+
+What is executed: only programs this file generates or edits -- builtins,
+reserved words and names that do not exist -- in an empty temporary
+directory, with PATH pointing at an empty directory, no environment, stdin
+/dev/null, and a time limit.  Nothing read from a file or the network is
+ever run.
 
 BLIND SPOTS: what the vocabulary does not hold (aliases, `eval`, traps,
-`select`, extglob, commands named by an expansion, wrappers that are programs
--- `env`, `timeout`, `sudo`: only the `command` builtin is run); bash's
-dialect only, and only the bash on this machine; a command bash parses and
-the program never reaches is kept out by construction, so dead code (`else`
-arms not taken, code after `exit`) is covered by the parse oracles O1-O6,
-not here.  The generator's shapes are the ones its author thought of: a
-second generator by someone else is worth more than more seeds of this one.
+`select`, extglob, a command named by an expansion's VALUE -- `$cmd x` with
+cmd set, `${x:-cmd} y` -- and builtins that evaluate their arguments:
+`unset 'a[$(c)]'`, `let`, `printf -v`); bash's dialect only, and only the
+bash on this machine; a command bash parses and the program never reaches is
+kept out by construction, so dead code (`else` arms not taken, code after
+`exit`) is covered by the parse oracles O1-O6, not here.  Known, measured on
+bash 5.2 and NOT modelled:
+  - bash 5.2 runs a `$( )` body from its own reprint of the parsed command,
+    which moves a leading redirection behind the words: `$(> f else x)` runs
+    `else x > f`, where `else` is the reserved word again.  The tokenizer
+    reads the text as written (a command named `else`).
+  - arithmetic is expanded as if in double quotes, so `$(( '$(c)' ))`,
+    `a['$(c)']=1` (indexed) and `${v:'$(c)'}` run c; the tokenizer takes the
+    single quotes for quotes.
+  - text `bash -n` accepts and bash cannot run (`$((a) # x)`: bad
+    substitution; a broken substitution in a here-document body or between
+    backquotes): the tokenizer may stop on it, loudly.
+The generator's shapes are the ones its author thought of: --mutants and a
+second generator by someone else are worth more than more seeds of this one.
 """
 from __future__ import annotations
 
@@ -78,13 +110,18 @@ LEAF_RE = re.compile(r"^eigenscript-(ok|no|wrp|amb|dat|par)[0-9]+$")
 _HARNESS = r"""
 exec 9>&%d %d>&-
 command_not_found_handle() {
-  printf '%%s\n' "$1" >&9
+  printf '%%s\0' "$1" >&9
   case $1 in *-no[0-9]*) return 1 ;; esac
   return 0
 }
 declare -A map
 arr=(0 1)
+empty=()
 set1=1
+env() { while [[ ${1-} == -* || ${1-} =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do shift; done; "$@"; }
+sudo() { while [[ ${1-} =~ ^[A-Za-z_][A-Za-z0-9_]*= ]]; do shift; done; "$@"; }
+nohup() { "$@"; }
+exec() { "$@"; }
 """
 
 
@@ -333,6 +370,9 @@ class Program:
             self.s_test, self.s_special, self.s_subscript, self.s_continued,
             self.s_deferred_heredoc, self.s_background, self.s_ambiguous,
             self.s_no_separator, self.s_quoting, self.s_heredoc_edges,
+            self.s_after_closer, self.s_more_words, self.s_conditions,
+            self.s_expansion_led, self.s_expansion_led, self.s_glued, self.s_wrapped,
+            self.s_heredoc_closer,
         ]
         return self.rng.choice(makers)(depth)
 
@@ -608,7 +648,13 @@ class Program:
             [f": $(({a}) | ({b}))"], [f": $(( {a} ) )"], [f"(({a}))"], [f"(({a}); {b})"],
             [f"( ({a}) )"], [f"(( {a} )) ; {b}"], [f"(({a}) && {b})"],
             [f': "$(({a}); {b})"'], [f"v=$(( {a} + 0$({b}) ))"], [f": $(( $({a}) ))"],
-            [f"(({a})", f" {b})"], [f": $((", f" {a} ))"])
+            [f"(({a})", f" {b})"], [f": $((", f" {a} ))"],
+            # not arithmetic: closed by counting parentheses, quotes respected
+            [f": $(({a}) ; : \\) ; {b} )"], [f": $(({a}) ; : ')' ; {b} )"],
+            [f': $(({a}) ; : "$({b})" )'], [f": $(({a}) ; case x in (x) {b} ;; esac )"],
+            [f": $(({a}) | {{ {b}; }} )"], [f": $(({a}) ; {b} ; ) {self.name('dat')}"],
+            # ... and bash -n never parses what is inside: this one cannot run
+            [f": $(({self.name('par')}); if) ; {self.simple(0)}"])
 
     def s_no_separator(self, depth):
         """A reserved word right after a compound command, a `!(`, old `$[ ]`
@@ -691,6 +737,256 @@ class Program:
             [f": $({cmd} <<{tag}", f"$({self.inline(depth - 1)}) \\$({d})", tag, f") {self.live_word(depth - 1)}"],
             [f"{cmd} <<{tag}", f"${{unset1:-$({self.inline(depth - 1)})}} $(( $({self.inline(depth - 1)}) + 1 ))", tag])
 
+    def s_heredoc_closer(self, depth):
+        """Inside a substitution a here-document also ends at a line that
+        BEGINS with its delimiter and has a `)` further on: `EOF)`.  The rest
+        of that line is shell text again.  Not so at top level, nor after a
+        leading blank."""
+        tag = self.tagname()
+        d = self.name("dat")
+        cmd = self.simple(depth - 1)
+        sub = self.inline(depth - 1)
+        after = self.simple(depth - 1)
+        return self.pick(
+            [f"v=$({cmd} <<{tag}", f"a $({sub}) \\$({d})", f"{tag})", after],
+            [f"v=$({cmd} <<'{tag}'", f"$({d}) it's", f"{tag} ) ; {after}"],
+            [f"v=$({cmd} <<{tag}", "body", f"{tag}{self.name('ok')}) ; {after}"],
+            [f"v=$({cmd} <<{tag}", "body", f"{tag} {self.name('ok')} a) ; {after}"],
+            [f"{cmd} <<{tag}", f"{tag})", f"b $({sub})", tag, after],
+            [f": <({cmd} <<-{tag}", "\tbody", f"\t{tag}) ; {after}"],
+            [f"v=$({cmd} <<{tag}", "body", f" {tag})", tag, f"); {after}"],
+            [f": $( ( {cmd} <<{tag}", "x", f"{tag}) ) ; {after}"],
+            [f": $({cmd} <<{tag}; {self.simple(depth - 1)}", f"x $({sub})", f"{tag}) {d}; {after}"],
+            [f': "$({cmd} <<{tag}', f"x $({sub})", f'{tag})" ; {after}'],
+            [f": $({cmd} <<{tag}", "x", f"{tag})$({sub}) ; {after}"],
+            [f": $(: $({cmd} <<{tag}", "x", f"{tag})) ; {after}"],
+            [f": $({cmd} <<{tag} <<'{tag}2'", f"x $({sub})", tag, f"$({d})", f"{tag}2) ; {after}"],
+            [f": $({cmd} <<{tag}", "x", f"{tag}#) {d}", f"{self.simple(depth - 1)} ) ; {after}"],
+            [f": $({cmd} <<{tag}", "x", f"{tag} # {d})", f"{self.simple(depth - 1)} ) ; {after}"])
+
+    def s_after_closer(self, depth):
+        """A here-document or a redirection hung on a compound command's
+        closer, on a function definition, on a loop that reads it."""
+        tag = self.tagname()
+        d = self.name("dat")
+        cmd = self.simple(depth - 1)
+        sub = self.inline(depth - 1)
+        self.fn += 1
+        fn = f"fn{self.fn}"
+        return self.pick(
+            [f"while read -r v; do {cmd}; done <<{tag}", f"one $({sub}) \\$({d})", tag],
+            [f"while read -r v; do {cmd}; done < <({sub}; echo one)"],
+            [f"{{ {cmd}; }} <<'{tag}'", f"$({d}) it's", tag],
+            [f"( {cmd} ) <<{tag} > o1", f"$({sub})", tag],
+            [f"if {cmd}; then {self.simple(depth - 1)}; fi <<{tag}", f"`{self.bare()}` {d}", tag],
+            [f"{fn}() {{ {cmd}; }} <<{tag}", f"$({sub}) {d}", tag, fn],
+            [f"{fn}() {{ {cmd}; }} > o1 2>&1 < <({sub})", fn],
+            [f"case p in p) {cmd} <<'{tag}'", f"$({d}) ;;", f"esac {d}", tag, ";; esac"],
+            [f"for v in a; do {cmd}; done <<< \"$({sub})\""],
+            [f": < <(: <<{tag}", f"$({sub}) {d}", tag, f") ; {cmd}"],
+            [f"{{ {cmd}; }} | {{ {self.simple(depth - 1)}; }}"],
+            [f"( {cmd} ) | ( {self.simple(depth - 1)} ) && {self.simple(depth - 1)}"],
+            [f"until {self.simple(depth - 1, 'no')}; do {cmd}; break; done 2> o2 <<'{tag}'", d, tag])
+
+    def s_more_words(self, depth):
+        """Arrays, declarations, redirection operators and `#` where it is
+        not a comment."""
+        d = self.name("dat")
+        cmd = self.simple(depth - 1)
+        sub = self.inline(depth - 1)
+        return self.pick(
+            [f"arr+=( $({sub}) {d} ); {cmd}"],
+            [f"declare -a arr2=( $({sub}) '{d}' ) ; {cmd}"],
+            [f"arr=(); {cmd} \"${{arr[@]}}\" ${{#arr[@]}} ${{!arr[@]}}"],
+            [f": $(( 16#ff + $({self.bare()}; echo 1) )); (( 2#101 )) && {cmd}"],
+            [f"v=#{d} {cmd}"],
+            [f"{cmd} \\# {d} \"#\" '#' a#b ${{#set1}} $# ${{set1#x}} ${{set1//#/x}}"],
+            [f"{cmd} >| o1 2>&- <&-"],
+            [f"{cmd} <> o1 &>> o2"],
+            [f"{cmd} 3>&1 1>&2 2>&3 3>&-"],
+            [f"let \"v=$({self.bare()}; echo 1)\"; {cmd}"],
+            [f": $(< /dev/null) \"$(< /dev/null)\"; {cmd}"],
+            [f": \"$({self.bare()} \"$({self.bare()} \"$({self.bare()})\")\")\"; {cmd}"],
+            [f": `{self.bare()} \\`{self.bare()} \\\\\\`{self.bare()}\\\\\\`\\``; {cmd}"],
+            [f": $(fn_in() {{ {sub}; }}; fn_in); {cmd}"],
+            [f"export v=$({sub}) w={d}; readonly r{self.k}=$({self.inline(depth - 1)})"],
+            [f"[[ x =~ ^$({sub})x ]] && {cmd}"],
+            [f"[[ $({sub}) == $({self.inline(depth - 1)}) ]] && {cmd}"],
+            [f"{cmd} <<< \"a", f"{d} $({sub})\""],
+            [f"\t{cmd}  \t  {d}\t;\t{self.simple(depth - 1)}"],
+            [f"{cmd};"], [f"{cmd} ; "],
+            [f"time ! {self.simple(depth - 1, 'no')}"],
+            [f"! time {self.simple(depth - 1, 'no')}"])
+
+    def s_conditions(self, depth):
+        """Lists as conditions: every leaf still runs."""
+        ok, no = self.simple(depth - 1), self.simple(depth - 1, "no")
+        cmd = self.simple(depth - 1)
+        return self.pick(
+            [f"if {no} || {ok}; then {cmd}; fi"],
+            [f"if {ok} && {self.simple(depth - 1)}; then {cmd}; fi"],
+            [f"if ! {no}; then {cmd}; fi"],
+            [f"while {no} || {ok}; do {cmd}; break; done"],
+            [f"until {ok} && {no}; do {cmd}; break; done"],
+            [f"if {ok}; {self.simple(depth - 1)}; then {cmd}; fi"],
+            [f"if {no}", f"   {ok}", "then", f"  {cmd}", "fi"],
+            [f"if {ok} | {self.simple(depth - 1)}; then {cmd}; fi"],
+            [f"{no} || {{ {ok}; {cmd}; }}"],
+            [f"{ok} && ( {cmd} ) || {self.name('par')}"],
+            [f"if {{ {ok}; }}; then {cmd}; fi"],
+            [f"if ( {ok} ); then {cmd}; elif {self.name('par')}; then :; fi"])
+
+    def gone(self, depth):
+        """A word that is nothing but expansions and expands to NO word in
+        this harness: bash then runs the word after it."""
+        r = self.rng.randrange(16)
+        if r == 0:
+            return f"$({self.inline(depth - 1)})"
+        if r == 1:
+            return f"`{self.bare()}`"
+        return self.pick(
+            "$unset1", "${unset1}", "${unset1:-}", "${unset1:+x}", "$(:)", '"${empty[@]}"',
+            "${empty[@]}", '"${!empty[@]}"', '"${empty[@]:1}"', '"${empty[@]}$unset1"',
+            '"$unset1${empty[@]}"', "$unset1$unset1", '$unset1"${empty[@]}"', "${empty[*]}",
+            '"${empty[@]}""${empty[@]}"', "${unset1:-$(:)}", "${unset1@Q}")
+
+    def stays(self):
+        """A word that is nothing but expansions and is ALWAYS a word: a
+        quoted scalar, or an expansion that always has a value."""
+        return self.pick(
+            '"$unset1"', '"${unset1}"', '"$(:)"', '$unset1""', '""', '"${empty[*]}"', "$?", "$#",
+            "${#unset1}", "$(( 1 ))", "$[ 1 ]", '"${unset1:-${empty[@]}}"', '"$unset1""${empty[@]}"',
+            "${#empty[@]}", '"${empty[@]}"$?', "${?}", '"`:`"')
+
+    def s_expansion_led(self, depth):
+        """`$wrap cmd`: a command word that is nothing but expansions.  When
+        it expands to no word at all, bash runs the NEXT word -- and that word
+        is then the command even if it is spelled like an assignment or a
+        reserved word.  A quoted scalar never vanishes: `"$empty" cmd` runs a
+        command named '' with cmd as its argument."""
+        gone = self.gone(depth)
+        leaf = self.simple(0)
+        d = self.name("dat")
+        r = self.rng.randrange(18)
+        if r == 0:
+            return [f"{gone} {leaf} {' '.join(self.args(depth))}".rstrip()]
+        if r == 1:
+            return [f"{gone} {self.gone(depth)} {leaf}"]
+        if r == 2:
+            return [f"v=1 {gone} {leaf} {d}"]
+        if r == 3:
+            return [f"{gone} < /dev/null {leaf}", f"2> o2 {self.gone(depth)} {self.simple(0)}"]
+        if r == 4:
+            return [f"if {gone} {leaf}; then {self.simple(depth - 1)}; fi"]
+        if r == 5:
+            return [f"time {gone} {leaf}", f"! {self.gone(depth)} {self.simple(0, 'no')}"]
+        if r == 6:
+            return [f"{gone} {leaf} | {self.gone(depth)} {self.simple(0)}"]
+        if r == 7:
+            # never vanishes: the next word is an argument
+            return [f"{self.stays()} {d} a; {self.simple(depth - 1)}"]
+        if r == 8:
+            # vanished, so the next word is the command whatever it looks like
+            return [self.pick(f"{gone} v=1 {d}", f"{gone} time {d}", f"{gone} ! {d}", f"{gone} [[ {d} ]]",
+                              f"v=1 {gone} w=2 {d}", f"{gone} > o1 v=1 {d}", f"{gone} if",
+                              f"{gone} x=$({self.inline(depth - 1)}) {d}")
+                    + f"; {self.simple(depth - 1)}"]
+        if r == 9:
+            # a value: bash runs a command named by it, the next word is its argument
+            return [f"{self.pick('$set1', '${set1}', '${set1:+x}', '${unset1:-x}', '$(echo x)', '${arr[@]}')} "
+                    f"{self.name('par')}; {self.simple(depth - 1)}"]
+        if r == 10:
+            self.fn += 1
+            fn = f"fn{self.fn}"
+            # inside a function called without arguments "$@" is no word
+            return [f"{fn}() {{ {self.pick(chr(34) + '$@' + chr(34), '$@', '$*', chr(34) + '${@:2}' + chr(34), chr(34) + '$unset1$@' + chr(34))} {leaf}; }}", fn]
+        if r == 11:
+            self.fn += 1
+            fn = f"fn{self.fn}"
+            return [f"{fn}() {{ \"$*\" {d}; {self.simple(0)}; }}", fn]
+        if r == 12:
+            w = self.pick("command", "nohup", "sudo", "env")
+            return [f"w={w}; {self.pick('$w', chr(34) + '$w' + chr(34), '${w}')} {self.name('wrp')} a",
+                    f"{gone} command {self.name('wrp')}"]
+        if r == 13:
+            return [f"{{ {gone} {leaf}; }}; ( {self.gone(depth)} {self.simple(0)} )"]
+        if r == 14:
+            return [f"case p in p) {gone} {leaf} ;; esac"]
+        if r == 15:
+            return [f"{gone}", f"{gone} ; {leaf}", f"x={gone} {self.simple(0)}"]
+        if r == 16:
+            return [f": $({gone} {leaf}) \"$({self.gone(depth)} {self.simple(0)})\""]
+        return [f"while {gone} {leaf}; do {self.gone(depth)} {self.simple(0)}; break; done"]
+
+    def s_glued(self, depth):
+        """An expansion written against the command word: bash runs the word
+        with the expansion's value in it -- the bare name when that is empty
+        (`${TMO:+$TMO }cmd`, `$(Q)cmd` in a recipe, `cmd${EXE}`)."""
+        ok = self.name("ok")
+        # (in front of a name `$unset1` would read on into it: braces there)
+        e = self.pick("${unset1}", '"$unset1"', "$(:)", "`:`", '"${empty[@]}"', "${unset1:+$unset1 }",
+                      '"${unset1}"', "${unset1:-}")
+        r = self.rng.randrange(9)
+        if r == 0:
+            return [f"{e}{ok} a"]
+        if r == 1:
+            return [f"{ok}{self.pick(e, '$unset1')} a"]
+        if r == 2:
+            return [f"{e}{ok}{self.pick('$unset1', '$(:)', '`:`')}"]
+        if r == 3:
+            return [f'"${{unset1}}{ok}" a', f'"{self.name("ok")}$unset1"']
+        if r == 4:
+            # the value is not empty: a different command, and never the bare name
+            if self.chance(0.5):
+                # an expansion that always has a value: never the bare name
+                return [f"{self.pick('$?', '${#unset1}', '$(( 1 ))', '$#')}{self.name('dat')} a; "
+                        f"{self.simple(depth - 1)}"]
+            # a value here: a different command (the bare name may be reported)
+            return [f"{self.pick('${set1}', chr(34) + '$set1' + chr(34), '$(echo x)')}"
+                    f"{self.name('par')} a; {self.simple(depth - 1)}"]
+        if r == 5:
+            return [f"if {e}{ok}; then {self.simple(depth - 1)}; fi"]
+        if r == 6:
+            return [f"v=1 {e}{ok} | {self.name('ok')}{e}"]
+        if r == 7:
+            return [f": $({e}{ok}) \"$({self.name('ok')}{e})\""]
+        return [f"{self.gone(depth)} {e}{ok}"]
+
+    def s_wrapped(self, depth):
+        """A command behind the wrappers every reader knows.  The harness
+        defines env, sudo, nohup and exec as functions that run their
+        operand, so bash's log shows the command; `command` is the builtin.
+        These names are `wrp`: the readers must report them, the tokenizer's
+        role -- which names the wrapper -- need not."""
+        w = self.name("wrp")
+        wraps = ["env", "env A=1", "env -i", "env -i A=1 B=2", "nohup", "sudo", "sudo A=1", "exec"]
+        chain = " ".join(self.rng.choice(wraps) for _ in range(self.rng.randint(1, 3)))
+        if self.chance(0.3):
+            chain += " command"      # last: the builtin does not look at functions
+        gone = self.gone(depth)
+        r = self.rng.randrange(10)
+        if r == 0:
+            return [f"{chain} {w} a"]
+        if r == 1:
+            # (an `env`'s operands go on after a word that vanished)
+            return [self.pick(f"{chain} {gone} {w}", f"env {gone} -i A=1 {w}",
+                              f"env A=1 {gone} B=2 {w}", f"sudo {gone} A=1 {w}")]
+        if r == 2:
+            return [f"{gone} {chain} {w} {self.name('dat')}"]
+        if r == 3:
+            return [f"v=1 {chain} {w}", f"if {chain} {self.name('wrp')}; then {self.simple(depth - 1)}; fi"]
+        if r == 4:
+            return [f"{chain} > o1 {w} 2>&1"]
+        if r == 5:
+            return [f"{chain} {self.pick('${unset1}', '$(:)', '${unset1:+$unset1 }')}{w}"]
+        if r == 6:
+            return [f"time {chain} {w}", f"! {chain} {self.name('wrp')} || {self.simple(depth - 1)}"]
+        if r == 7:
+            return [f": $({chain} {w}) | {chain} {self.name('wrp')}"]
+        if r == 8:
+            return [f"{self.rng.choice(wraps)} {gone} {self.rng.choice(wraps)} {self.gone(depth)} {w}"]
+        return [f"{self.rng.choice(wraps)} {gone} < /dev/null {self.rng.choice(wraps)} {w}"]
+
     def s_background(self, depth):
         return self.pick(
             [f"{self.simple(depth - 1)} &", "wait"],
@@ -718,9 +1014,11 @@ def bash_n(text):
     return r.returncode == 0
 
 
-def execute(text, work):
+def execute(text, work, limit=20, harness=None, errors=None):
     """Run TEXT under bash in WORK; return the set of names bash tried to run
-    and could not find, or None if the program did not finish in time."""
+    and could not find, or None if the program did not finish in LIMIT
+    seconds.  HARNESS replaces the BASH_ENV file's text; ERRORS, a list,
+    receives what bash wrote to its standard error."""
     for stale in os.listdir(work):
         if stale not in ("bin",):
             path = os.path.join(work, stale)
@@ -730,15 +1028,18 @@ def execute(text, work):
         f.write(text)
     r, w = os.pipe()
     with open(os.path.join(work, "harness.sh"), "w") as f:
-        f.write(_HARNESS % (w, w))
+        f.write((harness or _HARNESS) % (w, w))
+    err = open(os.path.join(work, "stderr"), "wb") if errors is not None else subprocess.DEVNULL
     try:
         p = subprocess.Popen(
             [ENV, "-i", f"PATH={work}/bin", "LC_ALL=C", f"HOME={work}",
              f"BASH_ENV={work}/harness.sh", BASH, "--norc", "--noprofile", "prog.sh"],
             cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL, pass_fds=(w,), start_new_session=True)
+            stderr=err, pass_fds=(w,), start_new_session=True)
     finally:
         os.close(w)
+        if errors is not None:
+            err.close()
     # The log is read to end of file: every process that could still write a
     # name holds the pipe open, so background jobs, coprocesses and process
     # substitutions are all waited for.
@@ -749,7 +1050,7 @@ def execute(text, work):
         raise TimeoutError
 
     old = signal.signal(signal.SIGALRM, stop)
-    signal.alarm(20)
+    signal.alarm(limit)
     try:
         while True:
             data = os.read(r, 65536)
@@ -768,21 +1069,34 @@ def execute(text, work):
         signal.alarm(0)
         signal.signal(signal.SIGALRM, old)
         os.close(r)
+    if errors is not None:
+        with open(os.path.join(work, "stderr"), "rb") as f:
+            errors.append(f.read(1 << 16).decode(errors="replace"))
     if not finished:
         return None
-    return set(b"".join(chunks).decode(errors="replace").split("\n")) - {""}
+    # NUL-terminated: a command's name may itself hold a newline (a quoted
+    # string that spans lines), and a line of it must not pass for a name.
+    return set(b"".join(chunks).decode(errors="replace").split("\0")) - {""}
 
 
 # ------------------------------------------------------------------ the check
 
 def command_names(text, mod=ST, depth=0):
     """Every word the tokenizer gives role 'command', quotes removed, in TEXT
-    and in every substitution body inside it."""
+    and in every substitution body inside it.  A body is read as the
+    consumers read it, up to where it stops being shell: what stands between
+    backquotes, or in a `$((` that is not arithmetic, is only parsed when it
+    runs, and bash runs such a body up to its error too."""
     out = set()
-    toks = mod.tokenize(text)
+    toks = mod.tokenize(text) if depth == 0 else mod.tokenize_prefix(text)
     for t in toks:
         if t.kind == "word" and t.role == "command":
             out.add(mod.unquote(t.text))
+            # ... and what bash runs it as when its expansions are empty:
+            # `${wrap}cmd`, `cmd$(maybe)`
+            bare = mod.emptied(t.text)
+            if bare:
+                out.add(bare)
         if depth < 12:
             for body in t.subst:
                 out |= command_names(body, mod, depth + 1)
@@ -832,10 +1146,41 @@ def edges_reader(source=None):
     return edges
 
 
-def judge(prog, ran, mod=ST, role=True, derived=None, edges=None):
+PORTABILITY = HERE / "portability_parse_check.sh"
+_FLAGS_OPEN = "python3 - $files >\"$GNU_FLAG_OUT\" <<'PY'\n"
+_FLAGS_DRIVER = "\n# ---- driver:"
+
+
+def flags_source():
+    """The GNU-flag scanner's Python, up to its driver: it lives in a
+    here-document of tools/portability_parse_check.sh."""
+    text = PORTABILITY.read_text()
+    a = text.find(_FLAGS_OPEN)
+    b = text.find(_FLAGS_DRIVER, a)
+    if a < 0 or b < 0:
+        raise SystemExit("INSTRUMENT ERROR: cannot find the GNU-flag scanner in "
+                         f"{PORTABILITY.name} (its opening line or its `# ---- driver:` line moved)")
+    return text[a + len(_FLAGS_OPEN):b] + "\n"
+
+
+def flags_reader(source=None):
+    """text -> the command words the GNU-flag scanner reads from it."""
+    ns = {"__name__": "portability_flags"}
+    exec(compile(flags_source() if source is None else source, "portability_flags", "exec"), ns)
+
+    def flags(text):
+        out = set()
+        for _lineno, toks in ns["shell_token_lines"](text):
+            for readings in ns["commands"](toks):
+                out.update(argv[0] for argv in readings)
+        return out
+    return flags
+
+
+def judge(prog, ran, mod=ST, role=True, derived=None, edges=None, flags=None):
     """Findings for one executed program.  RAN is bash's log.  ROLE checks
-    the tokenizer MOD; DERIVED and EDGES are the consumers' readers, or None
-    to leave a consumer out."""
+    the tokenizer MOD; DERIVED, EDGES and FLAGS are the readers of the three
+    consumers, or None to leave one out."""
     F = []
     name = prog.label
     ran_leaves = {x for x in ran if LEAF_RE.match(x)}
@@ -858,7 +1203,8 @@ def judge(prog, ran, mod=ST, role=True, derived=None, edges=None):
         for x in sorted(ours - ran_leaves - prog.par):
             F.append(f"{name}: O7 role: the tokenizer has command word {x}; bash never ran it")
     for label, reader, what in (("deriver", derived, "_derive_variants does not report it"),
-                                ("edges", edges, "enrolment_edges has no such command")):
+                                ("edges", edges, "enrolment_edges has no such command"),
+                                ("flags", flags, "the GNU-flag scanner reads no such command")):
         if reader is None:
             continue
         try:
@@ -871,7 +1217,7 @@ def judge(prog, ran, mod=ST, role=True, derived=None, edges=None):
     return F
 
 
-def run(seeds, n, mod=ST, role=True, derived=None, edges=None, cache=None):
+def run(seeds, n, mod=ST, role=True, derived=None, edges=None, flags=None, cache=None):
     """Generate, execute and judge.  Returns (findings, counts).  CACHE maps a
     program's label to bash's log, so a mutant is judged against the same
     executions as the original."""
@@ -904,10 +1250,163 @@ def run(seeds, n, mod=ST, role=True, derived=None, edges=None, cache=None):
                     continue
                 C["executed"] += 1
                 C["names_run"] += len({x for x in ran if LEAF_RE.match(x)})
-                F.extend(judge(prog, ran, mod, role, derived, edges))
+                F.extend(judge(prog, ran, mod, role, derived, edges, flags))
     finally:
         if work is not None:
             shutil.rmtree(work, ignore_errors=True)
+    return F, C
+
+
+# ------------------------------------------------------------------ mutants
+
+_EDIT_CHARS = [";", "\n", " ", "'", '"', "(", ")", "{", "}", "#", "\\", "$", "<", ">", "&", "|",
+               "[", "]", "!", "=", "`", "-", "\t"]
+_EDIT_TOKENS = [";;", "&&", "||", "<<E", "<<-E", "<<'E'", "$(", "<(", "((", "))", "[[", "]]", "then",
+                "fi", "do", "done", "esac", "in", "case", "if", "for", "while", "until", "time",
+                "coproc", "function", "{", "}", "!", "\\\n", "# ", "2>&1", "> o1", "< /dev/null",
+                "v=1", "arr[1]=x", "arr[", "E", ";&", "|&", "&", "<<<", "$((", "${", "`", "elif",
+                "else", "select", "$unset1", '"$unset1"', "${unset1}", "E)"]
+_RESERVED = frozenset({"if", "then", "else", "elif", "fi", "do", "done", "case", "esac", "while",
+                       "until", "for", "select", "function", "time", "coproc", "!", "{", "}",
+                       "[[", "]]", "in"})
+# A mutant may recurse or spin: bound it inside bash as well as by the clock.
+_MUTANT_HARNESS = _HARNESS + "FUNCNEST=40\nulimit -t 5 -f 4096 2>/dev/null\n"
+# bash accepted the text and then could not run it
+_CANNOT_RUN = re.compile(r"bad substitution|syntax error|unexpected EOF|command substitution:")
+# ... or ran it with a here-document that never met its delimiter
+_UNCLOSED = "delimited by end-of-file"
+
+
+def mutate(text, rng):
+    """TEXT after one to three mechanical edits."""
+    for _ in range(rng.choice((1, 1, 1, 2, 2, 3))):
+        if len(text) < 2:
+            return text
+        r = rng.randrange(9)
+        i = rng.randrange(len(text))
+        if r == 0:
+            text = text[:i] + text[i + 1:]
+        elif r == 1:
+            text = text[:i] + rng.choice(_EDIT_CHARS) + text[i:]
+        elif r == 2:
+            text = text[:i] + rng.choice(_EDIT_CHARS) + text[i + 1:]
+        elif r in (3, 4):
+            blanks = [m.start() for m in re.finditer(r"[ \n]", text)]
+            if blanks:
+                j = rng.choice(blanks)
+                text = text[:j] + " " + rng.choice(_EDIT_TOKENS) + text[j:]
+        else:
+            lines = text.split("\n")
+            j = rng.randrange(len(lines))
+            if r == 5:
+                del lines[j]
+            elif r == 6:
+                lines.insert(j, lines[j])
+            elif r == 7 and j + 1 < len(lines):
+                lines[j], lines[j + 1] = lines[j + 1], lines[j]
+            elif r == 8 and j + 1 < len(lines):
+                lines[j:j + 2] = [lines[j] + rng.choice((" ", "; ", " && ", " | ")) + lines[j + 1]]
+            text = "\n".join(lines)
+    return text
+
+
+def _written_names(text):
+    """The leaf names written in TEXT, however they are quoted or spelled."""
+    plain = text.replace("\\x73", "s").replace("\\145", "e")
+    plain = re.sub(r"""\\\n|[\\"']""", "", plain)
+    return set(re.findall(r"eigenscript-[a-z]+[0-9]+", plain))
+
+
+def _reserved_name_in_substitution(text, depth=0):
+    """Whether a substitution body of TEXT runs a command NAMED like a
+    reserved word (`$(> f else x)`): bash 5.2 runs such a body from its own
+    reprint, in which the name is the reserved word again."""
+    try:
+        toks = ST.tokenize_prefix(text)
+    except RecursionError:
+        return False
+    for t in toks:
+        if depth and t.kind == "word" and t.role == "command" and ST.unquote(t.text) in _RESERVED:
+            return True
+        if depth < 12 and any(_reserved_name_in_substitution(b, depth + 1) for b in t.subst):
+            return True
+    return False
+
+
+def mutants(seeds, nbase, per, mod=ST, derived=None, edges=None, flags=None):
+    """Edit NBASE generated programs per seed PER times each; run the edits
+    bash accepts; judge what needs no label.  Returns (findings, counts)."""
+    F, C = [], {"mutants": 0, "accepted": 0, "executed": 0, "unfinished": 0, "names_run": 0,
+                "judged": 0, "cannot_run_and_stopped": 0, "reserved_name_in_substitution": 0,
+                "unclosed_here_document": 0, "names_made_by_a_value": 0}
+    work = tempfile.mkdtemp(prefix="shell_exec_mutants.")
+    os.mkdir(os.path.join(work, "bin"))
+    try:
+        for seed in seeds:
+            for base in programs(seed, nbase):
+                rng = random.Random(f"mut/{seed}/{base.label}")
+                seen = {base.text}
+                for m in range(per):
+                    text = mutate(base.text, rng)
+                    if text in seen:
+                        continue
+                    seen.add(text)
+                    C["mutants"] += 1
+                    if not bash_n(text):
+                        continue
+                    C["accepted"] += 1
+                    label = f"{base.label}/m{m}"
+                    errors = []
+                    ran = execute(text, work, limit=4, harness=_MUTANT_HARNESS, errors=errors)
+                    if ran is None:
+                        C["unfinished"] += 1
+                        continue
+                    C["executed"] += 1
+                    if _UNCLOSED in errors[0]:
+                        # bash itself says the program is missing a delimiter:
+                        # where such a body ends is not a claim made here
+                        C["unclosed_here_document"] += 1
+                        continue
+                    C["judged"] += 1
+                    ranl = {x for x in ran if LEAF_RE.match(x)}
+                    # A name bash ran that is nowhere in the text was made by
+                    # an expansion's value (`eigenscript-ok6${arr[0]}` runs
+                    # ...-ok60): the stated blind spot, not a reading.
+                    written = _written_names(text)
+                    C["names_made_by_a_value"] += len(ranl - written)
+                    ranl &= written
+                    C["names_run"] += len(ranl)
+                    try:
+                        names = command_names(text, mod)
+                    except (ST.ShellLexError, RecursionError) as e:
+                        if _CANNOT_RUN.search(errors[0]):
+                            C["cannot_run_and_stopped"] += 1
+                        else:
+                            F.append((f"{label}: mutant: the tokenizer stopped ({e}) on a program "
+                                      "bash runs", text))
+                        continue
+                    if _reserved_name_in_substitution(text):
+                        C["reserved_name_in_substitution"] += 1
+                    else:
+                        for x in sorted(ranl - names):
+                            if "-wrp" not in x:
+                                F.append((f"{label}: mutant role: bash ran {x}; the tokenizer has "
+                                          f"no command word {x}", text))
+                    for what, reader in (("deriver", derived), ("edges", edges), ("flags", flags)):
+                        if reader is None:
+                            continue
+                        try:
+                            got = reader(text)
+                        except (SystemExit, Exception) as e:  # noqa: BLE001 -- stopping is the finding
+                            if not _CANNOT_RUN.search(errors[0]):
+                                F.append((f"{label}: mutant {what}: the reader stopped "
+                                          f"({type(e).__name__}: {e}) on a program bash runs", text))
+                            continue
+                        for x in sorted(ranl - got):
+                            F.append((f"{label}: mutant {what}: bash ran {x}; the reader does "
+                                      "not report it", text))
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
     return F, C
 
 
@@ -921,6 +1420,22 @@ def main(argv):
             n = int(next(it))
         elif a == "--show":
             show = next(it)
+        elif a == "--mutants":
+            seeds, nbase, per = [int(x) for x in next(it).split(",")], int(next(it)), int(next(it))
+            F, C = mutants(seeds, nbase, per, derived=deriver_reader(), edges=edges_reader(),
+                           flags=flags_reader())
+            kinds = {}
+            for line, text in F:
+                kind = re.sub(r"eigenscript-[a-z]+[0-9]+|line \d+: |exec#[0-9./m]+: ", "", line)
+                kinds.setdefault(kind, []).append((line, text))
+            for kind, rows in sorted(kinds.items(), key=lambda kv: -len(kv[1])):
+                print(f"{len(rows)} x {kind}")
+                print(f"    first: {rows[0][0]}")
+                if "--text" in argv:
+                    print("    " + rows[0][1].replace("\n", "\n    "))
+            print(f"shell-exec-mutants: bash={bash_version()} "
+                  + " ".join(f"{k}={v}" for k, v in sorted(C.items())) + f" findings={len(F)}")
+            return 1 if F else 0
     if not BASH or not ENV:
         print("INSTRUMENT ERROR: _shell_exec needs bash and env")
         return 2
@@ -929,7 +1444,7 @@ def main(argv):
         prog = Program(int(seed), int(index))
         sys.stdout.write(prog.text)
         return 0
-    F, C = run(seeds, n, derived=deriver_reader(), edges=edges_reader())
+    F, C = run(seeds, n, derived=deriver_reader(), edges=edges_reader(), flags=flags_reader())
     for f in F:
         print(f)
     print(f"shell-exec-oracle: bash={bash_version()} "

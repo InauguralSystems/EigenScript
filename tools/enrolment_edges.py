@@ -17,8 +17,8 @@ from pathlib import Path
 import yaml
 
 from _python_execution import EXECUTION_CALL_NAMES, name_of
-from _shell_tokens import (TokenizerGap, assignment_split, function_definitions, simple_commands,
-                           tokenize_file, tokenize_prefix, unquote)
+from _shell_tokens import (TokenizerGap, assignment_split, emptied, function_definitions,
+                           simple_commands, tokenize_file, tokenize_prefix, unquote)
 
 
 ROOT = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
@@ -95,38 +95,72 @@ def shell_commands(text: str):
         yield list(words)
 
 
-def _command_words(cmd) -> tuple[str, ...]:
-    """The words of the simple command CMD (tokens) from its command word on:
-    reserved words, assignments, wrappers and their options stripped."""
+_ENV_OPERAND = re.compile(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$')
+_DURATION = re.compile(r"^\d+(?:\.\d+)?[smhd]?$")
+
+
+def _command_readings(cmd, bare: bool = False) -> list[tuple[str, ...]]:
+    """The readings of the simple command CMD (tokens): its words from the
+    command word on, with reserved words, assignments, wrappers and their
+    operands stripped -- in whatever order they come (`env A=1 sudo bash
+    t.sh`, `timeout 5 env bash t.sh`).
+
+    A word that is nothing but expansions gives two readings, because it
+    holds a command, a wrapper or nothing at all: one that starts at it
+    (`$EIGS t.eigs`) and one that goes on past it (`sudo $ASKPASS bash
+    t.sh`, `env $(maybe) bash t.sh` run `bash` when it is empty).
+
+    BARE reads each word with its expansions taken as empty, where that
+    leaves a word: `${TMO:+$TMO }bash t.sh` and `$(Q)bash t.sh` run `bash`
+    when the expansion is empty.  (A word left starting with `/` is kept as
+    written: an expansion stood where a directory was.)"""
     raws = [t.text for t in cmd]
     words = [unquote(raw) for raw in raws]
-    # The command word is the first word that is neither a reserved word,
-    # a wrapper, nor an assignment.  Before any wrapper an assignment is
-    # what bash says it is: `m[${k[1]}]=<(c) bash t.sh` runs `bash`, and
-    # `"A=1" bash t.sh` runs a command named `A=1`.  After one, the
-    # wrapper reads its NAME=value operands unquoted (`sudo "A=1" cmd`).
-    wrapped = False
-    while words:
-        if words[0] in _WRAPPERS:
-            wrapped = True
-        elif not (words[0] in _KEYWORDS
-                  or assignment_split(raws[0]) is not None
-                  or (wrapped and re.match(_ASSIGNMENT, words[0]))):
-            break
+    if bare:
+        for i, raw in enumerate(raws):
+            reading = emptied(raw)
+            if reading and not reading.startswith("/"):
+                words[i] = reading
+    readings: list[tuple[str, ...]] = []
+
+    def drop():
         words.pop(0)
         raws.pop(0)
-    if words and words[0] == "env":
-        words.pop(0)
-        while words and (words[0].startswith("-")
-                         or re.match(_ASSIGNMENT, words[0])
-                         or (re.match(r'^\$\{?[A-Za-z_]\w*(?:\[@\])?\}?$', words[0])
-                             and words[0] not in {"$EIGS", "${EIGS}"})):
-            words.pop(0)
-    if words and words[0] == "timeout":
-        words.pop(0)
-        while words and (words[0].startswith("-") or re.match(r"^\d+(?:\.\d+)?[smhd]?$", words[0])):
-            words.pop(0)
-    return tuple(words)
+
+    # Before any wrapper an assignment is what bash says it is:
+    # `m[${k[1]}]=<(c) bash t.sh` runs `bash`, and `"A=1" bash t.sh` runs a
+    # command named `A=1`.  After one, the wrapper reads its NAME=value
+    # operands unquoted (`sudo "A=1" cmd`), and `--` ends its options.
+    wrapped = False
+    operands = ""            # "env" / "timeout": the wrapper whose operands are being read
+    while words:
+        word = words[0]
+        if operands == "env" and (word.startswith("-") or re.match(_ASSIGNMENT, word)
+                                  or (_ENV_OPERAND.match(word)
+                                      and word not in {"$EIGS", "${EIGS}"})):
+            drop()
+        elif operands == "timeout" and (word.startswith("-") or _DURATION.match(word)):
+            drop()
+        elif emptied(raws[0]) == "":
+            # (the operands of an `env` or `timeout` before it go on after it:
+            # `env $(maybe) -i bash t.sh`)
+            readings.append(tuple(words))
+            drop()
+        elif word in _WRAPPERS:
+            wrapped, operands = True, ""
+            drop()
+        elif (word in _KEYWORDS or assignment_split(raws[0]) is not None
+              or (wrapped and (re.match(_ASSIGNMENT, word) or word == "--"))):
+            operands = ""
+            drop()
+        elif word in ("env", "timeout"):
+            wrapped, operands = wrapped or word == "env", word
+            drop()
+        else:
+            break
+    if words:
+        readings.append(tuple(words))
+    return readings
 
 
 @lru_cache(maxsize=8192)
@@ -144,18 +178,21 @@ def _commands(text: str) -> tuple[tuple[str, ...], ...]:
         for body in tok.subst:
             commands.extend(_commands(body))
     for cmd in simple_commands(tokens):
-        # Two readings of one simple command, each kept once.  The first
-        # strips a prefix by its words, as this file always did.  The second
-        # starts at the word the tokenizer says the command RUNS (role
-        # 'command', which tools/shell_oracle.py checks against what bash
-        # executes): `time -p bash t.sh` and `coproc bash t.sh` run `bash`,
-        # and the first reading takes `-p` and `coproc` for the command.
-        runs = next((i for i, t in enumerate(cmd) if t.role == "command"), 0)
+        # The readings of one simple command, each kept once.  The first
+        # strips a prefix by its words, as this file always did.  The others
+        # start at each word the tokenizer says bash can RUN as this command
+        # (role 'command', which tools/shell_oracle.py checks against what
+        # bash executes): `time -p bash t.sh` and `coproc bash t.sh` run
+        # `bash`, and the first reading takes `-p` and `coproc` for the
+        # command.  A command position is never an argument: `echo $EIGS
+        # t.eigs` is read at `echo` alone.
+        runs = {i for i, t in enumerate(cmd) if t.role == "command"}
         readings = []
-        for start in sorted({0, runs}):
-            words = _command_words(cmd[start:])
-            if words and words not in readings:
-                readings.append(words)
+        for start in sorted({0} | runs):
+            for bare in (False, True):
+                for words in _command_readings(cmd[start:], bare):
+                    if words not in readings:
+                        readings.append(words)
         commands.extend(readings)
     return tuple(commands)
 

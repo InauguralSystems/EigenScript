@@ -20,7 +20,9 @@ TEXT, not lines, and knows:
   * here-documents: the body after the opener's line is consumed and attached
     to the `<<` / `<<-` token, so it is never read as commands -- also when
     the opener sits in a `$( )` that closes on its own line (`x=$(cat <<E)`),
-    where bash 5.2 reads the body from the lines below;
+    where bash 5.2 reads the body from the lines below, and when the
+    delimiter shares its line with the `)` that closes the substitution
+    (`EOF)`), where the rest of that line is shell text again;
   * `case` patterns (`a)` closes a pattern, not a substitution) and `[[ ]]`
     (whose `<`, `&&`, `(` are operands, not shell operators).
 
@@ -35,7 +37,10 @@ Tokens are (kind, text, line, start, end, subst, heredoc, role):
   kind     'word' | 'pattern' (a case pattern) | 'arith' (a `(( ))` command or
            `for (( ))` header) | 'op' | 'redir' | 'newline'
   text     a word's source text with line continuations removed (quotes kept;
-           unquote() removes them), or the operator text without IO number
+           unquote() removes them; emptied() also takes its expansions as
+           empty), or the operator text without IO number.  A word holding a
+           here-document that ends in mid-line (`$(cat <<E` ... `E)`) gets a
+           newline after that delimiter, so that it reads the same on its own.
   line     1-based line of the token's first character
   subst    for a word: the bodies of $(...), `...`, <(...), >(...) found at
            any quoting depth of that word -- in quotes, ${...}, $((...)),
@@ -58,10 +63,14 @@ Tokens are (kind, text, line, start, end, subst, heredoc, role):
              'test'        an operand or operator inside [[ ]]
              'target'      a redirection's target
              'delimiter'   a here-document's delimiter word
-           One simple command has at most one 'command' word: it is the first
-           word, redirections aside, that bash's assignment test rejects
-           (`x=1 <f y=2 cmd` runs `cmd`; `"A=1" cmd` runs `A=1`).  Consumers
-           read the role instead of guessing a position from the text.
+           The 'command' word of a simple command is the first word,
+           redirections aside, that bash's assignment test rejects (`x=1 <f
+           y=2 cmd` runs `cmd`; `"A=1" cmd` runs `A=1`).  There is a second
+           one after a command word that is nothing but expansions and can
+           expand to no word at all (`$wrap cmd`, `$(maybe) cmd`, `"$@" cmd`):
+           bash runs the next word then, so it is a 'command' too, whatever
+           it is spelled like (may_vanish()).  Consumers read the role
+           instead of guessing a position from the text.
 
 tokenize() raises ShellLexError for text the shell would reject lexically:
 an unterminated quote, substitution, expansion or `[[`.  A here-document with
@@ -71,6 +80,8 @@ read the body to end of file.
 from __future__ import annotations
 
 import bisect
+import functools
+import re
 from typing import NamedTuple
 
 
@@ -114,10 +125,16 @@ COMPOUND_CLOSERS = frozenset({"fi", "done", "esac", "}"})
 
 
 class _Lexer:
-    def __init__(self, text: str):
+    def __init__(self, text: str, roles: bool = True):
         self.text = text
         self.n = len(text)
+        # False for a lexer that only measures one word (where does this
+        # expansion end?).  Such a lexer must not ask in turn whether the
+        # command words inside it can vanish: that lexes each of them again,
+        # and the work doubles with every level of nesting.
+        self.roles = roles
         self.cuts: set[int] = set()       # positions of removed `\`+newline
+        self.breaks: set[int] = set()     # positions a newline is put in front of
         self.comments: list[tuple[int, int]] = []        # [start, end) spans
         self.heredocs: list[tuple[int, int, bool]] = []  # body spans, <<- flag
         self.arith_memo: dict[int, bool] = {}
@@ -139,12 +156,14 @@ class _Lexer:
         raise ShellLexError(message, self.line_of(min(pos, max(self.n - 1, 0))))
 
     def clean(self, start: int, end: int) -> str:
-        """Source slice with line continuations removed."""
+        """Source slice with line continuations removed -- and a newline put
+        after a here-document delimiter that bash ends in mid-line (`EOF)`
+        inside a substitution), so that the slice reads the same on its own."""
         end = min(end, self.n)
-        if not self.cuts:
+        if not self.cuts and not self.breaks:
             return self.text[start:end]
         return "".join(
-            self.text[i] for i in range(start, end)
+            ("\n" if i in self.breaks else "") + self.text[i] for i in range(start, end)
             if i not in self.cuts and i - 1 not in self.cuts)
 
     # ---- quoted and nested word parts.  Each takes the position of the
@@ -190,8 +209,17 @@ class _Lexer:
         if t[j] == "`":
             return self.backtick(j, subst, in_double)
         nxt = t[j + 1:j + 2]
-        if t.startswith("$((", j) and self.arith_closes(j + 3):
-            return self.arith(j + 3, j, subst)
+        if t.startswith("$((", j):
+            if self.arith_closes(j + 3):
+                return self.arith(j + 3, j, subst)
+            # Not arithmetic.  bash's lexer still ends `$((` by counting
+            # parentheses, never by parsing commands (so `bash -n` sees no
+            # syntax error inside it, and a case pattern's `)` closes it);
+            # what is inside is a command list only when it runs.
+            end = self.paren_group(j + 2, [], j)
+            subst.append(self.clean(j + 2, end - 1))
+            self.openers.append(j)
+            return end
         if nxt == "(":
             return self.cmdsub(j + 2, subst, j)
         if nxt == "{":
@@ -270,6 +298,8 @@ class _Lexer:
         if end is None:
             self.err(f"unterminated {what}", opener)
         body = self.clean(body_start, end)
+        if end in self.breaks:
+            body += "\n"                     # the delimiter shared its line with this `)`
         if sub.pending:
             # `$(cat <<E)` closing before its here-document was read: bash
             # reads the body from the lines after this one.  The recorded
@@ -287,7 +317,7 @@ class _Lexer:
             nl = self.n                       # no later line: delimited by end of file
         start = self.skips.get(nl, min(nl + 1, self.n))
         sub.i = start
-        sub.read_heredocs()
+        sub.read_heredocs(below=True)
         self.skips[nl] = sub.i
         return self.text[start:sub.i]
 
@@ -326,7 +356,7 @@ class _Lexer:
         Memoized: nested `$(( $(( ...` would otherwise rescan per level."""
         if j in self.arith_memo:
             return self.arith_memo[j]
-        cuts = set(self.cuts)
+        cuts, breaks = set(self.cuts), set(self.breaks)
         comments, heredocs, openers = list(self.comments), list(self.heredocs), list(self.openers)
         skips = dict(self.skips)
         try:
@@ -334,7 +364,8 @@ class _Lexer:
         except ShellLexError:
             result = False
         finally:
-            self.cuts, self.comments, self.heredocs = cuts, comments, heredocs
+            self.cuts, self.breaks = cuts, breaks
+            self.comments, self.heredocs = comments, heredocs
             self.openers, self.skips = openers, skips
         self.arith_memo[j] = result
         return result
@@ -553,6 +584,7 @@ class _Body:
         self.for_header = 0            # 1: `for` read; 2: its NAME read
         self.for_list = False          # reading the words of `for NAME in ...`
         self.has_command = False       # this simple command's command word was read
+        self.vanishing = False         # ... and it may expand to no word at all
 
     # ------------------------------------------------------------------ words
     def read_word(self, start: int) -> tuple[int, list]:
@@ -785,6 +817,7 @@ class _Body:
         self.after_time = 0
         self.for_list = False
         self.has_command = False
+        self.vanishing = False
 
     def in_pattern(self) -> bool:
         return bool(self.case) and self.case[-1] == "pattern"
@@ -943,16 +976,24 @@ class _Body:
             return "list"
         if self.has_command:
             return "argument"
-        if assignment_split(word) is not None:
+        if not self.vanishing and assignment_split(word) is not None:
             return "assignment"
-        self.has_command = True
+        # The command word.  If it is nothing but expansions that can expand
+        # to no word at all (`$wrap cmd`, `$(maybe) cmd`, `"$@" cmd`), bash
+        # runs the NEXT word when they do -- and that word is then the
+        # command even if it looks like an assignment (`$empty v=1` runs a
+        # command named v=1).  So the next word is a command word too.
+        self.vanishing = self.lx.roles and may_vanish(word)
+        self.has_command = not self.vanishing
         return "command"
 
     def emit(self, tok: Token):
         self.split_next = False
         self.tokens.append(tok)
 
-    def read_heredocs(self):
+    def read_heredocs(self, below: bool = False):
+        """Read the bodies of the pending here-documents from self.i.  BELOW:
+        they are read after the substitution that opened them has closed."""
         lx, t = self.lx, self.lx.text
         for idx, delim, strip, quoted in self.pending:
             body_start = self.i
@@ -972,6 +1013,19 @@ class _Body:
                 if cmp == delim:
                     body = t[body_start:self.i]
                     self.i = line_end + 1 if nl >= 0 else lx.n
+                    break
+                if self.closer == ")" and cmp.startswith(delim) and ")" in cmp[len(delim):]:
+                    # Inside a substitution bash also ends the document at a
+                    # line that BEGINS with the delimiter and has a `)` later
+                    # on it, and reads the rest of that line as shell text:
+                    # `$(cat <<EOF` ... `EOF)` (parse.y, "backwards
+                    # compatibility"; measured: `Ex)` after `<<E` runs `x`).
+                    if below:
+                        lx.err("a here-document read below its substitution ends on a line "
+                               "that goes on as shell text", self.i)
+                    body = t[body_start:self.i]
+                    self.i += (len(line) - len(cmp) if strip else 0) + len(delim)
+                    lx.breaks.add(self.i)
                     break
                 self.i = line_end + 1 if nl >= 0 else lx.n
             else:
@@ -1024,6 +1078,7 @@ def _plain_ident(name: str) -> bool:
     return name.isidentifier() and name.isascii()
 
 
+@functools.lru_cache(maxsize=8192)
 def assignment_split(word: str):
     """(name, value) if WORD -- a token's text, quotes kept -- is an assignment
     word as bash's assignment() decides it: NAME=value, NAME+=value,
@@ -1033,7 +1088,12 @@ def assignment_split(word: str):
     (match_subscript), so `m[${k[1]}]=v`, `m[$[ 1 ]]=v` and `h["]"]=v` are
     assignments and `m[<(c ])]=1` is not.  This is the one recogniser: the
     lexer's own state and every consumer use it, so "is this word an
-    assignment" has a single answer."""
+    assignment" has a single answer.
+
+    (Remembered per word: the lexer asks about every word, the subscript of a
+    word is lexed to answer, and a subscript may hold words to ask about --
+    `a[$(a[$(...)]=1)]=1` -- so without a memory the work triples with each
+    level of nesting.)"""
     n = len(word)
     if not n or not (word[0].isascii() and (word[0].isalpha() or word[0] == "_")):
         return None
@@ -1043,7 +1103,7 @@ def assignment_split(word: str):
     name = word[:i]
     if i < n and word[i] == "[":
         try:
-            i = _Lexer(word).match_subscript(i, [])
+            i = _Lexer(word, roles=False).match_subscript(i, [])
         except ShellLexError:
             return None
         if i is None:
@@ -1053,6 +1113,87 @@ def assignment_split(word: str):
     if word.startswith("=", i):
         return name, word[i + 1:]
     return None
+
+
+# A double-quoted `$@` or `${name[@]}` (also `${!name[@]}`, `${!prefix@}`)
+# expands to one word per element: to no word at all when there are none.
+_LIST_EXPANSION = re.compile(
+    r"^\$(@|\{(@|!?[A-Za-z_][A-Za-z0-9_]*\[@\]|![A-Za-z_][A-Za-z0-9_]*@\}))")
+# An expansion that always has a value: `$?`, `$#`, `$$`, `$0`, a length
+# `${#name}`, arithmetic.  (Not `${?%0}`: an operator can empty it.)
+_ALWAYS_VALUED = re.compile(
+    r"^(\$[?#$0]$|\$\{[?$0]\}$"
+    r"|\$\{#(?:[A-Za-z_][A-Za-z0-9_]*(?:\[.*\])?|[0-9]+|[@*#?$!-])?\}$"
+    r"|\$\[|\$\(\()", re.S)
+
+
+def _expansions(word: str):
+    """The expansions of a word that is nothing but expansions -- `$v`,
+    `${v:-x}`, `$(cmd)`, `` `cmd` ``, `"$@"`, several in a row -- else None.
+    A list of groups (inside double quotes, [expansion text, ...]): an
+    unquoted expansion is a group of its own, a pair of double quotes is one
+    group holding the expansions written inside it (none, for `""`)."""
+    lx = _Lexer(word, roles=False)
+    n, i, group, out = len(word), 0, None, []
+    try:
+        while i < n:
+            c = word[i]
+            if c == '"':
+                if group is None:
+                    group = []
+                else:
+                    out.append((True, group))
+                    group = None
+                i += 1
+                continue
+            in_dq = group is not None
+            if c == "`":
+                j = lx.backtick(i, [], in_dq)
+            elif c == "$":
+                nxt = word[i + 1:i + 2]
+                if nxt.isascii() and (nxt.isalpha() or nxt == "_"):
+                    j = i + 2
+                    while j < n and word[j].isascii() and (word[j].isalnum() or word[j] == "_"):
+                        j += 1
+                elif nxt and nxt in "({[@*#?-$!0123456789":
+                    j = lx.dollar_or_backtick(i, [], in_dq)
+                else:
+                    return None
+            else:
+                return None
+            if in_dq:
+                group.append(word[i:j])
+            else:
+                out.append((False, [word[i:j]]))
+            i = j
+    except ShellLexError:
+        return None
+    return None if group is not None or not out else out
+
+
+def expansion_only(word: str) -> bool:
+    """Whether WORD (a token's text) is nothing but expansions.  At a command
+    position such a word may hold a wrapper or nothing at all, so the word
+    after it is the one that ends up run: `$TIMEOUT cmd`, `"${wrap[@]}" cmd`."""
+    groups = _expansions(word)
+    return bool(groups) and any(texts for _, texts in groups)
+
+
+def may_vanish(word: str) -> bool:
+    """Whether WORD can expand to no word at all, as bash expands it
+    (measured, bash 5.2): it is nothing but expansions, none of them always
+    has a value, and each pair of double quotes holds a list expansion --
+    `"$@"`, `"${a[@]}"`, and `"$x$@"` too.  A quoted scalar cannot vanish:
+    `"$empty" cmd` runs a command named '' with cmd as its argument."""
+    groups = _expansions(word)
+    if not groups:
+        return False
+    for quoted, texts in groups:
+        if quoted and not any(_LIST_EXPANSION.match(t) for t in texts):
+            return False
+        if any(_ALWAYS_VALUED.match(t) for t in texts):
+            return False
+    return True
 
 
 def _is_assignment(word: str) -> bool:
@@ -1205,8 +1346,10 @@ _ANSI = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f",
          "'": "'", '"': '"', "?": "?"}
 
 
-def unquote(word: str) -> str:
-    """Quote removal (POSIX 2.6.7) with expansions left as literal text."""
+def unquote(word: str, expansions: list | None = None) -> str:
+    """Quote removal (POSIX 2.6.7) with expansions left as literal text.
+    Given a list EXPANSIONS, each expansion is appended to it and left OUT of
+    the result instead (see emptied())."""
     out = []
     i, n = 0, len(word)
     while i < n:
@@ -1239,8 +1382,12 @@ def unquote(word: str) -> str:
                     j += 2
                     continue
                 if word[j] in "$`":
-                    k = _skip_expansion(word, j)
-                    out.append(word[j:k])
+                    if expansions is None:
+                        k = _skip_expansion(word, j)
+                        out.append(word[j:k])
+                    else:
+                        k = _expansion_end(word, j, in_double=True)
+                        (expansions if k > j + 1 else out).append(word[j:k])
                     j = k
                     continue
                 out.append(word[j])
@@ -1251,13 +1398,30 @@ def unquote(word: str) -> str:
                 out.append(word[i + 1])
             i += 2
         elif c in "$`":
-            k = _skip_expansion(word, i)
-            out.append(word[i:k])
+            if expansions is None:
+                k = _skip_expansion(word, i)
+                out.append(word[i:k])
+            else:
+                k = _expansion_end(word, i)
+                (expansions if k > i + 1 else out).append(word[i:k])
             i = k
         else:
             out.append(c)
             i += 1
     return "".join(out)
+
+
+def emptied(word: str):
+    """WORD (a token's text) after quote removal with every expansion taken
+    as empty: what bash runs it as when they all expand to nothing --
+    `${TMO:+$TMO }cmd`, `$(Q)cmd`, `cmd${EXE}` are `cmd`.  None when the word
+    has no expansion, or one that always has a value (`$?`, `${#v}`,
+    arithmetic): then there is no such reading."""
+    found: list = []
+    text = unquote(word, found)
+    if not found or any(_ALWAYS_VALUED.match(x) for x in found):
+        return None
+    return text
 
 
 def _byte(b: int) -> str:
@@ -1311,9 +1475,30 @@ def _ansi_escape(word: str, j: int) -> tuple[str, int]:
     return word[j:j + 2], j + 2
 
 
+def _expansion_end(word: str, i: int, in_double: bool = False) -> int:
+    """End of the expansion at word[i] -- `$name`, `$1`, `$@`, `${..}`,
+    `$(..)`, `$((..))`, `$[..]`, `` `..` `` -- or i + 1 where the `$` starts
+    none."""
+    n = len(word)
+    nxt = word[i + 1:i + 2]
+    if word[i] == "`" or nxt in ("(", "{", "["):
+        try:
+            return _Lexer(word, roles=False).dollar_or_backtick(i, [], in_double)
+        except ShellLexError:
+            return n
+    if nxt.isascii() and (nxt.isalpha() or nxt == "_"):
+        j = i + 2
+        while j < n and word[j].isascii() and (word[j].isalnum() or word[j] == "_"):
+            j += 1
+        return j
+    if nxt and nxt in "@*#?-$!0123456789":
+        return i + 2
+    return i + 1
+
+
 def _skip_expansion(word: str, i: int) -> int:
     """End of the expansion at word[i] ($(..), ${..}, `..`), kept literal."""
-    lx = _Lexer(word)
+    lx = _Lexer(word, roles=False)
     try:
         return lx.dollar_or_backtick(i, [], in_double=False) if word[i] == "`" or \
             word[i + 1:i + 2] in ("(", "{") else i + 1
