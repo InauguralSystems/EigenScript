@@ -6,11 +6,11 @@ been resolved in later releases:
 
 - **Concurrency**: spawn/thread_join/channels added in 0.9.0
 - **Pattern matching / lambdas / regex / imports**: added in 0.7.0
-- **Hashing**: SHA-256, MD5, and HMAC-SHA256 were added in 0.9.2; HMAC-SHA256 was later removed after the zero-use audit (#1677).
+- **Hashing**: SHA-256, MD5, and HMAC-SHA256 were added in 0.9.1; HMAC-SHA256 was later removed after the zero-use audit (#1677).
 - **LSP**: eigenlsp + VS Code extension shipped in 0.9.1
 - **Debugger**: graphical debugger with observer-aware inspection in 0.9.0
 - **UI**: 44-widget GUI toolkit added in 0.9.0
-- **STEM**: 14 scientific libraries added in 0.9.3
+- **STEM**: 12 scientific libraries added in 0.9.2; geometry and lab followed in 0.9.3
 - **Bytecode VM**: Tree-walker replaced with compiled bytecode in 0.10.0
 - **JIT**: copy-and-patch x86-64 JIT with inline ICs in 0.12.0
 - **Standard library**: Expanded to 49 modules
