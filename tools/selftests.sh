@@ -22,6 +22,9 @@ def git_ref_exists(ref):
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
 
 PRODUCT_TRIGGER_MAX_S = 60
+# #1980 calls for at least 2x timeout headroom. This is an advisory report,
+# not a red gate: no same-commit CI timing spread/noise floor has been measured.
+TIME_BOUND_REPORT_SHARE = 0.5
 
 # A self-test whose body is a Python module of its own (#2330): body -> the script that dispatches
 # to it. The dispatch pattern matches the body's own calls of the mode, but the body has no command;
@@ -199,6 +202,7 @@ def main():
             print(f'{cmd} (covered by CI job {ci_job})' if ci_job else cmd)
         return 0
     failed, total, instrument = 0, 0.0, False
+    near_bound = []
     with tempfile.TemporaryDirectory(prefix='eigs-selftests-') as scratch:
         for _, command, target, pins, ci_job in selected:
             if ci_job:
@@ -232,6 +236,7 @@ def main():
             # HTTP readiness's public wrapper uses src/ as cwd; call its implementation there.
             cwd = 'src' if target == 'tests/http_readiness.py' else '.'
             argv = shlex.split(command)
+            bound = int(argv[1])
             argv[0] = timeout
             argv[1:1] = ['-k', '5']
             if cwd == 'src':
@@ -253,10 +258,16 @@ def main():
             seconds = time.monotonic() - start
             total += seconds
             failed += bool(reasons)
+            if not reasons and seconds > bound * TIME_BOUND_REPORT_SHARE:
+                near_bound.append((target, seconds, bound))
             print(f'{"FAIL" if reasons else "PASS"}: {target} {seconds:.2f}s' + (': ' + '; '.join(reasons) if reasons else ''), flush=True)
             if reasons or 'SKIP' in result.stdout:
                 print(result.stdout, end='', flush=True)
     print(f'selftests: {len(selected)-failed} passed, {failed} failed; total {total:.2f}s', flush=True)
+    print(f'selftests: time-bound report (>{TIME_BOUND_REPORT_SHARE:.0%} of bound; advisory only): '
+          f'{len(near_bound)} passing rows', flush=True)
+    for target, seconds, bound in near_bound:
+        print(f'  HEADROOM: {target} {seconds:.2f}s / {bound}s ({seconds / bound:.1%})', flush=True)
     return 2 if instrument else int(bool(failed))
 
 try:

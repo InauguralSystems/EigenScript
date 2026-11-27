@@ -148,5 +148,44 @@ run_case ci-step-real 0 4 'covered by CI job spec-lean' ci_step_real
 run_case ci-step-unknown-job 2 0 "CI job 'absent-job' is missing" ci_step_unknown_job
 run_case ci-step-wrong-command 2 0 "command is missing from CI job 'spec-lean'" ci_step_wrong_command
 run_case ci-step-not-needed 2 0 "does not need CI job 'spec-lean'" ci_step_not_needed
-echo "SELFTEST_SELECTION: $passed passed, $failed failed, 11 declared"
+
+# Run passing fixture rows through the real command path, but supply a clock
+# with exact durations: two above half their bound, one below, one exactly at
+# half. Wall-clock sleeps would make this reporting test sensitive to CI load.
+git clone -q "$seed" "$tmp/time-bound-report"
+cd "$tmp/time-bound-report"
+python3 - <<'PY'
+from pathlib import Path
+p = Path('tools/selftests.sh')
+s = p.read_text()
+s = s.replace('from pathlib import Path\n',
+              'from pathlib import Path\n'
+              'time.monotonic = iter([0, 3, 3, 4, 4, 10, 10, 12.5]).__next__\n', 1)
+p.write_text(s)
+p = Path('tools/selftests.txt')
+p.write_text(p.read_text().replace('timeout 5 bash tools/untracked.sh',
+                                   'timeout 8 bash tools/untracked.sh'))
+PY
+set +e
+timeout 20 bash tools/selftests.sh --all >actual.out 2>&1
+actual_rc=$?
+set -e
+cat >expected-report.out <<'EOF'
+selftests: time-bound report (>50% of bound; advisory only): 2 passing rows
+  HEADROOM: tools/candidate.sh 3.00s / 5s (60.0%)
+  HEADROOM: tools/untracked.sh 6.00s / 8s (75.0%)
+EOF
+tail -3 actual.out >actual-report.out
+if [ "$actual_rc" -eq 0 ] && cmp -s expected-report.out actual-report.out &&
+   [ "$(grep -c '^selftests: time-bound report ' actual.out)" -eq 1 ] &&
+   [ "$(grep -c '^  HEADROOM:' actual.out)" -eq 2 ] &&
+   grep -Fq 'selftests: 5 passed, 0 failed;' actual.out; then
+    echo '  PASS: time-bound-report names every passing row above half, excludes below/equal, and is printed last'
+    passed=$((passed + 1))
+else
+    echo "  FAIL: time-bound-report expected_rc=0 observed_rc=$actual_rc reason=receipt-mismatch"
+    sed 's/^/    /' actual.out
+    failed=$((failed + 1))
+fi
+echo "SELFTEST_SELECTION: $passed passed, $failed failed, 12 declared"
 [ "$failed" -eq 0 ]
