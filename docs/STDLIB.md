@@ -1270,6 +1270,12 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 | `correlation` | `correlation of [xs, ys]` | Pearson correlation coefficient |
 | `describe` | `describe of vals` | return dict with count, mean, median, std_dev, min, max, q25, q75 |
 
+`stats_sum` is exact int arithmetic and raises on int overflow. The real-valued
+statistics (`stats_mean`, the even-length `median`, the variances and standard
+deviations, `z_scores`, `covariance`, `correlation`, `describe`) add exactly
+while no step can overflow and in floats from there, so a list of large ints
+whose mean is representable answers, as the builtin `mean` does (#2497).
+
 `stats.stats_mean` and `stats.median` already exist — reach for them instead of
 re-deriving a `_pr_mean`/`_pr_median`. This example is executed and checked
 byte-for-byte by the suite (`tests/test_doc_examples.py`, section [89]):

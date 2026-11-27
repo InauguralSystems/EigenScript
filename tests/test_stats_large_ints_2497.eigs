@@ -1,0 +1,73 @@
+# #2497: the real-valued statistics of lib/stats.eigs and lib/lab.eigs answer
+# on a list of large ints whose mean is representable, as the builtin `mean`
+# does, instead of raising "integer overflow in '+'" while summing. stats_sum
+# stays exact int arithmetic and still raises. Every row below raised before.
+load_file of "lib/test.eigs"
+import stats
+load_file of "lib/lab.eigs"
+
+big is [5000000000000000000, 5000000000000000000]
+assert_eq of [mean of big, 5e18, "builtin mean of the list is 5e+18 (the reference)"]
+
+define answers(label, f) as:
+    local raised is null
+    local got is null
+    try:
+        got is f of null
+    catch e:
+        raised is e.message
+    assert_eq of [raised, null, f"{label} answers without raising"]
+    return got
+
+d is answers of ["stats.describe", (u) => stats.describe of big]
+if d != null:
+    assert_eq of [d.mean, 5e18, "describe mean is 5e+18"]
+    assert_eq of [d.median, 5e18, "describe median is 5e+18"]
+    assert_eq of [d.std_dev, 0.0, "describe std_dev is 0"]
+    assert_eq of [d.min, 5000000000000000000, "describe min stays the exact int"]
+    assert_eq of [d.max, 5000000000000000000, "describe max stays the exact int"]
+    assert_eq of [d.q25, 5e18, "describe q25"]
+    assert_eq of [d.q75, 5e18, "describe q75"]
+    assert_eq of [d.count, 2, "describe count"]
+assert_eq of [answers of ["stats.stats_mean", (u) => stats.stats_mean of big], 5e18, "stats_mean is 5e+18"]
+assert_eq of [answers of ["stats.median", (u) => stats.median of big], 5e18, "median is 5e+18"]
+assert_eq of [answers of ["stats.variance", (u) => stats.variance of big], 0.0, "variance is 0"]
+assert_eq of [answers of ["stats.variance_sample", (u) => stats.variance_sample of big], 0.0, "variance_sample is 0"]
+assert_eq of [answers of ["stats.std_dev", (u) => stats.std_dev of big], 0.0, "std_dev is 0"]
+assert_eq of [answers of ["stats.std_dev_sample", (u) => stats.std_dev_sample of big], 0.0, "std_dev_sample is 0"]
+assert_eq of [answers of ["stats.z_scores", (u) => stats.z_scores of big], [0.0, 0.0], "z_scores are 0"]
+assert_eq of [answers of ["stats.covariance", (u) => stats.covariance of [big, big]], 0.0, "covariance is 0"]
+assert_eq of [answers of ["stats.correlation", (u) => stats.correlation of [big, big]], 0, "correlation of constant lists is 0"]
+
+# A mean that needs the exact sum keeps it: 2^53+1 and 1 sum exactly to 2^53+2.
+assert_eq of [stats.stats_mean of [9007199254740993, 1], 4503599627370497.0, "an exact int sum below 2^62 is kept"]
+
+# stats_sum is exact int arithmetic and still raises on overflow.
+sum_raised is false
+try:
+    ignore is stats.stats_sum of big
+catch e:
+    sum_raised is true
+assert_true of [sum_raised, "stats_sum still raises on int overflow"]
+
+# lib/lab.eigs: status, summary and compare go through the same statistics.
+exp is new_experiment of "test_stats_large_ints_2497"
+record of [exp, "a", 5000000000000000000]
+record of [exp, "a", 5000000000000000000]
+record of [exp, "b", 5000000000000000000]
+record of [exp, "b", 5000000000000000000]
+st is answers of ["lab.status", (u) => status of [exp, "a"]]
+if st != null:
+    assert_eq of [st.mean, 5e18, "lab status mean is 5e+18"]
+    assert_eq of [st.std, 0.0, "lab status std is 0"]
+sm is answers of ["lab.summary", (u) => summary of [exp, "a"]]
+if sm != null:
+    assert_eq of [sm.mean, 5e18, "lab summary mean is 5e+18"]
+cmp is answers of ["lab.compare", (u) => compare of [exp, "a", "b"]]
+if cmp != null:
+    assert_eq of [cmp.var1_mean, 5e18, "lab compare var1_mean is 5e+18"]
+    assert_eq of [cmp.var2_mean, 5e18, "lab compare var2_mean is 5e+18"]
+close_experiment of exp
+delete_experiment of "test_stats_large_ints_2497"
+
+test_summary of null
