@@ -389,9 +389,16 @@ Notes on the families:
   absent during recording too: their replays contribute to `tape replays`,
   but cannot prove that the error came from the tape.
   See [the table format](../tests/builtin_errors/README.md).
-  Tensor payloads are untaped and are never read live during replay. Other
-  structurally valid verdicts raise the generic `io` file-read-boundary error
-  before filesystem access.
+  A path that cannot be opened or is a directory records the standard
+  one-string file-I/O error record, an over-cap header records `[rows, cols]`,
+  and a load that raises nothing records `null`. Replay re-raises a recorded
+  open or file error byte-for-byte.
+  For every other structurally valid verdict, replay raises the
+  same generic `io` file-read-boundary error before filesystem access; an
+  over-cap verdict does not reconstruct its recorded `limit` error. Tensor
+  payloads are untaped and are never read live during replay. Invalid path
+  argument types consume no observation. The following nondeterministic call
+  retains its own record.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)
