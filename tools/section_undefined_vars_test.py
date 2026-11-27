@@ -375,6 +375,30 @@ def selftest():
             assert gate.scan(fixture, [fragment]) == []
             native = bash('TESTS_DIR=' + shlex.quote(str(fixture / 'tests')) + '\n' + program)
             assert native.returncode == 0 and native.stdout == '1', native
+        # One row per derivation path the pass-6 review plants removed unseen;
+        # bash 5.2 gives each answer.
+        (fixture / 'tests/defs.sh').write_text('QZV=1\n')
+        for program, want in (
+                ('source tests/defs.sh\nprobe "$QZV"\n', []),
+                ('source ' + shlex.quote(str(fixture / 'tests/defs.sh')) + '\nprobe "$QZV"\n', []),
+                ('f() { :; }; f <<EOF\n${QZV:=1}\nEOF\nprobe "$QZV"\n', []),
+                ("declare 'a[$((QZV=1))]=x'\nprobe \"$QZV\"\n", []),
+                ('printf -v QZV -- x\nprobe "$QZV"\n', []),
+                ('read QZV+ <<<1\nprobe "$QZV"\n', ['QZV']),
+                ("read 'a[$((QZV=1))]' <<<1\nprobe \"$QZV\"\n", []),
+                ('mapfile QZV OTHER <<<1\nprobe "$OTHER"\n', ['OTHER'])):
+            fragment = tree(fixture, program)
+            got = [n for _, _, n in gate.scan(fixture, [fragment])]
+            assert got == want, (program, got, want)
+        # The documented environment: a name in tests/README.md's marked table is
+        # accepted, and refused when the table does not list it.
+        readme = fixture / 'tests/README.md'
+        fragment = tree(fixture, 'probe "$ASAN_OPTIONS"\n')
+        readme.write_text('# t\n' + gate.ENV_START + '\n| Variable | Purpose |\n| --- | --- |\n| `ASAN_OPTIONS` | x |\n' + gate.ENV_END + '\n')
+        assert gate.scan(fixture, [fragment]) == []
+        readme.write_text('# t\n' + gate.ENV_START + '\n| Variable | Purpose |\n| --- | --- |\n' + gate.ENV_END + '\n')
+        assert [n for _, _, n in gate.scan(fixture, [fragment])] == ['ASAN_OPTIONS']
+        readme.unlink()
         print('  PASS: extra arithmetic, source, bash special and line controls')
         assert all(calibration(fixture))
         print('  PASS: fixed calibration controls')
