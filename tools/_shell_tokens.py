@@ -936,7 +936,7 @@ class _Body:
             compound = (word not in (RESERVED_OPENERS - {"time"}) | COMPOUND_CLOSERS
                         and word not in ("for", "select", "case", "function", "[[")
                         and assignment_split(word) is None
-                        and re.match(r"(?:while|until|for|select|if|case|\[\[)(?=$|[ \t\n;&|()<>])", rest))
+                        and re.match(r"(?:while|until|for|select|if|case|\[\[)(?=$|[ \t\n;&|()]|[<>](?!\())", rest))
             if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")) \
                     or compound:
                 # #2586: bash takes ANY word before a compound for its name,

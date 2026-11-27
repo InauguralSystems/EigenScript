@@ -1010,6 +1010,13 @@ ROLE_INCIDENTS = [
      [("coproc", "reserved"), ("QZV", "command"), ('if"x"', "argument"), ("c3", "command")]),
     ("coproc QZV while\\x\nc3\n",
      [("coproc", "reserved"), ("QZV", "command"), ("while\\x", "argument"), ("c3", "command")]),
+    # #2586 Codex: a process substitution glued to a keyword is one argument
+    # (bash ran QZV, c1, c3); a plain redirection still ends it (bash ran c1, c3).
+    ("coproc QZV while<(c1)\nc3\n",
+     [("coproc", "reserved"), ("QZV", "command"), ("while<(c1)", "argument"), ("c3", "command")]),
+    ("coproc QZV if>f c1; then :; fi\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("if", "reserved"), ("f", "target"), ("c1", "command"),
+      ("then", "reserved"), (":", "command"), ("fi", "reserved"), ("c3", "command")]),
     # #2586: names, every reserved word and body/next-line commands are pinned.
     ("coproc QZV while :; do c1; break; done\nc3\n",
      [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
