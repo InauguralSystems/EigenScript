@@ -2219,6 +2219,47 @@ static const char *sgd_pair_kind(const Value *v) {
     return val_type_name(v->type);
 }
 
+static const char *sgd_row_kind(ValType type) {
+    if (type == VAL_LIST) return "list";
+    if (type == VAL_INT || type == VAL_FLOAT) return "number";
+    return val_type_name(type);
+}
+
+/* A list's shape for sgd_update's messages (#2523): "[n]" for a flat list;
+ * "[r rows: c0, c1, ...]" when any row is a list, with scalar rows shown by
+ * their actual kind.  Invalid kinds are diagnosed before this is called.
+ * Rows past the sixth are elided with "...". */
+static void sgd_list_shape(Value *v, char *out, size_t cap) {
+    int n = v->data.list.count;
+    int has_list = 0;
+    for (int r = 0; r < n; r++) has_list |= list_elem_type(v, r) == VAL_LIST;
+    if (n == 0 || !has_list) { snprintf(out, cap, "[%d]", n); return; }
+    size_t k = (size_t)snprintf(out, cap, "[%d rows:", n);
+    for (int r = 0; r < n && k < cap; r++) {
+        if (r == 6) { k += (size_t)snprintf(out + k, cap - k, " ..."); break; }
+        Value *row = list_get_ref(v, r);
+        ValType row_type = list_elem_type(v, r);
+        if (row_type == VAL_LIST && row)
+            k += (size_t)snprintf(out + k, cap - k, "%s %d", r ? "," : "", row->data.list.count);
+        else k += (size_t)snprintf(out + k, cap - k, "%s %s", r ? "," : "",
+                                   sgd_row_kind(row_type));
+    }
+    if (k < cap) snprintf(out + k, cap - k, "]");
+}
+
+/* A numeric list is either a vector (all number rows) or a matrix (all list
+ * rows).  Mixing the two is not a tensor.  Keep this separate from
+ * tensor_cells_numeric so its long-standing leaf-kind error still wins. */
+static int sgd_list_mixes_row_kinds(Value *v) {
+    int has_list = 0, has_number = 0;
+    for (int r = 0; r < v->data.list.count; r++) {
+        ValType type = list_elem_type(v, r);
+        has_list |= type == VAL_LIST;
+        has_number |= type == VAL_INT || type == VAL_FLOAT;
+    }
+    return has_list && has_number;
+}
+
 Value* builtin_sgd_update(Value *arg) {
     STRICT_LIST_MAX(arg, 3, "sgd_update");
     ARG_GUARD(!arg || arg->type != VAL_LIST || arg->data.list.count < 3,
@@ -2235,12 +2276,67 @@ Value* builtin_sgd_update(Value *arg) {
                  "got %s params and %s grad", sgd_pair_kind(param), sgd_pair_kind(grad));
         return make_null();
     }
+    if (param->type == VAL_LIST) {
+        /* Preserve #1637's pinned leaf-kind diagnostic.  Shape comparison is
+         * meaningful only after every row/cell is known to be numeric/list. */
+        if (!tensor_cells_numeric(param, "sgd_update") ||
+            !tensor_cells_numeric(grad, "sgd_update")) return make_null();
+        int pn = param->data.list.count, gn = grad->data.list.count;
+        char ps[160], gs[160];
+        sgd_list_shape(param, ps, sizeof ps);
+        sgd_list_shape(grad, gs, sizeof gs);
+        if (sgd_list_mixes_row_kinds(param)) {
+            rt_error(EK_TYPE, 0, "sgd_update: params shape %s mixes list and number rows", ps);
+            return make_null();
+        }
+        if (sgd_list_mixes_row_kinds(grad)) {
+            rt_error(EK_TYPE, 0, "sgd_update: grad shape %s mixes list and number rows", gs);
+            return make_null();
+        }
+        if (pn != gn) {
+            rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
+            return make_null();
+        }
+        for (int r = 0; r < pn; r++) {
+                Value *row = list_get_ref(param, r);
+                Value *grow = list_get_ref(grad, r);
+                ValType row_type = list_elem_type(param, r);
+                ValType grow_type = list_elem_type(grad, r);
+                int row_list = row_type == VAL_LIST;
+                int grow_list = grow_type == VAL_LIST;
+                if (row_list != grow_list) {
+                    rt_error(EK_TYPE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %s against %s",
+                             ps, gs, r, sgd_row_kind(row_type), sgd_row_kind(grow_type));
+                    return make_null();
+                }
+                if (row_list && row && grow && row->data.list.count != grow->data.list.count) {
+                    rt_error(EK_VALUE, 0, "sgd_update: params shape %s and grad shape %s differ at row %d: %d against %d",
+                             ps, gs, r, row->data.list.count, grow->data.list.count);
+                    return make_null();
+                }
+        }
+    } else if ((param->data.buffer.rows > 0) != (grad->data.buffer.rows > 0) ||
+               (param->data.buffer.rows > 0
+                ? (param->data.buffer.rows != grad->data.buffer.rows ||
+                   param->data.buffer.cols != grad->data.buffer.cols)
+                : param->data.buffer.count != grad->data.buffer.count)) {
+        char ps[64], gs[64];
+        if (param->data.buffer.rows > 0)
+            snprintf(ps, sizeof ps, "%d x %d", param->data.buffer.rows, param->data.buffer.cols);
+        else snprintf(ps, sizeof ps, "count %d", param->data.buffer.count);
+        if (grad->data.buffer.rows > 0)
+            snprintf(gs, sizeof gs, "%d x %d", grad->data.buffer.rows, grad->data.buffer.cols);
+        else snprintf(gs, sizeof gs, "count %d", grad->data.buffer.count);
+        rt_error(EK_VALUE, 0, "sgd_update: params shape %s does not match grad shape %s", ps, gs);
+        return make_null();
+    }
     /* #1637: the optional lr: null keeps the default, a number sets it,
      * anything else (a bool) raises instead of silently meaning the default. */
     double lr = 0.01;
     eigs_slot_opt_float(list_slot(arg, 2), &lr, __func__);
     if (g_has_error) return make_null();
-    if (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update")) return make_null();
+    if (param->type != VAL_LIST &&
+        (!tensor_cells_numeric(param, "sgd_update") || !tensor_cells_numeric(grad, "sgd_update"))) return make_null();
 
     /* #1093: both operands flat buffers — update the doubles in place. */
     if (param->type == VAL_BUFFER && grad->type == VAL_BUFFER) {
@@ -2840,16 +2936,6 @@ Value* builtin_tensor_save(Value *arg) {
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
-/* #262 Step E: the on-disk observer block is read past (format compatibility)
- * but no longer applied — Values carry no observer state under the slot model. */
-static void restore_observer_1d(Value *list, double *obs_data, int count) {
-    (void)list; (void)obs_data; (void)count;
-}
-
-static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int cols) {
-    (void)tensor; (void)obs_data; (void)rows; (void)cols;
-}
-
 /* ==== BUILTIN: tensor_load ==== */
 /* tensor_load of path — load 1D or 2D tensor from binary file.
  * Reads legacy observer blocks without restoring observation history. */
@@ -2917,11 +3003,16 @@ Value* builtin_tensor_load(Value *arg) {
         int err = errno;
         return file_io_error("tensor_load", arg->data.str, err);
     }
+    struct stat load_st;
+    if (fstat(fileno(f), &load_st) == 0 && S_ISDIR(load_st.st_mode)) {
+        fclose(f);
+        return file_io_error("tensor_load", arg->data.str, EISDIR);
+    }
 
     /* Try new format (4-word header with flags) */
     uint32_t header[4];
     if (fread(header, sizeof(uint32_t), 4, f) != 4) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short four-word header");
     }
 
     uint32_t ndim_raw = header[0];
@@ -2929,28 +3020,28 @@ Value* builtin_tensor_load(Value *arg) {
     uint32_t cols_raw = header[2];
     uint32_t flags = header[3];
 
-    /* Detect old format: flags would be a huge number if it's actually data */
-    int has_observer = 0;
-    if (flags <= 1) {
-        has_observer = (flags & 1);
-    } else {
-        /* Old 3-word header — rewind and re-read */
-        fseek(f, 0, SEEK_SET);
-        uint32_t old_header[3];
-        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) {
-            fclose(f); tensor_load_record_verdict(0, 0); return make_null();
-        }
-        ndim_raw = old_header[0];
-        rows_raw = old_header[1];
-        cols_raw = old_header[2];
-        has_observer = 0;
+    /* R1 (#2533): flags are a header word, never payload detection. */
+    if (flags > 1) {
+        fclose(f);
+        return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str,
+                                   "flags word is not 0 or 1; the three-word format is not read");
     }
+    int has_observer = (flags & 1);
 
     if (ndim_raw != 1 && ndim_raw != 2) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str, "ndim is not 1 or 2");
     }
     if (rows_raw == 0 || cols_raw == 0) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str,
+                                               rows_raw == 0 ? "zero rows" : "zero columns");
+    }
+
+    /* R2 (#2534): both writers encode a 1-D tensor with rows=1. */
+    if (ndim_raw == 1 && rows_raw != 1) {
+        char detail[96];
+        snprintf(detail, sizeof detail, "1-D rows=%u, expected 1", rows_raw);
+        fclose(f);
+        return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str, detail);
     }
 
     uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
@@ -2967,12 +3058,17 @@ Value* builtin_tensor_load(Value *arg) {
     int total = (int)total64;
 
     /* Read numeric data */
-    double *data = xmalloc_array((size_t)total, sizeof(double));
+    /* The header is untrusted.  Unlike xmalloc_array, malloc lets this
+     * boundary turn address-space exhaustion into the documented error. */
+    double *data = malloc((size_t)total * sizeof(double));
     if (!data) {
-        fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        char detail[96];
+        snprintf(detail, sizeof detail, "payload allocation of %zu bytes failed",
+                 (size_t)total * sizeof(double));
+        fclose(f); return file_recorded_error(EK_LIMIT, "tensor_load", arg->data.str, detail);
     }
     if ((int)fread(data, sizeof(double), total, f) != total) {
-        free(data); fclose(f); tensor_load_record_verdict(0, 0); return make_null();
+        free(data); fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short tensor payload");
     }
     /* #971: the file is untrusted bytes, so a NaN pattern is reachable
      * here. flat_to_tensor_* retains it through make_float; checking first lets the strict raise
@@ -2985,16 +3081,14 @@ Value* builtin_tensor_load(Value *arg) {
         }
     }
 
-    /* Read observer state if present */
-    double *obs_data = NULL;
+    /* R3 (#2529): read and validate the block; seeking past EOF is not a read. */
     if (has_observer) {
-        obs_data = xmalloc_array(safe_size_mul((size_t)total, 5), sizeof(double));
-        if (obs_data) {
-            if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
-                free(obs_data);
-                obs_data = NULL;
-            }
+        double *obs_data = xmalloc_array(safe_size_mul((size_t)total, 5), sizeof(double));
+        if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
+            free(obs_data); free(data); fclose(f);
+            return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short observer block");
         }
+        free(obs_data);
     }
 
     fclose(f);
@@ -3008,17 +3102,8 @@ Value* builtin_tensor_load(Value *arg) {
     free(data);
 
     if (g_has_error) {
-        free(obs_data); val_decref(result); tensor_load_record_verdict(0, 0);
+        val_decref(result); tensor_load_record_verdict(0, 0);
         return make_null();
-    }
-
-    /* Consume legacy observer metadata; the restore hooks are compatibility no-ops. */
-    if (obs_data && result) {
-        if (ndim == 1)
-            restore_observer_1d(result, obs_data, total);
-        else
-            restore_observer_2d(result, obs_data, rows, cols);
-        free(obs_data);
     }
 
     tensor_load_record_verdict(0, 0);

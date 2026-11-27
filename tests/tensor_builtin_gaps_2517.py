@@ -118,7 +118,10 @@ cases.append(("sgd_update_cols buffer/buffer bits",
               buffer("p", 1) + "\n" + buffer("g", 1) +
               "\nsgd_update_cols of [p,g,[0,1],0.5]\n"
               "assert of [[buf_get_bits of [p,0],buf_get_bits of [p,1]] == [4602678819172646912,4607182418800017408], \"buffer/buffer bits\"]"))
-for p, g in (("buffer1d", "buffer1d"), ("buffer1d", "buffer")):
+cases.append(("sgd_update buffer1d/buffer shape refused R4",
+              raises("sgd_update", "buffer1d", "buffer", "value",
+                     "params shape count 2 does not match grad shape 1 x 2")))
+for p, g in (("buffer1d", "buffer1d"),):
     cases.append((f"sgd_update {p}/{g} elementwise",
                   buffer("p", 0) + "\n" + buffer("g", 0 if g == "buffer1d" else 1) +
                   "\nsgd_update of [p, g, 0.5]\n"

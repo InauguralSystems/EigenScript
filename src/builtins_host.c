@@ -783,6 +783,21 @@ Value *file_io_error(const char *fn, const char *path, int err) {
     return file_io_error_message(fn, message);
 }
 
+Value *file_recorded_error(ErrKind kind, const char *fn, const char *path,
+                           const char *defect) {
+    char message[3900];
+    snprintf(message, sizeof(message), "%s: '%s': %s", fn, path, defect);
+    if (trace_core_kind_declared(fn) && __builtin_expect(g_trace_enabled, 0)) {
+        Value *record = make_list(2);
+        list_append_owned(record, make_str(err_kind_name(kind)));
+        list_append_owned(record, make_str(message));
+        trace_nondet_value(fn, record);
+        val_decref(record);
+    }
+    rt_error(kind, 0, "%s", message);
+    return make_null();
+}
+
 /* Return zero only when replay is disabled.  Once replay is enabled every
  * result, including an unservable/corrupt record, short-circuits live I/O. */
 int file_io_replay(const char *fn, Value **out) {
@@ -802,6 +817,19 @@ int file_io_replay(const char *fn, Value **out) {
           list_elem_type(v, 1) == VAL_NULL))) {
         const char *message = list_get_ref(v, 0)->data.str;
         rt_error(EK_IO, 0, "%s", message);
+        val_decref(v);
+        *out = make_null();
+        return 1;
+    }
+    /* Only tensor_load records this tagged error form.  In particular, an
+     * ls answer containing exactly two strings is an ordinary answer. */
+    if (strcmp(fn, "tensor_load") == 0 && v && v->type == VAL_LIST &&
+        v->data.list.count == 2 &&
+        list_elem_type(v, 0) == VAL_STR && list_elem_type(v, 1) == VAL_STR) {
+        const char *kind = list_get_ref(v, 0)->data.str;
+        ErrKind ek = strcmp(kind, "value") == 0 ? EK_VALUE :
+                     strcmp(kind, "limit") == 0 ? EK_LIMIT : EK_IO;
+        rt_error(ek, 0, "%s", list_get_ref(v, 1)->data.str);
         val_decref(v);
         *out = make_null();
         return 1;

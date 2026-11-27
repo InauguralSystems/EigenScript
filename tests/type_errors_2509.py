@@ -96,6 +96,9 @@ def main():
  allowed=ROOT/'tests/type_errors_2509_allowed.tsv'
  expected={}; docs=(ROOT/'docs/BUILTINS.md').read_text()
  doc_rows={m.group(1):m.group(0) for m in re.finditer(r'^\| `([^`]+)` \|.*$',docs,re.M)}
+ # Full generated cases live on their own page; keep citations within this builtin.
+ details={m.group(1):m.group(2) for m in re.finditer(
+  r'^## `([^`]+)`\n(.*?)(?=^## |\Z)', (ROOT/'docs/builtin-errors.md').read_text(), re.M|re.S)}
  # A reason quotes a recognised part of the builtin's own row: its whole signature cell,
  # one backticked form of that cell, or one whole sentence of its description. A
  # fragment such as '| `usleep` |' or a few words out of a sentence is not a reason.
@@ -123,7 +126,7 @@ def main():
  other_path=ROOT/'tests/type_errors_2509_other_kind.tsv'
  for line in other_path.read_text().splitlines()[1:]:
   c=line.split('\t'); key=tuple(c[:5]); kind=c[5]; quote=c[6]
-  if not quote or quote not in doc_rows.get(c[0],''):
+  if not quote or not any(quote in text for text in (doc_rows.get(c[0],''),details.get(c[0],''))):
    print('FAIL: invalid other-kind classification:',*key,kind,quote); reason_ok=False
   other[key]=kind
  broken={tuple(j[:4])+(j[5],) for j,v in rr if any(x=='BROKEN' for x in v)}

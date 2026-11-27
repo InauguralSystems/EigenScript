@@ -377,10 +377,22 @@ Notes on the families:
   taped `io` message **before** making any live filesystem call. Mutations whose
   payload is not represented on the tape (including `tensor_save`) are refused
   loudly under replay, also before opening their path.
-- **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
-  records one compact observation: the standard one-string file-I/O error
-  record when opening the path fails, `[rows, cols]` for an over-cap header,
-  otherwise `null`. Replay re-raises a recorded open error byte-for-byte.
+- **Tensor files:** the executed table's `short-header` case records a
+  two-string `[kind, message]`, for example with the path `input.tensor`:
+  ```text
+  N 0 tensor_load=["io", "tensor_load: 'input.tensor': short four-word header"]
+  ```
+  The error cases are [generated from the executed table](builtin-errors.md#tensor_load)
+  and are **not restated here**. Its `tape: true` lines check byte-identical
+  error replay. The runner removes existing regular-file or directory inputs
+  before replay; `tape pairs` counts only those runs. Missing-path inputs are
+  absent during recording too: their replays contribute to `tape replays`,
+  but cannot prove that the error came from the tape.
+  See [the table format](../tests/builtin_errors/README.md).
+  A path that cannot be opened or is a directory records the standard
+  one-string file-I/O error record, an over-cap header records `[rows, cols]`,
+  and a load that raises nothing records `null`. Replay re-raises a recorded
+  open or file error byte-for-byte.
   For every other structurally valid verdict, replay raises the
   same generic `io` file-read-boundary error before filesystem access; an
   over-cap verdict does not reconstruct its recorded `limit` error. Tensor

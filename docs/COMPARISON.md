@@ -512,9 +512,7 @@ accept either; `matmul`, `softmax`, and `gather` on a shaped-buffer matrix,
 hand back a buffer when every tensor operand was one, and `sum`, `mean`,
 `norm`, and `gather of [vec, i]` on a 1-D tensor, return a number.
 `tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
-`tensor_load` also raises `io` when its path cannot be opened. Unlike NumPy's
-implicit array conversion, the `sgd_update` family refuses a mixed list/buffer
-parameter-gradient pair with `type_mismatch` before mutation.
+For error behaviour, see [`tensor_load`](BUILTINS.md#errors-tensor_load), [`sgd_update`](BUILTINS.md#errors-sgd_update), [`audio_music_play`](BUILTINS.md#errors-audio_music_play).
 `matmul`, `matmul_at`, and `matmul_bt` round each multiplication to binary64
 before adding it to the accumulator, in ascending inner-index order, on both
 containers. They do not fuse the multiplication and addition.

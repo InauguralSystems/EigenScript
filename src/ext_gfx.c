@@ -1881,8 +1881,9 @@ Value* builtin_audio_stream_close(Value *arg) {
 
 /* audio_music_play of [path, loops] — stream a music file (mp3/ogg/wav) via
  * SDL_mixer. loops: -1 = loop forever, 0 = play once, N = N+1 plays. Replaces
- * any current track. Returns 1 on success, 0 on failure (missing mixer lib,
- * unreadable/undecodable file, no audio device). */
+ * any current track. A missing/unreadable/directory path raises io before
+ * SDL setup; a readable but undecodable file raises io after setup. Returns
+ * false when SDL/mixer/device setup or playback itself fails. */
 Value* builtin_audio_music_play(Value *arg) {
     STRICT_LIST_MAX(arg, 2, "audio_music_play");
     /* #1007: both #971 deferral markers converted. Above load_sdl2(), the [135] rule. */
@@ -1905,6 +1906,18 @@ Value* builtin_audio_music_play(Value *arg) {
         return make_bool(0);
     }
     const char *path = list_get_ref(arg, 0)->data.str;
+    FILE *probe = fopen(path, "rb");
+    if (!probe) {
+        rt_error(EK_IO, 0, "audio_music_play: '%s': %s", path, strerror(errno));
+        return make_null();
+    }
+    struct stat music_st;
+    if (fstat(fileno(probe), &music_st) == 0 && S_ISDIR(music_st.st_mode)) {
+        fclose(probe);
+        rt_error(EK_IO, 0, "audio_music_play: '%s': %s", path, strerror(EISDIR));
+        return make_null();
+    }
+    fclose(probe);
     if (!load_sdl2()) return make_bool(0);  /* fs:ANSWER the header's documented "0 on failure (missing mixer lib ...)" -- libSDL2 absent is environment state, not an argument */
     p_SDL_Init(MY_SDL_INIT_AUDIO);      /* ensure the audio subsystem is up */
     if (!load_sdl_mixer()) return make_bool(0);  /* fs:ANSWER SDL2_mixer not loadable -- the documented missing-mixer-lib 0 */
@@ -1922,9 +1935,9 @@ Value* builtin_audio_music_play(Value *arg) {
     if (g_music) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
     g_music = p_Mix_LoadMUS(path);
     if (!g_music) {
-        fprintf(stderr, "audio_music: cannot load '%s': %s\n", path,
-                p_SDL_GetError ? p_SDL_GetError() : "?");
-        return make_bool(0);  /* fs:ANSWER Mix_LoadMUS failed -- the documented unreadable/undecodable-file 0 */
+        rt_error(EK_IO, 0, "audio_music_play: '%s': cannot decode: %s", path,
+                 p_SDL_GetError ? p_SDL_GetError() : "?");
+        return make_null();
     }
     if (p_Mix_PlayMusic(g_music, (int)loops) < 0) {
         fprintf(stderr, "audio_music: play failed: %s\n",
