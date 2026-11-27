@@ -32,6 +32,8 @@ we rebase for free. So before merging one of ours: `gh pr list` and land any
 **ready** contributor PR (green + reviewed, not authored by us) first, then rebase
 ours onto the new main. Rebasing our own costs nothing; asking them does. (Only
 *ready* PRs — never merge an unready contributor PR just to dodge a rebase.)
+To put a PR in the merge queue (from a cloud session too), use the call in
+[docs/CI.md, "Landing a PR"](docs/CI.md#landing-a-pr-adding-it-to-the-merge-queue); never bypass the queue.
 
 ## Build & test
 

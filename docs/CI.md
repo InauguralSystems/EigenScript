@@ -199,6 +199,35 @@ on the commit that will land, before it lands — see **Platform tiers** below.
 #1138 and #1158 both carried lanes only CI could run. Contributors never wait
 on it and never rebase to satisfy it; the queue does both.
 
+### Landing a PR: adding it to the merge queue
+
+A PR enters the queue through GitHub's asynchronous merge API (REST), with
+`sha` pinned to the head that was reviewed, so a push after review cannot ride
+in unreviewed:
+
+```sh
+gh api -X PUT repos/InauguralSystems/EigenScript/pulls/<n>/merge-async \
+  -H "X-GitHub-Api-Version: 2026-03-10" \
+  -f sha=<reviewed head sha> -f merge_action=merge_queue -F bypass_rules=false
+gh api repos/InauguralSystems/EigenScript/pulls/<n>/merge-async/<uuid from the reply> \
+  -H "X-GitHub-Api-Version: 2026-03-10"        # repeat until status is "enqueued"
+```
+
+From a cloud session the two usual ways fail: `gh pr merge` needs GitHub's
+GraphQL API, which cloud sessions cannot reach, and the auto-merge route
+answers `422 Auto merge is not allowed for this repository` (#2581).
+
+**Never send `merge_action=direct_merge` or `bypass_rules=true`.** Either one
+puts the PR on `main` without the main lane, and the push run's "verify queue
+run and promote ci-main" job reports the bypass only after `main` has moved.
+The main ruleset grants `bypass_mode: always` to organization admins and to the
+admin repository role, and the account the agents act as holds it
+(`gh api repos/InauguralSystems/EigenScript/rulesets/17713865 --jq
+.current_user_can_bypass` prints `always`). Whether that grant stays is the
+repository owner's decision (#2581). While it stands, only the owner uses it,
+by hand, when the queue itself cannot run (a required check broken for every
+PR), and says so on the PR; an agent never does.
+
 ### The main lane on demand (`workflow_dispatch`)
 
 A long-lived branch, such as an integration branch that lives through many
