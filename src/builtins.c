@@ -5518,9 +5518,8 @@ static Task *task_handle_resolve(Value *arg, const char *who, int *out_id) {
     uint32_t gen = 0;
     if (!arg || !val_is_number(arg)) return NULL;
     int64_t packed = eigs_int_arg(arg, who);
-    if (g_has_error || packed <= 0 || packed > INT64_C(9007199254740992)) return NULL;
-    /* The packed handle API is a double, but every allowed id is exact. */
-    if (!task_handle_unpack((double)packed, &id, &gen)) return NULL;
+    if (g_has_error) return NULL;
+    if (!task_handle_unpack(packed, &id, &gen)) return NULL;
     int why = HANDLE_CLAIM_GONE;
     Task *t = (Task *)handle_lookup(id, gen, HANDLE_TASK, &why);
     if (!t && (why == HANDLE_CLAIM_STALE || why == HANDLE_CLAIM_TYPE))

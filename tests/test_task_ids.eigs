@@ -1,0 +1,43 @@
+# #2481: public ids keep their values across the int64_t scheduler seam.
+load_file of "lib/test.eigs"
+
+define worker() as:
+    return task_self of null
+
+try:
+    task_join of 1.5
+    assert_true of [false, "fractional task id must raise before any spawn"]
+catch e:
+    print of f"fractional={e.kind}: {e.message}"
+    assert_eq of [e.kind, "value", "fractional task id retains value error"]
+    assert_eq of [e.message, "'task_join': number 1.5 has no integer representation", "fractional task id retains diagnostic"]
+
+assert_eq of [task_self of null, 0, "main task id is zero"]
+first is task_spawn of worker
+second is task_spawn of worker
+third is task_spawn of worker
+print of [first, second, third]
+assert_eq of [first, 257, "first task id"]
+assert_eq of [second, 258, "second task id"]
+assert_eq of [third, 259, "third task id"]
+assert_eq of [task_join of first, first, "first task_self matches spawn"]
+assert_eq of [task_join of second, second, "second task_self matches spawn"]
+assert_eq of [task_join of third, third, "third task_self matches spawn"]
+task_detach of first
+task_detach of second
+task_detach of third
+
+# The allocator advances through all slots before returning to slot 1.
+i is 3
+loop while i < 255:
+    id is task_spawn of worker
+    task_join of id
+    task_detach of id
+    i += 1
+reused is task_spawn of worker
+print of reused
+assert_eq of [reused, 513, "reused slot has generation two"]
+assert_eq of [task_join of reused, reused, "reused task_self matches spawn"]
+assert_eq of [num_type of reused, "int", "public task ids are ints"]
+assert_eq of [task_join of (reused * 1.0), reused, "integral float handle remains accepted"]
+test_summary of null

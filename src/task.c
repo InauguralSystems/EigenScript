@@ -18,6 +18,7 @@
 #include "vm.h"
 #include "task.h"
 #include "trace.h"
+#include <inttypes.h>
 
 /* Forward decls for the file's own statics that are used before definition
  * (these sat at the top of vm.c's dispatch loop before the split). */
@@ -39,7 +40,7 @@ static void task_reap(Task *t);   /* #530 */
 /* #846: one scheduler-trace entry — a resume. `seq` is the entry's index. */
 typedef struct {
     double  tick;    /* virtual clock (task_now) at the resume */
-    double  task;    /* public task id (0 = main), including generation */
+    int64_t task;    /* public task id (0 = main), including generation */
     uint8_t cause;   /* SCAUSE_* below */
 } SchedTraceEntry;
 
@@ -103,21 +104,18 @@ static const char *const sched_cause_name[SCAUSE__COUNT] = {
 
 static TaskScheduler *sched_get(void) { return (TaskScheduler *)g_task_sched; }
 
-/* A task handle is numeric, so carry its slot generation in the number just
- * as socket handles do.  IEEE-754 doubles represent every integer through
- * 2^53 exactly; with 256 slots this leaves 45 generation bits before a task
- * id can cease to be exact (far beyond uint32_t's wrap). */
-double task_handle_pack(int id, uint32_t gen) {
+/* A public task handle packs the slot and uint32_t generation into an
+ * int64_t end to end. With 256 slots even the largest generation fits below
+ * 2^40, and the public values retain their original encoding. */
+int64_t task_handle_pack(int id, uint32_t gen) {
     if (id == 0) return 0;
-    return (double)id + (double)gen * (double)HANDLE_TABLE_SIZE;
+    return id + (int64_t)gen * HANDLE_TABLE_SIZE;
 }
 
-int task_handle_unpack(double packed, int *id, uint32_t *gen) {
-    if (!(packed > 0) || packed > 9007199254740992.0) return 0;
-    uint64_t p = (uint64_t)packed;
-    if ((double)p != packed) return 0;
-    int slot = (int)(p % HANDLE_TABLE_SIZE);
-    uint64_t generation = p / HANDLE_TABLE_SIZE;
+int task_handle_unpack(int64_t packed, int *id, uint32_t *gen) {
+    if (packed <= 0) return 0;
+    int slot = (int)(packed % HANDLE_TABLE_SIZE);
+    int64_t generation = packed / HANDLE_TABLE_SIZE;
     if (slot <= 0 || generation == 0 || generation > UINT32_MAX) return 0;
     if (id) *id = slot;
     if (gen) *gen = (uint32_t)generation;
@@ -313,7 +311,7 @@ Value *task_sched_trace_read(void) {
         Value *d = make_dict(4);
         dict_set_owned(d, "seq",   make_int(i));
         dict_set_owned(d, "tick",  make_float(e->tick));
-        dict_set_owned(d, "task",  make_int((int64_t)e->task));
+        dict_set_owned(d, "task",  make_int(e->task));
         dict_set_owned(d, "cause", make_str(e->cause < SCAUSE__COUNT
                                             ? sched_cause_name[e->cause] : "?"));
         list_append_owned(out, d);
@@ -478,7 +476,7 @@ double task_virtual_now(void) {
 /* task_self (builtins.c): the running task's id, in the same integer space
  * task_spawn returns — 0 for the main task, including before any scheduler
  * exists. Pure scheduler state, so no tape participation. */
-double task_current_id(void) {
+int64_t task_current_id(void) {
     TaskScheduler *s = sched_get();
     if (!s || s->current == 0) return 0;
     Task *t = sched_lookup(s, s->current);
@@ -710,7 +708,7 @@ static void sched_fatal_detach_dead(TaskScheduler *s, Task *t) {
     char why[512];
     task_error_summary(t->error_value, why, sizeof(why));
     rt_error(EK_VALUE, 0,
-             "task_detach: task %.0f already died of an uncaught error (%s) "
+             "task_detach: task %" PRId64 " already died of an uncaught error (%s) "
              "that nothing joined; detaching it would discard that error, so "
              "the program stops here", task_handle_pack(t->id, t->hgen), why);
     /* A stop is always reported. rt_error prints only while the process-global

@@ -450,6 +450,15 @@ build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist: tests/test_embe
 embed-int-freelist-test: build/$(EMBED_INT_FREELIST_VARIANT)/test_embed_integer_freelist
 	@echo "Embed integer freelist test built: $<"
 
+# #2481: the typed scheduler handle seam, linked against the suite variant.
+TASK_HANDLES_VARIANT ?= release
+TASK_HANDLES_OBJ := $(filter-out build/$(TASK_HANDLES_VARIANT)/main.o,$(OBJ_$(TASK_HANDLES_VARIANT)))
+build/$(TASK_HANDLES_VARIANT)/test_task_handles: tests/test_task_handles.c $(TASK_HANDLES_OBJ) $(wildcard $(SRC_DIR)/*.h) Makefile tools/werror_flags.txt
+	$(CC) $(FLAGS_$(TASK_HANDLES_VARIANT)) -I$(SRC_DIR) -o $@ $< $(TASK_HANDLES_OBJ) $(LIBS_$(TASK_HANDLES_VARIANT))
+.PHONY: task-handles-test
+task-handles-test: build/$(TASK_HANDLES_VARIANT)/test_task_handles
+	@echo "Task handle test built: $<"
+
 # #1171: one-writer compatibility and real setter routing; reuse the owning
 # variant without changing the CLI alias. GNU-style --wrap is test-only and
 # confined to Linux linking; portable runtime objects are unchanged.
