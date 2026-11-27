@@ -662,8 +662,9 @@ The fix copies Rust (tiers plus a merge queue), CPython and Go:
   that proof is honestly red and names the SHA. On success it retags the
   already-built `ci-<sha>` image as `ci-main`, only while the SHA remains
   main's tip. Its per-SHA concurrency group means a later merge cannot cancel
-  it. `pages.yml` separately deploys the site only on push (never from a queue
-  candidate that may still be rejected).
+  it. `pages.yml` separately deploys the site only on a push to `main`, a
+  `workflow_dispatch`, or a successful Release run (`workflow_run`), never from
+  a queue candidate that may still be rejected.
 - **Tier 2** — slow and port lanes, in `.github/workflows/nightly.yml`
   (today `macos-15-intel` and the full valgrind corpus). They never colour
   `main`; a failure opens or appends to one tracking issue.
@@ -812,7 +813,7 @@ file:
 | `Analyze C` (`codeql.yml`) | 1 | runs on every PR to `main` and in the queue, no path filter |
 | `playground (real emcc wasm32 build)` (`pages.yml`) | 1 | **aggregator** over `playground / build (…)`; reports on every PR and in the queue |
 | `playground / build (real emcc, web/build.sh) + docs site` (`pages.yml`) | advisory | the worker; required through the aggregator |
-| `deploy` (`pages.yml`) | advisory | runs only on push and `workflow_dispatch` — it publishes, it does not test |
+| `deploy` (`pages.yml`) | advisory | runs only on push, `workflow_dispatch` and a successful Release `workflow_run` — it publishes, it does not test |
 | `codspeed (simulation)` (`codspeed.yml`), and the CodSpeed app's `CodSpeed Performance Analysis` | advisory | path-filtered (`paths-ignore: '**.md'`), so it never reports on a docs-only PR; the instruction-count gate that blocks is `bench`. The lane's Value is modeled cycles, not instructions (runner pinned; `tools/codspeed_unit_guard.py` fails the job if that unit drifts; see INSTRUMENTS.md) |
 | `build` (`docker.yml`) | advisory | runs on push to `main`, `v*` tags and `workflow_dispatch`, never on a PR |
 | `observer reveal (sealed / dry H-cal)` (`observer-reveal.yml`) | advisory | path-filtered (`tools/observer_oracle/**` and the workflow itself), so it reports only on a PR that touches the oracle; on `workflow_dispatch` it runs the sealed reveal (**Observer oracle**, above) |
