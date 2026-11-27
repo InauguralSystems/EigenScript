@@ -53,6 +53,15 @@ verify_shard_chunks() {
     ' "$1" "$2"
 }
 if [ -z "${EIGS_PLAN_ACTIVE:-}" ]; then
+    # Set but empty (or only whitespace) is refused, never read as unset
+    # (#2525): a caller whose label lookup came back empty meant one section,
+    # and the whole suite is ~45 minutes. Unset still means the whole suite.
+    if [ -n "${EIGS_SUITE_SECTIONS+set}" ]; then
+        case "$EIGS_SUITE_SECTIONS" in
+            *[![:space:]]*) ;;
+            *) echo "ERROR: EIGS_SUITE_SECTIONS is set but names no section -- unset it to run the whole suite (#2525)"; exit 1 ;;
+        esac
+    fi
     __plan_modes=0
     for __m in "${EIGS_SUITE_SHARD:-}" "${EIGS_SUITE_CHANGED:-}" "${EIGS_SUITE_SECTIONS:-}"; do
         [ -z "$__m" ] || __plan_modes=$((__plan_modes + 1))

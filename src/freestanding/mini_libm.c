@@ -211,6 +211,16 @@ double eigs_pow(double x, double y) {
     /* Below 2^53, fmod distinguishes odd represented integers. At and above
      * 2^53 every finite double integer is even. */
     int y_odd = y_int && ay < 0x1p53 && eigs_fmod(ay, 2.0) == 1.0;
+    /* A zero base of either sign (#2567): -0.0 keeps its sign for an odd whole
+     * exponent only (C99 F.9.4.4); every other exponent answers +0 or +inf.
+     * Before, -0.0 fell past `x < 0.0` and lost its sign at odd |y| > 4, and
+     * the 0.5 shortcut returned sqrt(-0.0) = -0.0. */
+    if (x == 0.0) {
+        db zb; zb.d = x;
+        int neg = (zb.u >> 63) && y_odd;
+        double r = y > 0.0 ? 0.0 : mk_inf();
+        return neg ? -r : r;
+    }
     /* tiny integer exponents: repeated squaring is within ~1 ulp and
      * hits the common x^2 / x^3 / 1/x cases exactly where possible */
     if (y_int && eigs_fabs(y) <= 4.0) {
@@ -231,7 +241,6 @@ double eigs_pow(double x, double y) {
         double r = eigs_pow(-x, y);                    /* magnitude via general path */
         return y_odd ? -r : r;
     }
-    if (x == 0.0) return y > 0.0 ? 0.0 : mk_inf();
     /* log2(x) in double-double so the y-scaled exponent keeps ~2^-90
      * of precision — the single-double version's error grows linearly
      * with |y| (measured ~34 ulp at y=300 before this). */

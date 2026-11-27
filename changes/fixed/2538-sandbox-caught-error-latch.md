@@ -1,0 +1,1 @@
+- Inside `sandbox_run`, an error the program catches no longer fixes the kind, message and line of every later error: a later error is reported as itself, to the program's own `catch` and in the run's `error`. A caught sandbox refusal still ends the run as `sandbox` (#2538).

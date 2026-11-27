@@ -24,12 +24,33 @@ define stats_sum(vals) as:
 define count(vals) as:
     return len of vals
 
+# _real_sum: the sum behind the real-valued statistics (mean, variance,
+# covariance, describe), which must not raise where the builtin `mean` answers
+# (#2497). It adds exactly, as stats_sum does, while neither the running total
+# nor the next value reaches 2^62 in magnitude -- so no int add can overflow --
+# and continues in floats from the first step that could. stats_sum itself stays
+# exact int arithmetic and raises on overflow.
+define _real_sum(vals) as:
+    total is 0
+    exact is true
+    for i in range of (len of vals):
+        v is vals[i]
+        if exact:
+            if (abs of total) < 4611686018427387904 and (abs of v) < 4611686018427387904:
+                total is total + v
+            else:
+                exact is false
+                total is total * 1.0 + v * 1.0
+        else:
+            total is total + v * 1.0
+    return total
+
 # stats_mean: arithmetic stats_mean
 define stats_mean(vals) as:
     n is len of vals
     if n == 0:
         return 0
-    return (stats_sum of vals) / n
+    return (_real_sum of vals) / n
 
 # median: middle value (sort + pick middle)
 define median(vals) as:
@@ -52,7 +73,7 @@ define median(vals) as:
                 j is 0
     mid is floor of (n / 2)
     if (n % 2) == 0:
-        return (sorted[mid - 1] + sorted[mid]) / 2
+        return (_real_sum of ([sorted[mid - 1], sorted[mid]])) / 2
     return sorted[mid]
 
 # mode: most common value
@@ -267,13 +288,13 @@ define correlation(xs, ys) as:
     # Center on the PAIRED prefix, not the full lists. With mismatched
     # lengths, stats_mean of the whole series includes elements that were never
     # paired, so the covariance is centered on the wrong point (#638).
-    mx is 0
-    my is 0
+    paired_x is []
+    paired_y is []
     for i in range of n:
-        mx is mx + xs[i]
-        my is my + ys[i]
-    mx is mx / n
-    my is my / n
+        append of [paired_x, xs[i]]
+        append of [paired_y, ys[i]]
+    mx is (_real_sum of paired_x) / n
+    my is (_real_sum of paired_y) / n
     sum_xy is 0
     sum_xx is 0
     sum_yy is 0

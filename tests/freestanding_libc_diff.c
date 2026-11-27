@@ -591,8 +591,9 @@ static void t_libm_ulp(void) {
     CHECK(maxu <= 8, "pow exceeds 8 ulp");
     /* #2477: every represented whole exponent is valid for a negative base.
      * Oddness is meaningful below 2^53; all represented integers at and above
-     * that boundary are even. Fractional, zero-base and infinite-base answers
-     * remain pinned to the system library. */
+     * that boundary are even. The `unchanged` rows pin fractional and
+     * infinite-base answers and the zero bases at exponents 3 and -3 only;
+     * the zero-base block below covers the other odd and even exponents. */
     {
         const double bases[] = {-1.0, -2.0, -0.5};
         const double exponents[] = {1e15 - 1.0, 1e15 + 1.0,
@@ -623,6 +624,32 @@ static void t_libm_ulp(void) {
         }
         printf("  negative-base pow boundaries: examined %d\n", examined);
         CHECK(examined == 35, "negative-base pow boundaries: examined %d", examined);
+    }
+    /* #2567: a zero base keeps the system library's sign for every odd whole
+     * exponent, positive and negative (-0.0 to an odd power is -0.0, to an odd
+     * negative power -inf), and even and fractional exponents are unchanged.
+     * Rows at 1, 5, 1e15+1 and 2^53-1 and their negatives (odd), 2, 4, 1e15,
+     * 2^53, 2^53+2 and their negatives (even), and 0.5, 2.5, -0.5 (fractional). */
+    {
+        const double bases[] = {-0.0, 0.0};
+        const double exponents[] = {
+            1.0, 5.0, 1e15 + 1.0, 0x1p53 - 1.0,
+            -1.0, -5.0, -1e15 - 1.0, -(0x1p53 - 1.0),
+            2.0, 4.0, 1e15, 0x1p53, 0x1p53 + 2.0,
+            -2.0, -4.0, -1e15, -0x1p53, -(0x1p53 + 2.0),
+            0.5, 2.5, -0.5, -2.5};
+        int examined = 0;
+        for (size_t i = 0; i < sizeof(bases) / sizeof(bases[0]); i++)
+            for (size_t j = 0; j < sizeof(exponents) / sizeof(exponents[0]); j++) {
+                double want = pow(bases[i], exponents[j]);
+                double got = eigs_pow(bases[i], exponents[j]);
+                examined++;
+                CHECK((isnan(want) && isnan(got)) || bits_of(want) == bits_of(got),
+                      "pow(%a, %a): %a, the system library %a",
+                      bases[i], exponents[j], got, want);
+            }
+        printf("  zero-base pow signs: examined %d\n", examined);
+        CHECK(examined == 44, "zero-base pow signs: examined %d", examined);
     }
     /* #2444: an infinite or NaN argument has the system library's answer,
      * exactly (the same bits, or both NaN). Every one-argument function of

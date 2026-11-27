@@ -3527,6 +3527,10 @@ static Value *vm_run_ex(EigsChunk *chunk, Env *env, Task *resume,
             vm_error_flush_pending(chunk, ip);   /* #407: uncaught print + caret */ \
             if (frame->try_count > 0 && !g_exit_requested) { \
                 g_has_error = 0; \
+                /* #2538: a caught error is consumed; the sandbox latch keeps \
+                 * one C call's first diagnostic, not the run's. A caught \
+                 * refusal stays on its own record (g_sandbox_refusal). */ \
+                if (g_sandbox_active) g_sandbox_error_latched = 0; \
                 g_try_depth--; \
                 frame->try_count--; \
                 uint8_t *_catch_ip = frame->try_handlers[frame->try_count].catch_ip; \

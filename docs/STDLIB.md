@@ -268,12 +268,18 @@ iteration.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `auth_login` | `auth_login of password` | Verify password, set session token |
-| `auth_check` | `auth_check of null` | Read the bearer token from the request headers; return JSON with `status: "ok"`, or `status: "error"` and an error message |
+| `auth_check` | `auth_check of null` | Read the bearer token from the request's one `Authorization` field; return JSON with `status: "ok"`, or `status: "error"` and an error message |
 | `auth_logout` | `auth_logout of null` | Clear session |
 | `auth_get_token` | `auth_get_token of null` | Return current token |
-| `require_auth` | `require_auth of null` | Check auth from HTTP headers |
+| `require_auth` | `require_auth of null` | Check the bearer token from the request's one `Authorization` field |
 
-Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
+The token is read from the request's one `Authorization` field with
+`http_request_header of "authorization"`, never from the request's text. The
+field's value must be `Bearer` in any case, one or more spaces, then the token.
+No `Authorization` field, two of them, or another scheme is refused with the
+same answer as a missing token (#2374).
+
+Requires: `env_get`, `random_hex`, `http_request_header` builtins.
 
 ### lib/observer.eigs — Observer Utilities
 
@@ -1269,6 +1275,12 @@ Descriptive statistics over flat lists of numbers. Population and sample variant
 | `covariance` | `covariance of [xs, ys]` | covariance of two lists |
 | `correlation` | `correlation of [xs, ys]` | Pearson correlation coefficient |
 | `describe` | `describe of vals` | return dict with count, mean, median, std_dev, min, max, q25, q75 |
+
+`stats_sum` is exact int arithmetic and raises on int overflow. The real-valued
+statistics (`stats_mean`, the even-length `median`, the variances and standard
+deviations, `z_scores`, `covariance`, `correlation`, `describe`) add exactly
+while no step can overflow and in floats from there, so a list of large ints
+whose mean is representable answers, as the builtin `mean` does (#2497).
 
 `stats.stats_mean` and `stats.median` already exist — reach for them instead of
 re-deriving a `_pr_mean`/`_pr_median`. This example is executed and checked

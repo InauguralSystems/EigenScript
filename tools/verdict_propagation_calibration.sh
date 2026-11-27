@@ -10,9 +10,10 @@ trap 'rm -rf "$TMP"' EXIT
 LEDGER=$TMP/ledger; LOG=$TMP/suite.log; : >"$LEDGER"
 SUITE_SELECT=""; [ "$SELFTEST" -eq 1 ] && SUITE_SELECT=99aae
 
-(cd "$ROOT" && EIGS_SECTION_TIME=0 EIGS_TEST_FORCE_SUMMARY_FAILURE=1 \
+# The whole-suite run leaves EIGS_SUITE_SECTIONS unset: set-but-empty is refused (#2525).
+(cd "$ROOT" && if [ -n "$SUITE_SELECT" ]; then export EIGS_SUITE_SECTIONS="$SUITE_SELECT"; else unset EIGS_SUITE_SECTIONS; fi &&
+ EIGS_SECTION_TIME=0 EIGS_TEST_FORCE_SUMMARY_FAILURE=1 \
  EIGS_TEST_FORCE_SUMMARY_LEDGER="$LEDGER" \
- EIGS_SUITE_SECTIONS="$SUITE_SELECT" \
  EIGS_VERDICT_PROPAGATION_PLANT="$SELFTEST" bash tests/run_all_tests.sh) >"$LOG" 2>&1 || :
 
 # Attribute FAIL lines to the section opened by the suite's established [label] convention.

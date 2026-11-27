@@ -42,9 +42,10 @@
 #   is srand48(ts.tv_sec ^ ts.tv_nsec ^ getpid()) from a CLOCK_MONOTONIC
 #   reading taken just before (src/builtins.c, random_seed_once). The shim
 #   records each thread's last CLOCK_MONOTONIC reading and pins an srand48
-#   seed that equals that formula, whatever its value; a script's
-#   `seed_random of N` reaches srand48 unchanged (an explicit seed equal to
-#   the formula by chance would be pinned too).
+#   seed that equals that formula, whatever its value. A script's
+#   `seed_random of N` with N from 0 to 2^32-1 reaches srand48 unchanged (an
+#   explicit seed equal to the formula by chance would be pinned too); any
+#   other N is mixed into seed48 (#1886), which the shim does not touch.
 # - libc rand() (audio_noise): main() seeds it with srand(time(NULL)); every
 #   srand call is pinned (main's are its only callers).
 # random_hex reads /dev/urandom by design (cryptographic) and stays unpinned:

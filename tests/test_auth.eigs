@@ -1,11 +1,16 @@
 # Auth stdlib tests. The HTTP header builtin is stubbed so this works in
-# minimal builds as well as full HTTP builds.
+# minimal builds as well as full HTTP builds. The stub answers
+# http_request_header of "authorization" with the request's Authorization
+# field values (#2374); tests/test_auth_header_2374.py drives the real
+# builtin over a socket.
 
 load_file of "lib/auth.eigs"
 
-_test_headers is ""
-define http_request_headers(_x) as:
-    return _test_headers
+_test_authorization is []
+define http_request_header(name) as:
+    if (str_lower of name) == "authorization":
+        return _test_authorization
+    return []
 
 _auth_token is "eigen_test"
 
@@ -16,8 +21,8 @@ define secure_equals(values) as:
     _secure_equals_calls is _secure_equals_calls + 1
     return values[0] == values[1]
 
-_test_headers is (exec_capture of ["printf", "Authorization: Bearer eigen_test\\r\\n"])[1]
-assert of [(require_auth of null) == "", "AUTH01 require_auth accepts CRLF bearer header"]
+_test_authorization is ["Bearer eigen_test"]
+assert of [(require_auth of null) == "", "AUTH01 require_auth accepts a bearer Authorization field"]
 assert of [_secure_equals_calls == 1, "AUTH05 require_auth compares bearer tokens with secure_equals"]
 
 # Both public checks historically ignore their argument. Keep every accepted
@@ -28,13 +33,22 @@ for i in range of (len of accepted_inputs):
     input_json is auth_check of accepted_inputs[i]
     assert of [(contains of [input_json, "\"status\": \"ok\""]), "AUTH07 auth_check preserves accepted input types"]
 
-_test_headers is (exec_capture of ["printf", "authorization: bearer eigen_test\\r\\n"])[1]
+_test_authorization is ["bearer eigen_test"]
 ok_json is auth_check of null
-assert of [(contains of [ok_json, "\"status\": \"ok\""]), "AUTH02 auth_check accepts case-insensitive bearer header"]
+assert of [(contains of [ok_json, "\"status\": \"ok\""]), "AUTH02 auth_check accepts case-insensitive bearer scheme"]
 
-_test_headers is (exec_capture of ["printf", "Authorization: Bearer wrong\\r\\n"])[1]
+_test_authorization is ["Bearer wrong"]
 bad_json is require_auth of null
 assert of [(contains of [bad_json, "invalid or missing token"]), "AUTH03 require_auth rejects wrong bearer token"]
+
+_test_authorization is ["Bearer eigen_test", "Bearer eigen_test"]
+assert of [(contains of [(require_auth of null), "invalid or missing token"]), "AUTH08 two Authorization fields are refused"]
+_test_authorization is ["Basic eigen_test"]
+assert of [(contains of [(require_auth of null), "invalid or missing token"]), "AUTH09 another scheme is refused"]
+_test_authorization is []
+assert of [(contains of [(require_auth of null), "invalid or missing token"]), "AUTH10 no Authorization field is refused"]
+_test_authorization is ["Bearer    eigen_test"]
+assert of [(require_auth of null) == "", "AUTH11 several spaces after the scheme are accepted"]
 
 _auth_token is ""
 missing_json is require_auth of null
