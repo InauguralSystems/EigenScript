@@ -1,0 +1,1 @@
+- The freestanding `pow` keeps the sign of a negative-zero base for odd whole exponents: `pow(-0.0, 5.0)` is `-0` and `pow(-0.0, -5.0)` is `-inf`, as in the system library, and `pow(-0.0, 0.5)` is `+0` (it was `-0`). Hosted builds were not affected (#2567).
