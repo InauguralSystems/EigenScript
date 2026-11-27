@@ -620,6 +620,11 @@ def self_test(root, metadata):
             state_plants = []
             reset_state(); (tree / branch_path).write_bytes(decided)
             state_plants.append(('sign-extend-new-with-old-row', state_check(), b'R1.6b-D1 requires the BASE bytes'))
+            # Exercise the operator's command, not just check() in this process:
+            # printing FAIL with exit 0 must not satisfy the rejected plant.
+            state_plants.append(('sign-extend-command-line-exit', subprocess.run(
+                [sys.executable, str(tree / 'tools/phase2_float_amend.py'), '--root', str(tree)],
+                capture_output=True, timeout=30), b'R1.6b-D1 requires the BASE bytes'))
             reset_state(); one_more = decided + b'\n'; select_new(one_more)
             state_plants.append(('sign-extend-extra-byte-nonmatching-ledger', state_check(), b'#1896 requires exactly the two decided replacements'))
             reset_state(); (tree / branch_path).write_bytes(one_more); set_row(sha(one_more), '#1896')
@@ -652,6 +657,29 @@ def self_test(root, metadata):
             table += '\n| `tests/phase2/builtins/not-sign-extend.branch` | `00` | #1896 | relabelled base-state row |'
             (tree / ledger_path).write_text(heading + '## Frozen .branch amendments\n' + table + '\n## ' + suffix)
             state_plants.append(('sign-extend-base-decision-row', state_check(), b'base state must have only its R1.6b-D1 ledger row'))
+            # Membership is independent of branch bytes. Relabel an existing,
+            # unchanged path in the decided state, including the table parser's
+            # backtick and surrounding-whitespace spellings of the same ruling.
+            other_path = BAR + 'nearest_in_range_all.branch'
+            other_bytes = (tree / other_path).read_bytes()
+            for label, ruling in (('plain', '#1896'), ('backticks', '`#1896`'),
+                                  ('whitespace', '  #1896  ')):
+                reset_state(); select_new(decided)
+                ledger = (tree / ledger_path).read_text()
+                lines = ledger.splitlines(keepends=True)
+                matches = [i for i, line in enumerate(lines) if line.startswith('| `' + other_path + '` |')]
+                require(len(matches) == 1, 'self-test other ledger path must contain exactly one row')
+                fields = lines[matches[0]].split('|')
+                fields[3] = ' ' + ruling + ' '
+                lines[matches[0]] = '|'.join(fields)
+                (tree / ledger_path).write_text(''.join(lines))
+                require((tree / other_path).read_bytes() == other_bytes,
+                        'self-test relabel changed the other path bytes')
+                state_plants.append(('sign-extend-new-other-decision-row-' + label, state_check(),
+                                     b'#1896 must name only sign_extend'))
+            reset_state(); set_row(data['sign_extend_amendment']['base_sha256'], 'R1.6b-D2')
+            state_plants.append(('sign-extend-base-other-ruling', state_check(),
+                                 b'ledger must select BASE/R1.6b-D1'))
             reset_state(); set_row(data['sign_extend_amendment']['new_sha256'], 'R1.6b-D1')
             state_plants.append(('sign-extend-new-sha-base-ruling', state_check(), b'ledger must select BASE/R1.6b-D1'))
             for key, message in (('anchor', b'missing #1896 decision/anchor'), ('decision', b'missing #1896 decision/anchor'),
