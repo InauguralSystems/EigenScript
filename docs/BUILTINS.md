@@ -661,7 +661,7 @@ have (the one place the two containers still differ: buffers truncate flat, so
 `[3, 4]` — neither is a meaningful answer, both are pinned in
 `tests/test_autograd.eigs`); a non-numeric partner (a string, a dict) raises
 `type_mismatch` by default. Before #1093 only equal-count `add` had a buffer path and
-every other buffer case answered a silent `0`. Same `num_guard` kernels
+every other buffer case answered a silent `0`. Same arithmetic kernels
 for float inputs either way. Integer list arithmetic is exact; storing an int
 in a buffer first converts it to float and can round it.
 
