@@ -1,0 +1,36 @@
+# #2538: inside sandbox_run, an error that the program catches no longer fixes
+# the kind, message and line of every later error. The run's error latch was
+# set by the first error and no catch cleared it, so a second error reported
+# the first one's diagnostic, to the program's own `catch` and in r.error.
+# A sandbox REFUSAL caught by the program still ends the run as `sandbox`.
+load_file of "lib/test.eigs"
+
+# 1. The issue's program: a caught type error, then an uncaught index error.
+r1 is sandbox_run of "try:\n    ignore is 1 + []\ncatch e:\n    ignore is 0\nignore is [1][9]\n"
+assert_eq of [r1.ok, false, "uncaught second error fails the run"]
+assert_eq of [r1.error.kind, "index_range", "r.error reports the second error's kind"]
+assert_eq of [r1.error.line, 5, "r.error reports the second error's line"]
+assert_eq of [r1.error.message, "index 9 out of range (list length 1)", "r.error reports the second error's message"]
+
+# 2. A second catch inside the sandbox sees the second error.
+src2 is "try:\n    ignore is 1 + []\ncatch e:\n    first is [e.kind, e.line]\ntry:\n    ignore is [1][9]\ncatch e2:\n    second is [e2.kind, e2.line, e2.message]\n[first, second]\n"
+r2 is sandbox_run of src2
+assert_eq of [r2.ok, true, "both errors caught: the run succeeds"]
+assert_eq of [r2.result[0], ["type_mismatch", 2], "first catch sees the first error"]
+assert_eq of [r2.result[1], ["index_range", 6, "index 9 out of range (list length 1)"],
+              "second catch sees the second error's kind, line and message"]
+
+# 3. A thrown value after a caught error is the thrown value, not the first error.
+r3 is sandbox_run of "try:\n    ignore is 1 + []\ncatch e:\n    ignore is 0\ntry:\n    throw of \"mine\"\ncatch e2:\n    got is e2\ngot\n"
+assert_eq of [r3.result, "mine", "a throw after a caught error is caught as thrown"]
+
+# 4. A caught refusal still ends the run as `sandbox`, even with a later error.
+r4 is sandbox_run of "try:\n    x is read_text of \"/etc/hostname\"\ncatch e:\n    seen is e.kind\nignore is [1][9]\n"
+assert_eq of [r4.ok, false, "a caught refusal still refuses the run"]
+assert_eq of [r4.error.kind, "sandbox", "a caught refusal stays the run's error kind"]
+assert_eq of [r4.error.line, 2, "a caught refusal keeps its own line"]
+r5 is sandbox_run of "try:\n    x is read_text of \"/etc/hostname\"\ncatch e:\n    seen is e.kind\nseen\n"
+assert_eq of [r5.ok, false, "a caught refusal with no later error still refuses the run"]
+assert_eq of [r5.error.kind, "sandbox", "and reports it as sandbox"]
+
+test_summary of null
