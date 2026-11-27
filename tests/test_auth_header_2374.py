@@ -124,7 +124,7 @@ def main():
                         if exchange(port, request(b'/ready', [], b'')) == b'ready-2374':
                             break
                     except (OSError, AssertionError):
-                        pass
+                        pass  # not listening or not answering yet: poll again until the deadline
                     if time.monotonic() > deadline or proc.poll() is not None:
                         log.seek(0)
                         print(f'FAIL: server not ready rc={proc.poll()}: {log.read()}')
