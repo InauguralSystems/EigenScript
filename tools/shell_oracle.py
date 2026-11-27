@@ -44,6 +44,8 @@ ORACLES (each is an answer the real shell gives, compared with ours)
               GNU-flag scanner in tools/portability_parse_check.sh) must
               report every one.  This is the only oracle that reaches the
               consumers' own command-position rules.
+  V  variables expansion context, parameter operands, arithmetic effects and
+              expanded heredocs are compared with bash execution on fixed rows.
   H  incidents hand-checked expected tokens for the shapes that bit the line
               scanners before (CA-GUARD rounds in tools/_derive_variants.py,
               hq#58) and for constructs the tree does not contain; each row
@@ -695,6 +697,10 @@ def run_corpus(items, mod=ST, locale="C", jobs=None, probes=True):
 # ------------------------------------------------------- H: incident cases
 # (text, expected simple commands as raw word texts, expected heredoc bodies)
 INCIDENTS = [
+    # Arithmetic quote bodies: bash-n accepts; bash runs inner (arith-subst-before.log).
+    ('echo "$(( ${U:-\'$(inner)\'} +0 ))"\n', [['echo', '"$(( ${U:-\'$(inner)\'} +0 ))"']], [], ['inner']),
+    ('echo "$(( \'$(inner)\' +0 ))"\n', [['echo', '"$(( \'$(inner)\' +0 ))"']], [], ['inner']),
+    ('echo "$[ ${U:-\'$(inner)\'} +0 ]"\n', [['echo', '"$[ ${U:-\'$(inner)\'} +0 ]"']], [], ['inner']),
     # CA-GUARD:heredoc-opener round 8: a here-string is not an opener.
     ("tr a-z A-Z <<< hello\neigenscript-full work.eigs\n",
      [["tr", "a-z", "A-Z"], ["eigenscript-full", "work.eigs"]], []),
@@ -1162,6 +1168,148 @@ UNQUOTE_INCIDENTS = [
 ]
 
 
+# V: each new variable-effects API is judged against bash execution, separately
+# from token shape. The marker exists only in bash's initial environment.
+VARIABLE_EFFECT_INCIDENTS = [
+    ('redirection_fd_names close is not a binding', 'exec {QZVX}>&-', False, None, False),
+    ('redirection_fd_names name after a line continuation', 'exec \\\n{QZVX}>/dev/null', False, None, False),
+    ('_literal_arithmetic_effects index arithmetic in a let string sets', "let 'a[$((QZVX=1))]=1'", False, None, False),
+    ('arithmetic_indices associative single-quoted math key is literal', "declare -A m=([x]=1); printf %s \"$(( m['$QZVX'] ))\"", False, None, True),
+    ('arithmetic_indices associative single-quoted key in arithmetic command', "declare -A m=([x]=1); (( m['$QZVX']=1 )); declare -p m", False, None, True),
+    ('runtime_substitutions single-quoted lvalue index body runs', "a=(1); a[ '$(printf %s \"$QZVX\")' ]=1", False, None, True),
+    ('runtime_substitutions quoted declare index body runs', "declare -a 'a[$(printf %s \"$QZVX\")]=1'", False, None, True),
+    ('word_substitutions associative key body runs', 'declare -A m; m[$(printf %s "$QZVX" >&2)x]=1', False, None, True),
+    ('redirection_fd_names named descriptor sets', 'exec {QZVX}>/dev/null', False, None, False),
+    ('redirection_fd_names after an IO number', 'exec 3>/dev/null {QZVX}>&3', False, None, False),
+    ('redirection_fd_names word suffix is not a descriptor', 'printf x x{QZVX}>/dev/null', False, None, False),
+    ('parameter_parts positional default operand', 'printf "%s\\n" "${1:-$QZVX}"', False, None, True),
+    ('parameter_parts special parameter operand', 'printf "%s\\n" "${#:+$QZVX}"', False, None, True),
+    ('ShellText immediate quoted arithmetic', 'printf "%s\\n" "$(printf "%s\\n" $(( $\'QZVX\' +0 )))"', False, None, True),
+    ('arithmetic_source ANSI escape decoded', 'printf "%s\\n" "$(printf "%s\\n" $(( $\'QZ\\x56X\' +0 )))"', False, None, True),
+    ('ShellText nested unquoted substitution resets context', 'printf "%s\\n" "$(printf "%s\\n" $(printf "%s\\n" $(( $\'QZVX\' +0 ))))"', False, None, True),
+    ('ShellText local double quotes reset arithmetic context', 'printf "%s\\n" "$(printf "%s\\n" "$(( $\'QZVX\' +0 ))")"', False, None, True),
+    ('ShellText expanded heredoc resets arithmetic context', 'printf "%s\\n" "$(cat <<EOF\n$(( $\'QZVX\' +0 ))\nEOF\n)"', False, None, True),
+    ('ShellText backquote resets arithmetic context', 'printf "%s\\n" "`printf "%s\\n" $(( $\'QZVX\' +0 ))`"', False, None, True),
+    ('ShellText quoted arithmetic safe operand', 'printf "%s\\n" "$(printf "%s\\n" $(( ${MISSING:-$\'QZVX\'}+0 )))"', False, None, True),
+    ("expanded_expressions escaped outer parameter", "\\${MISSING:-$QZVX}", True, False, True),
+    ("arithmetic quote-removal joins identifier", 'QZ"VX"+0', False, True, True),
+    ('arithmetic_effects parameter literal operand', '${MISSING:-QZVX}', False, True, True),
+    ('arithmetic_effects quoted parameter operand', "${MISSING:-'QZVX'}", False, True, True),
+    ('arithmetic_effects literal quotes still expand dollars', "${MISSING:-'$QZVX'}", False, True, True),
+    ('arithmetic_effects double quoted identifier', '"QZVX"', False, True, True),
+    ('arithmetic_effects single quoted identifier', "'QZVX'", False, True, True),
+    ('arithmetic_effects escaped dollar', '\\$QZVX', False, True, True),
+    ('arithmetic_effects escaped parameter with inner read', '\\${MISSING:-$QZVX}', False, True, True),
+    ('arithmetic_effects assignment operand', '${MISSING:=QZVX}', False, True, True),
+    ('variable_effects old arithmetic explicit dollar', '"$[ $QZVX+0 ]"', False, False, True),
+    ('arithmetic_effects safe parameter', '${QZVX:-0}', False, True, False),
+    ('arithmetic_effects safe assignment parameter', '${QZVX:=0}', False, True, False),
+    ("Expansion/unquote quote context", '"${MISSING:-\'$QZVX\'}"', False, False, True),
+    ("parameter_parts nested operand", '${MISSING:-${QZVX%nomatch}}', False, False, True),
+    ("expansion_effects scalar", '$QZVX', False, False, True),
+    ("expansion_effects default", '${QZVX:-fallback}', False, False, False),
+    ("expansion_effects alternate", '${QZVX+alternate}', False, False, False),
+    ("expansion_effects assignment", '${QZVX:=1}', False, False, False),
+    ("variable_effects single quote", "'$QZVX'", False, False, True),
+    ("variable_effects ANSI quote", "$'value $QZVX'", False, False, True),
+    ("variable_effects heredoc", "'$QZVX'", True, False, True),
+    ("expansion_effects subshell, not arithmetic", "$((printf %s '$QZVX') )", False, False, True),
+    ("variable_effects opaque process body", "<(cat <<'EOF'\n$QZVX\nEOF\n)", False, False, True),
+    ("arithmetic_effects bare name", 'QZVX+0', False, True, True),
+    ("arithmetic_effects assignment", 'QZVX=1', False, True, False),
+    ("arithmetic_effects base literal", '16#FF-255+QZVX', False, True, True),
+]
+
+
+# Whole-program rows retain setters and explicit expansions only.
+for _program in ('printf -v QZVX x', 'read QZVX <<<x', 'declare -i QZVX=1',
+                 'export QZVX=1', 'declare QZVX', 'QZVX=1 true',
+                 'declare -z QZVX=1', 'readonly -z QZVX=1', 'export -z QZVX=1',
+                 'declare QZVX=1 -z', 'command -p -- declare QZVX=1'):
+    VARIABLE_EFFECT_INCIDENTS.append(('setter_names / declaration_options / builtin_readings ' + _program,
+                                     _program, False, None, False))
+for _label, _program in (
+    ('runtime_substitutions explicit parameter', "printf -v 'arr[${MISSING:=$QZVX}]' x"),
+    ('runtime_substitutions explicit arithmetic body', "printf -v 'arr[$(( \'$(printf %s \"$QZVX\")\' +0 ))]' x"),
+    ('assignment_indices explicit compound read', "arr=(['$QZVX']=one); declare -p arr"),
+    ('assignment_words explicit declaration read', 'declare -a arr=([$QZVX]=one); declare -p arr'),
+    ('assignment_words quoted declaration explicit read', "declare -a 'arr[$QZVX]=1'"),
+    ('index_effects quoted explicit read', "arr['$QZVX']=one"),
+    ('array_context math literal key', 'declare -A arr; printf %s "$((arr[QZVX]))"'),
+    ('associative_declarations readonly math key', 'readonly -A arr=([key]=1); printf %s "$((arr[QZVX]))"'),
+    ('arithmetic_effects indexed math key', 'arr=(1); printf %s "$((arr[QZVX]))"'),
+    ('word_substitutions indexed quoted key', 'printf -v "arr[\'$(printf %s "$QZVX")\']" x'),
+    ('runtime parser quote context', "printf %s $(( '$(printf %s $(( $'QZVX'+0 )))'+0 ))"),
+    ('runtime parser parameter context', 'printf %s "${MISSING:-\'$(printf %s $(( $\'QZVX\'+0 )))\'}"')):
+    VARIABLE_EFFECT_INCIDENTS.append((_label, _program, False, None, True))
+
+VARIABLE_EFFECT_INCIDENTS.append(('arithmetic command parser context',
+    'printf %s "$( (( $\'QZVX\' +0 )) )"', False, None, True))
+
+
+def check_variable_effects(mod=ST):
+    findings = []
+    examined = 0
+    for label, text, expanded, arithmetic, initialized in VARIABLE_EFFECT_INCIDENTS:
+        refs, setters = [], set()
+        if arithmetic is None:        # whole-program attributes and guarded runtime bodies
+            nodes = []
+            def walk(body, guards=frozenset()):
+                tokens = mod.tokenize_file(body, '<V>', effects=True)
+                nodes.append((tokens, guards))
+                setters.update(mod.redirection_fd_names(body, tokens))
+                for tok in tokens:
+                    for sub in tok.subst:
+                        name = getattr(sub, 'array_guard', None)
+                        walk(sub, guards | ({name} if name else set()))
+            walk(text)
+            associations = set().union(*(mod.associative_declarations(node) for node, _ in nodes))
+            with mod.array_context(associations):
+                for node, guards in nodes:
+                    if not guards.isdisjoint(associations):
+                        continue
+                    assignments = {t.start for t, _ in mod.assignment_words(node) if mod.assignment_split(t.text)}
+                    for tok in node:
+                        if tok.kind in ('word', 'pattern', 'arith') and tok.role != 'delimiter':
+                            r, st = mod.variable_effects(str(tok.text[2:-2]) if tok.kind == 'arith' else tok.text,
+                                arithmetic=tok.kind == 'arith', assignment=tok.start in assignments)
+                            refs.extend(r); setters.update(st)
+                        if tok.heredoc is not None:
+                            r, st = mod.variable_effects(tok.heredoc, expanded=True)
+                            refs.extend(r); setters.update(st)
+                    for cmd in mod.simple_commands(node):
+                        setters.update(mod.setter_names(cmd))
+                    for _, r, st in mod.implicit_arithmetic_effects(node):
+                        refs.extend(r); setters.update(st)
+        else:
+            refs, setters = mod.variable_effects(text, expanded=expanded, arithmetic=arithmetic)
+        expression = '"$(( ' + text + ' ))"' if arithmetic else text
+        program = ("cat <<EOF\n" + text + "\nEOF\n") if expanded else ("printf '%s\\n' " + expression + "\n")
+        if arithmetic is None:
+            program = text + "\n"
+        if initialized:
+            # Preserve the main-shell setter witness even when a read-only
+            # arithmetic expansion reports a run-time expression error.
+            program = '(\n' + program + ')\n'
+        program += "printf 'FINAL:%s\\n' \"${QZVX-UNSET}\"\n"
+        env = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}
+        if initialized:
+            env['QZVX'] = '934567891234567' + ('+$(printf NEVER)' if arithmetic is None else '')
+        result = subprocess.run([BASH, '--norc', '--noprofile'], input=program,
+                                text=True, capture_output=True, env=env, timeout=5)
+        # FINAL is only the setter witness; a read must occur before it.
+        before, final = result.stdout.rsplit('FINAL:', 1)
+        expected_read = '934567891234567' in before + result.stderr
+        expected_set = not initialized and not final.startswith('UNSET')
+        got_read = any(name == 'QZVX' for name, _ in refs)
+        got_set = 'QZVX' in setters
+        if result.returncode or got_read != expected_read or got_set != expected_set:
+            findings.append(f'V {label}: reads={got_read}/{expected_read} sets={got_set}/{expected_set}: {program!r} {result.stderr!r}')
+        examined += 1
+    assert examined == len(VARIABLE_EFFECT_INCIDENTS) > 0
+    return findings
+
+
 def check_incidents(mod=ST):
     F = []
     # tokenize_prefix: text the shell rejects is read up to the line where
@@ -1212,6 +1360,11 @@ def check_incidents(mod=ST):
 # Source mutations of _shell_tokens.py; each must be caught by the oracles
 # named.  The old text must occur exactly once, so a plant cannot go stale.
 PLANTS = [
+    ('compound-array-indices-lost', 'self.array_indices.append((opener, j + 1, close - 1))', 'pass # planted compound index loss', {'V'}),
+    ('arithmetic-reparses-command-bodies', 'elif self.text.startswith("$(", k) and k in self.command_substitutions:', 'elif False:', {'R'}),
+    ('quoted-substitution-context-lost', 'subst.append(ShellText(body, in_double, self.line_of(body_start)))', 'subst.append(ShellText(body, False, self.line_of(body_start)))', {'V'}),
+    ('arith-runtime-expansion-lost', '        self.expanded_in_quotes(j, end - 2, subst, first)', '        pass # planted: lose arithmetic expansion', {'H'}),
+    ('old-arith-runtime-expansion-lost', '                    self.expanded_in_quotes(start, j, subst, first)\n                    return j + 1', '                    return j + 1', {'H'}),
     ("hash-mid-word-is-comment",
      'METACHARS = frozenset(" \\t\\n;&|()<>")',
      'METACHARS = frozenset(" \\t\\n;&|()<>#")', {"H", "O4"}),
@@ -1247,7 +1400,7 @@ PLANTS = [
      '            if t.startswith("((", self.i) and not self.dbracket and \\',
      '            if False and \\', {"H"}),
     ("backquote-bodies-dropped",
-     '                subst.append("".join(body))\n                return j + 1',
+     '                subst.append("".join(body))\n                subst[-1] = ShellText(subst[-1], source_line=self.line_of(i + 1))\n                return j + 1',
      '                return j + 1', {"H"}),
     ("heredoc-delimiter-compared-stripped",
      '                cmp = line.lstrip("\\t") if strip else line',
@@ -1486,6 +1639,8 @@ def _oracles_of(findings):
         m = re.search(r"\b(O[1-7]|CRASH)\b", f)
         if f.startswith("H "):
             tags.add("H")
+        elif f.startswith("V "):
+            tags.add("V")
         elif f.startswith("R "):
             tags.add("R")
         elif m:
@@ -1687,7 +1842,14 @@ def selftest():
     tree = load_items(tracked_shell_files())
     items = tree + incident_items() + composed_items()
     rc = 0
-    print(f"PLAN: {7 + len(PLANTS) + len(CONSUMER_PLANTS)}")
+    print(f"PLAN: {8 + len(PLANTS) + len(CONSUMER_PLANTS)}")
+
+    variable_findings = check_variable_effects()
+    if variable_findings:
+        rc = 1
+        print("  FAIL: variable-effects bash rows: " + repr(variable_findings))
+    else:
+        print(f"  PASS: variable-effects bash rows: {len(VARIABLE_EFFECT_INCIDENTS)} examined, 0 findings")
 
     o5, o5_kept = composed_findings()
     if o5:
@@ -1777,6 +1939,8 @@ def selftest():
     for name, old, new, expect in PLANTS:
         mod = load_mutant(old, new)
         found = check_incidents(mod)
+        if 'V' in expect:
+            found += check_variable_effects(mod)
         found += [f"R {t!r}: {e}" for t, e in robustness(mod)]
         found += EX.run(O7_SEEDS, O7_N, mod=mod, cache=ran)[0]
         if not expect <= _oracles_of(found):
