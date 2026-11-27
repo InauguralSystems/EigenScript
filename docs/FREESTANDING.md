@@ -2,7 +2,7 @@
 
 What the EigenScript runtime borrows from the host OS, and what it must do
 instead to run **freestanding** — no libc, no kernel underneath — as the userland
-of [EigenOS](https://github.com/InauguralSystems/EigenOS). This is a planning
+of [EigenOS](https://github.com/InauguralSystems/EigenOS) (private). This is a planning
 ledger (like EigenGauntlet's `GAPS.md`), not a build that exists yet: it turns
 "port EigenScript to bare metal" from a vibe into a finite checklist.
 
@@ -337,12 +337,19 @@ Payne-Hanek later if anything needs it); strtod takes no hex floats; rand/
 random are a different (SplitMix64) generator — rand48 is the reproducibility
 surface.
 
-What remains before it links on bare metal is exactly stage 2's residue: the
-HAL-root symbols the EigenOS kernel owes (M2 pages→heap, M1 serial→
-console_write, M4 PIT→clock, the scheduler, halt, and target-required atomic
-fallbacks). The checked architectures are x86-64, RV32IMA, and RV32IMC;
-RISC-V's FP environment supports both hardware F/D and soft-float as described
-above.
+What remains before it links on bare metal is exactly stage 2's residue. A
+freestanding host must supply the imported symbols listed in the public
+[HAL-root allowlist](../tools/freestanding_hal_roots.txt), with the C/POSIX
+interfaces used by the runtime: heap allocation and release, console output
+and its streams, clock reads and sleeping, thread identity and scheduling,
+mutexes and condition variables, one-time initialization, and process halt.
+It must also supply the atomic fallbacks imported by its target, with the
+interrupt-masking contract described above. The stage-2 link check rejects
+unresolved symbols outside that allowlist; a host's final link must resolve
+the imported roots. EigenOS is one consumer of this contract, not a required
+source of its specification. The checked architectures are x86-64, RV32IMA,
+and RV32IMC; RISC-V's FP environment supports both hardware F/D and soft-float
+as described above.
 
 ## Standout findings
 
