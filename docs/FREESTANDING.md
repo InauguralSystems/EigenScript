@@ -2,7 +2,7 @@
 
 What the EigenScript runtime borrows from the host OS, and what it must do
 instead to run **freestanding** — no libc, no kernel underneath — as the userland
-of [EigenOS](https://github.com/InauguralSystems/EigenOS) (private). This is a planning
+of [EigenOS](https://github.com/InauguralSystems/EigenOS). This is a planning
 ledger (like EigenGauntlet's `GAPS.md`), not a build that exists yet: it turns
 "port EigenScript to bare metal" from a vibe into a finite checklist.
 
