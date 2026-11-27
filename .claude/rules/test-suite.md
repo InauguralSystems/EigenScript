@@ -48,6 +48,7 @@ paths:
     row) runs these sections through the real runner with a fake-sanitizer
     binary and turns red if a row passes a planted report. A row that cannot
     be fixed yet goes in `tests/san_report_sweep_2306.allow` with a reason.
+- **A set-but-empty (or whitespace-only) `EIGS_SUITE_SECTIONS` is refused, rc 1 (#2525)**; only unset means the whole suite, so never pass an unchecked lookup result through it.
 - **Never edit `run_all_tests.sh` (or any child `.sh`) while the suite is
   running.** bash reads a script INCREMENTALLY as it executes — it seeks by
   byte offset — so an edit that shifts line lengths under a running shell can
