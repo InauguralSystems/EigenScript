@@ -1,0 +1,1 @@
+- Recognize names before every Bash coproc compound in the shared shell tokenizer, with Bash execution incidents and a regression plant (#2586).
