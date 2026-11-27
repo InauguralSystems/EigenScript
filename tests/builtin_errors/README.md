@@ -17,7 +17,14 @@ naming externally varying text. Its prefix includes our entire fixed text
 before that text: prefixes are limited to file open/directory and music
 decode diagnostics, and retain the builtin name, complete path and separator
 plus a nonempty part of the external reason. A prefix ending inside or immediately after `@FILE@` is
-refused (exit 2). The runner prints exact/prefix check counts per builtin,
+refused (exit 2). A music decode check may instead declare `"match": "reason"`
+with a nonempty `why`: its message is our fixed text, the builtin name, path and
+the check's own words (`cannot decode: `), up to and including the separator
+before the library's text; the actual message must start with it and carry a
+nonempty reason after it. SDL_mixer's reason text depends on the backend (libmodplug on
+the dev box, libxmp on the CI image), so no part of it is pinned. A reason
+message that ends anywhere else, or a reason on any other check, is refused
+(exit 2). The runner prints exact/prefix/reason check counts per builtin,
 counting each declared check once, including checks shadowed by earlier ones.
 Every backend answer arm is validated before selection; it may override only
 expected kind, writes, result and errors. Self-test plant data also lives in

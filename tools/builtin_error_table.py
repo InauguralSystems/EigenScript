@@ -57,7 +57,16 @@ def read_tables(directory):
             assert all(c['kind'] and c['message'] for c in r['errors'].values()), r['id']
             for check, answer in r['errors'].items():
                 mode = answer.get('match', 'exact')
-                assert mode in ('exact', 'prefix'), f"{builtin}/{r['id']}/{check}: unknown match"
+                assert mode in ('exact', 'prefix', 'reason'), f"{builtin}/{r['id']}/{check}: unknown match"
+                if mode == 'reason':
+                    # A library's reason text differs by backend (libmodplug vs libxmp): pin ours, not theirs.
+                    assert isinstance(answer.get('why'), str) and answer['why'].strip(), f"{builtin}/{r['id']}/{check}: reason requires why"
+                    assert (builtin, check) == ('audio_music_play', 'decode'), f"{builtin}/{r['id']}/{check}: reason has no library diagnostic"
+                    head = f"{builtin}: '{r['path'].strip(chr(34))}': "
+                    for s in range(len(STATES)):
+                        message = per_state(answer['message'], s)
+                        tail = message[len(head):]
+                        assert message.startswith(head) and tail.endswith(': ') and ': ' not in tail[:-2] and tail[:-2].strip(), f"{builtin}/{r['id']}/{check}: reason must be our fixed text after the path, ending at the library's separator"
                 if mode == 'prefix':
                     assert isinstance(answer.get('why'), str) and answer['why'].strip(), f"{builtin}/{r['id']}/{check}: prefix requires why"
                     assert builtin != 'sgd_update' and check in ('open', 'directory', 'decode'), f"{builtin}/{r['id']}/{check}: prefix has no external diagnostic"
@@ -263,7 +272,7 @@ def check_row(binary, builtin, row, state_index, work):
     assert expected == per_state(row['expected_kind'], state_index), 'order and expected_kind disagree'
     message = message.replace('@FILE@', path)
     if kind != 'ok':
-        matched = detail.startswith(message) if answer.get('match') == 'prefix' else detail == message
+        matched = message_matches(answer.get('match', 'exact'), detail, message)
         assert matched, f'message {detail!r}, want {answer.get("match", "exact")} {message!r}'
     if 'result' in row:
         assert detail == row['result'], (detail, row['result'])
@@ -286,9 +295,15 @@ def check_row(binary, builtin, row, state_index, work):
             p.unlink()
         elif p.is_dir():
             p.rmdir()
+        assert not p.exists(), f'{p}: input still present before replay'
         rep = run(binary, source, work, STATES[state_index], tape='EIGS_REPLAY')
         assert (q.stdout, q.stderr) == (rep.stdout, rep.stderr), (q.stdout, rep.stdout, q.stderr, rep.stderr)
     return (1, int(removed)) if row.get('tape') else (0, 0)
+
+def message_matches(mode, detail, message):
+    if mode == 'reason':
+        return detail.startswith(message) and detail[len(message):].strip() != ''
+    return detail.startswith(message) if mode == 'prefix' else detail == message
 
 def execute(tables, binary, quiet=False):
     failures = []
@@ -324,9 +339,11 @@ def execute(tables, binary, quiet=False):
             if not quiet:
                 print(f'builtin-error-table: {builtin} {ran} lines x 3 states, {len(failures)-start} failed')
                 modes = collections.Counter(a.get('match', 'exact') for r in rows for arm in (r, r.get('device_unavailable', {})) for a in arm.get('errors', {}).values())
-                print(f'message checks: {builtin} exact {modes["exact"]}, prefix {modes["prefix"]}')
+                print(f'message checks: {builtin} exact {modes["exact"]}, prefix {modes["prefix"]}, reason {modes["reason"]}')
     if not quiet:
         print(f'tape replays: {tape_replays}; tape pairs: {tape_pairs} (input removed)')
+    if not quiet and any(r.get('tape') and r.get('fixture') != 'missing' for r in tables.get('tensor_load', [])):
+        assert tape_pairs > 0, 'tape rows ran with no input removed before replay'
     return failures
 
 def describe(builtin, row):
@@ -437,11 +454,12 @@ def selftest(tables, binary):
         elif edit[0] == 'short-header':
             victim.pop('fixture', None)
             victim.update(header=[], payload_bytes=0, observer_bytes=0, raw_bytes='78')
-        elif edit[0] in ('message', 'prefix'):
+        elif edit[0] in ('message', 'prefix', 'reason'):
             answer = victim['errors'][first_check(victim, 0)]
             answer['message'] = edit[1]
-            if edit[0] == 'prefix': answer['match'] = 'prefix'
+            if edit[0] != 'message': answer['match'] = edit[0]
             if len(edit) == 3: answer['why'] = edit[2]
+            elif edit[0] != 'message': answer.pop('why', None)
         elif edit[0] == 'order':
             a,b = (victim['order'].index(c) for c in edit[1:])
             victim['order'][a], victim['order'][b] = victim['order'][b], victim['order'][a]
@@ -462,7 +480,7 @@ def selftest(tables, binary):
             else:
                 assert line in output, output
             if name == 'same-kind order swapped' or name.startswith(('P', 'shape fragment', 'finite fragment')):
-                if expected_rc == 1 and (builtin != 'audio_music_play' or audio_backend('dummy')): assert 'message ' in output and 'want exact ' in output, output
+                if expected_rc == 1 and (builtin != 'audio_music_play' or audio_backend('dummy')): assert 'message ' in output and re.search(r'want (exact|reason) ', output), output
             assert rc == expected_rc, (name, rc)
         print(f'PASS: table selftest {name}: red rc={rc}, line={line}')
     assert examined == len(variants) > 0
@@ -470,6 +488,12 @@ def selftest(tables, binary):
     prefix['errors']['open'].update(match='prefix', message="tensor_load: '@FILE@': No such file", why='libc supplies the strerror suffix')
     assert not execute({'tensor_load': [prefix]}, binary, quiet=True)
     print('PASS: table selftest explicit prefix with why green')
+    head = "audio_music_play: '/x.mod': cannot decode: "
+    for detail, want in ((head + 'ModPlug_Load failed', True), (head + 'XMP: Unrecognized file format', True),
+                         (head, False), (head + ' \t', False), ("audio_music_play: '/y.mod': cannot decode: ModPlug_Load failed", False),
+                         ("audio_music_play: '/x.mod': No such file or directory", False)):
+        assert message_matches('reason', detail, head) is want, (detail, want)
+    print('PASS: table selftest reason match: any nonempty library reason after our fixed text, 6 cases')
     with tempfile.TemporaryDirectory(prefix='builtin-error-docs-') as tmp:
         doc = Path(tmp)/'BUILTINS.md'
         page = doc.with_name('builtin-errors.md')

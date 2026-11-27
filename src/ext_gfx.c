@@ -1935,8 +1935,8 @@ Value* builtin_audio_music_play(Value *arg) {
     if (g_music) { p_Mix_HaltMusic(); p_Mix_FreeMusic(g_music); g_music = NULL; }
     g_music = p_Mix_LoadMUS(path);
     if (!g_music) {
-        rt_error(EK_IO, 0, "audio_music_play: '%s': %s", path,
-                 p_SDL_GetError ? p_SDL_GetError() : "cannot decode music");
+        rt_error(EK_IO, 0, "audio_music_play: '%s': cannot decode: %s", path,
+                 p_SDL_GetError ? p_SDL_GetError() : "?");
         return make_null();
     }
     if (p_Mix_PlayMusic(g_music, (int)loops) < 0) {

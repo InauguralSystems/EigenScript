@@ -23,6 +23,13 @@
     ["shape fragment", "sgd_update", "flat2-flat3-lr-number", ["message", "shape"], 1],
     ["finite fragment", "sgd_update", "2495-params", ["message", "finite"], 1],
     ["prefix omits fixed text", "tensor_load", "missing", ["prefix", "tensor_load:", "libc supplies strerror text"], 2],
-    ["alternate prefix without why", "audio_music_play", "path-string", ["device_unavailable", {"expected_kind":"io","errors":{"open":{"kind":"io","message":"audio_music_play:","match":"prefix"}}}], 2]
+    ["alternate prefix without why", "audio_music_play", "path-string", ["device_unavailable", {"expected_kind":"io","errors":{"open":{"kind":"io","message":"audio_music_play:","match":"prefix"}}}], 2],
+    ["reason without why", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': cannot decode: "], 2],
+    ["reason past the separator", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': cannot decode: ModPlug_Load failed: ", "SDL_mixer supplies the reason"], 2],
+    ["reason under another name", "audio_music_play", "decode", ["reason", "audio_music_plaX: '@FILE@': cannot decode: ", "SDL_mixer supplies the reason"], 2],
+    ["reason with no words of ours", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': : ", "SDL_mixer supplies the reason"], 2],
+    ["reason before the separator", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': cannot decode", "SDL_mixer supplies the reason"], 2],
+    ["reason at the path separator", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': ", "SDL_mixer supplies the reason"], 2],
+    ["reason on a libc diagnostic", "tensor_load", "missing", ["reason", "tensor_load: '@FILE@': cannot open: ", "libc supplies strerror text"], 2]
   ]
 }
