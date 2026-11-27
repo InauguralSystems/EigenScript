@@ -987,6 +987,16 @@ ROLE_INCIDENTS = [
       ("if", "pattern"), ("c1", "command"), ("esac", "reserved"), ("c3", "command")]),
     ("coproc [[ if ]] && c2\n",
      [("coproc", "reserved"), ("[[", "reserved"), ("if", "test"), ("]]", "reserved"), ("c2", "command")]),
+    # #2586 critic r2: `#` and a quote do not end a keyword (bash ran QZV, c3).
+    ("coproc QZV while#x\nc3\n",
+     [("coproc", "reserved"), ("QZV", "command"), ("while#x", "argument"), ("c3", "command")]),
+    ("coproc QZV if'x'\nc3\n",
+     [("coproc", "reserved"), ("QZV", "command"), ("if'x'", "argument"), ("c3", "command")]),
+    # #2586 critic r2: a backslash-newline before `{` keeps NAME the name
+    # (bash ran c1, c3; the base tokenizer read QZV as a command).
+    ("coproc QZV \\\n{ c1; }\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("{", "reserved"), ("c1", "command"),
+      ("}", "reserved"), ("c3", "command")]),
     # #2586: names, every reserved word and body/next-line commands are pinned.
     ("coproc QZV while :; do c1; break; done\nc3\n",
      [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
