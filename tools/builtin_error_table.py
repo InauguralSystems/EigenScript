@@ -58,6 +58,9 @@ def read_tables(directory):
             for check, answer in r['errors'].items():
                 mode = answer.get('match', 'exact')
                 assert mode in ('exact', 'prefix', 'reason'), f"{builtin}/{r['id']}/{check}: unknown match"
+                if (builtin, check) == ('audio_music_play', 'decode'):
+                    # SDL_mixer's decode reason depends on its backend: only reason mode is green on both.
+                    assert mode == 'reason', f"{builtin}/{r['id']}/{check}: a music decode line must use reason"
                 if mode == 'reason':
                     # A library's reason text differs by backend (libmodplug vs libxmp): pin ours, not theirs.
                     assert isinstance(answer.get('why'), str) and answer['why'].strip(), f"{builtin}/{r['id']}/{check}: reason requires why"
@@ -454,7 +457,7 @@ def selftest(tables, binary):
         elif edit[0] == 'short-header':
             victim.pop('fixture', None)
             victim.update(header=[], payload_bytes=0, observer_bytes=0, raw_bytes='78')
-        elif edit[0] in ('message', 'prefix', 'reason'):
+        elif edit[0] in ('message', 'exact', 'prefix', 'reason'):
             answer = victim['errors'][first_check(victim, 0)]
             answer['message'] = edit[1]
             if edit[0] != 'message': answer['match'] = edit[0]
@@ -608,12 +611,12 @@ def main():
         if args.binary is None and not (args.check or args.write):
             # ./build.sh (the hosted self-test job's build) makes only src/eigenscript;
             # the C mutants also reuse build/release's objects. Build them as
-            # tools/ui_surface_check.sh does.
+            # tools/ui_surface_check.sh does, every time.
+            # Always: a stale build/release would answer for another commit's source.
             args.binary = ROOT/'build/release/eigenscript'
-            if not args.binary.is_file():
-                print('builtin-error-table: build/release absent, running make build', flush=True)
-                subprocess.run(['make', '--no-print-directory', '-C', str(ROOT), 'build'],
-                               check=True, stdout=subprocess.DEVNULL)
+            print('builtin-error-table: make build (no --binary)', flush=True)
+            subprocess.run(['make', '--no-print-directory', '-C', str(ROOT), 'build'],
+                           check=True, stdout=subprocess.DEVNULL)
         if args.binary is not None:
             assert args.binary.is_file(), f'no binary at {args.binary}'
         tables = read_tables(args.table_dir)
