@@ -33,87 +33,30 @@ ENV_END = '<!-- /suite-environment -->'
 
 @functools.lru_cache(maxsize=1)
 def bash_variables():
-    result = subprocess.run(['env', '-i', 'bash', '--norc', '--noprofile', '-c', 'compgen -v'],
+    # After one command, as in any fragment: PIPESTATUS exists only once a
+    # command has run.  Variables bash sets in a context (REPLY, MAPFILE,
+    # OPTARG, BASH_REMATCH, COPROC) come from implicit_setters() instead.
+    result = subprocess.run(['env', '-i', 'bash', '--norc', '--noprofile', '-c', ':; compgen -v'],
                             text=True, capture_output=True, timeout=10, check=True)
-    # GNU Bash Reference Manual, "Bash Variables": these are created only
-    # in the relevant context and so may be absent from a fresh compgen -v.
-    # https://www.gnu.org/software/bash/manual/html_node/Bash-Variables.html
-    # BASH_ENV, ENV: "Bash Startup Files"; HISTFILE, HISTTIMEFORMAT,
-    # HISTCONTROL, HISTIGNORE: "Bash History Facilities" / "Bash Variables".
-    # CDPATH HOME: "Bourne Shell Variables"; BASH_REMATCH: "Conditional Constructs".
-    # COMP_* and COMPREPLY: "Bash Variables" (completion context).
-    # These are bash's documented special variables, not suite exemptions.
-    specials = {
-        "CDPATH",  # CDPATH: Bourne Shell Variables (GNU Bash Reference Manual).
-        "HOME",  # HOME: Bourne Shell Variables (GNU Bash Reference Manual).
-        "LANG",  # LANG: Bash Variables (GNU Bash Reference Manual).
-        "LC_ALL",  # LC_ALL: Bash Variables (GNU Bash Reference Manual).
-        "LC_COLLATE",  # LC_COLLATE: Bash Variables (GNU Bash Reference Manual).
-        "LC_CTYPE",  # LC_CTYPE: Bash Variables (GNU Bash Reference Manual).
-        "LC_MESSAGES",  # LC_MESSAGES: Bash Variables (GNU Bash Reference Manual).
-        "LC_NUMERIC",  # LC_NUMERIC: Bash Variables (GNU Bash Reference Manual).
-        "LC_TIME",  # LC_TIME: Bash Variables (GNU Bash Reference Manual).
-        "COLUMNS",  # COLUMNS: Bash Variables (GNU Bash Reference Manual).
-        "LINES",  # LINES: Bash Variables (GNU Bash Reference Manual).
-        "OLDPWD",  # OLDPWD: Bash Variables (GNU Bash Reference Manual).
-        "OPTARG",  # OPTARG: Bourne Shell Variables (GNU Bash Reference Manual).
-        "PIPESTATUS",  # PIPESTATUS: Bash Variables (GNU Bash Reference Manual).
-        "READLINE_ARGUMENT",  # READLINE_ARGUMENT: Bash Variables (GNU Bash Reference Manual).
-        "READLINE_LINE",  # READLINE_LINE: Bash Variables (GNU Bash Reference Manual).
-        "READLINE_MARK",  # READLINE_MARK: Bash Variables (GNU Bash Reference Manual).
-        "READLINE_POINT",  # READLINE_POINT: Bash Variables (GNU Bash Reference Manual).
-        "BASH_ARGV0",  # BASH_ARGV0: Bash Variables (GNU Bash Reference Manual).
-        "BASH_COMPAT",  # BASH_COMPAT: Bash Variables (GNU Bash Reference Manual).
-        "BASH_ENV",  # BASH_ENV: Bash Startup Files (GNU Bash Reference Manual).
-        "BASH_XTRACEFD",  # BASH_XTRACEFD: Bash Variables (GNU Bash Reference Manual).
-        "CHILD_MAX",  # CHILD_MAX: Bash Variables (GNU Bash Reference Manual).
-        "COMP_CWORD",  # COMP_CWORD: Bash Variables (GNU Bash Reference Manual).
-        "COMP_LINE",  # COMP_LINE: Bash Variables (GNU Bash Reference Manual).
-        "COMP_POINT",  # COMP_POINT: Bash Variables (GNU Bash Reference Manual).
-        "COMP_TYPE",  # COMP_TYPE: Bash Variables (GNU Bash Reference Manual).
-        "COMP_KEY",  # COMP_KEY: Bash Variables (GNU Bash Reference Manual).
-        "COMP_WORDBREAKS",  # COMP_WORDBREAKS: Bash Variables (GNU Bash Reference Manual).
-        "COMP_WORDS",  # COMP_WORDS: Bash Variables (GNU Bash Reference Manual).
-        "COMPREPLY",  # COMPREPLY: Bash Variables (GNU Bash Reference Manual).
-        "COPROC",  # COPROC: Bash Variables (GNU Bash Reference Manual).
-        "DIRSTACK",  # DIRSTACK: Bash Variables (GNU Bash Reference Manual).
-        "EMACS",  # EMACS: Bash Variables (GNU Bash Reference Manual).
-        "ENV",  # ENV: Bash Startup Files (GNU Bash Reference Manual).
-        "EXECIGNORE",  # EXECIGNORE: Bash Variables (GNU Bash Reference Manual).
-        "FCEDIT",  # FCEDIT: Bash Variables (GNU Bash Reference Manual).
-        "FIGNORE",  # FIGNORE: Bash Variables (GNU Bash Reference Manual).
-        "FUNCNAME",  # FUNCNAME: Bash Variables (GNU Bash Reference Manual).
-        "FUNCNEST",  # FUNCNEST: Bash Variables (GNU Bash Reference Manual).
-        "GLOBIGNORE",  # GLOBIGNORE: Bash Variables (GNU Bash Reference Manual).
-        "HISTCONTROL",  # HISTCONTROL: Bash Variables (GNU Bash Reference Manual).
-        "HISTFILE",  # HISTFILE: Bash Variables (GNU Bash Reference Manual).
-        "HISTFILESIZE",  # HISTFILESIZE: Bash Variables (GNU Bash Reference Manual).
-        "HISTIGNORE",  # HISTIGNORE: Bash Variables (GNU Bash Reference Manual).
-        "HISTSIZE",  # HISTSIZE: Bash Variables (GNU Bash Reference Manual).
-        "HISTTIMEFORMAT",  # HISTTIMEFORMAT: Bash Variables (GNU Bash Reference Manual).
-        "HOSTFILE",  # HOSTFILE: Bash Variables (GNU Bash Reference Manual).
-        "IGNOREEOF",  # IGNOREEOF: Bash Variables (GNU Bash Reference Manual).
-        "INPUTRC",  # INPUTRC: Bash Variables (GNU Bash Reference Manual).
-        "MAIL",  # MAIL: Bourne Shell Variables (GNU Bash Reference Manual).
-        "MAILCHECK",  # MAILCHECK: Bash Variables (GNU Bash Reference Manual).
-        "MAILPATH",  # MAILPATH: Bourne Shell Variables (GNU Bash Reference Manual).
-        "MAPFILE",  # MAPFILE: Bash Variables (GNU Bash Reference Manual).
-        "POSIXLY_CORRECT",  # POSIXLY_CORRECT: Bash Variables (GNU Bash Reference Manual).
-        "PROMPT_COMMAND",  # PROMPT_COMMAND: Bash Variables (GNU Bash Reference Manual).
-        "PROMPT_DIRTRIM",  # PROMPT_DIRTRIM: Bash Variables (GNU Bash Reference Manual).
-        "PS0",  # PS0: Bash Variables (GNU Bash Reference Manual).
-        "PS1",  # PS1: Bourne Shell Variables (GNU Bash Reference Manual).
-        "PS2",  # PS2: Bourne Shell Variables (GNU Bash Reference Manual).
-        "PS3",  # PS3: Bash Variables (GNU Bash Reference Manual).
-        "PS4",  # PS4: Bash Variables (GNU Bash Reference Manual).
-        "REPLY",  # REPLY: Bash Variables (GNU Bash Reference Manual).
-        "TIMEFORMAT",  # TIMEFORMAT: Bash Variables (GNU Bash Reference Manual).
-        "TMOUT",  # TMOUT: Bash Variables (GNU Bash Reference Manual).
-        "TMPDIR",  # TMPDIR: Bash Variables (GNU Bash Reference Manual).
-        "BASH_COMMAND",  # BASH_COMMAND: Bash Variables (GNU Bash Reference Manual).
-        "BASH_REMATCH",  # BASH_REMATCH: Conditional Constructs (GNU Bash Reference Manual).
-    }
-    return set(result.stdout.splitlines()) | specials
+    return set(result.stdout.splitlines())
+
+
+def implicit_setters(command, named):
+    """Names a builtin sets when its command gives none (bash(1), SHELL BUILTIN
+    COMMANDS): read -> REPLY, mapfile/readarray -> MAPFILE, getopts -> OPTARG,
+    and wait -p NAME."""
+    found = set()
+    for reading in builtin_readings(command):
+        name, args = reading[0], reading[1:]
+        if name == 'read' and not named:
+            found.add('REPLY')
+        elif name in ('mapfile', 'readarray') and not named:
+            found.add('MAPFILE')
+        elif name == 'getopts':
+            found.add('OPTARG')
+        elif name == 'wait':
+            found.update(args[i + 1] for i, a in enumerate(args[:-1]) if a == '-p' or (a.startswith('-') and a.endswith('p')))
+    return found
 
 
 def documented_environment(root):
@@ -238,6 +181,10 @@ class Reader:
                 for tok in tokens:
                     if tok.role == 'name' and previous and previous.role == 'reserved' and previous.text in ('for', 'select'):
                         definitions.add(unquote(tok.text))
+                    if tok.role == 'reserved' and tok.text == 'select':
+                        definitions.add('REPLY')
+                    if tok.kind == 'word' and tok.text == '=~' and any(t.text == '[[' and t.start < tok.start for t in tokens):
+                        definitions.add('BASH_REMATCH')
                     if previous and previous.role == 'reserved' and previous.text == 'coproc':
                         # bash binds NAME and NAME_PID, or COPROC and COPROC_PID unnamed.
                         name = unquote(tok.text) if tok.role == 'name' else 'COPROC'
@@ -260,7 +207,9 @@ class Reader:
                 for command in simple_commands(tokens):
                     if not any(t.role == 'command' for t in command):
                         definitions.update(pair[0] for t in command if t.role == 'assignment' and (pair := assignment_split(t.text)))
-                    definitions.update(setter_names(command))
+                    named = setter_names(command)
+                    definitions.update(named)
+                    definitions.update(implicit_setters(command, named))
                 for token, refs, sets in implicit_arithmetic_effects(tokens):
                     definitions.update(sets)
                     reads.extend((base + token.line + token.text[:pos].count('\n'), name) for name, pos in refs if UPPER.fullmatch(name))
@@ -314,7 +263,7 @@ def main():
         print(f'section-undefined-vars: ERROR: {exc}', file=sys.stderr)
         return 2
     for path, line, name in findings:
-        print(f'{path}:{line}: undefined variable {name}')
+        print(f'FAIL: {path}:{line}: undefined variable {name}')
     print(f'section-undefined-vars: examined {scan.examined} fragments, {scan.read_count} reads, {len(findings)} undefined')
     return int(bool(findings))
 

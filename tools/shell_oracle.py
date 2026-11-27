@@ -1171,6 +1171,9 @@ UNQUOTE_INCIDENTS = [
 # V: each new variable-effects API is judged against bash execution, separately
 # from token shape. The marker exists only in bash's initial environment.
 VARIABLE_EFFECT_INCIDENTS = [
+    ('runtime_substitutions single-quoted lvalue index body runs', "a=(1); a[ '$(printf %s \"$QZVX\")' ]=1", False, None, True),
+    ('runtime_substitutions quoted declare index body runs', "declare -a 'a[$(printf %s \"$QZVX\")]=1'", False, None, True),
+    ('word_substitutions associative key body runs', 'declare -A m; m[$(printf %s "$QZVX" >&2)x]=1', False, None, True),
     ('redirection_fd_names named descriptor sets', 'exec {QZVX}>/dev/null', False, None, False),
     ('redirection_fd_names after an IO number', 'exec 3>/dev/null {QZVX}>&3', False, None, False),
     ('redirection_fd_names word suffix is not a descriptor', 'printf x x{QZVX}>/dev/null', False, None, False),
@@ -1229,7 +1232,7 @@ for _label, _program in (
     ('index_effects quoted explicit read', "arr['$QZVX']=one"),
     ('array_context math literal key', 'declare -A arr; printf %s "$((arr[QZVX]))"'),
     ('associative_declarations readonly math key', 'readonly -A arr=([key]=1); printf %s "$((arr[QZVX]))"'),
-    ('arithmetic_indices indexed math key', 'arr=(1); printf %s "$((arr[QZVX]))"'),
+    ('arithmetic_effects indexed math key', 'arr=(1); printf %s "$((arr[QZVX]))"'),
     ('word_substitutions indexed quoted key', 'printf -v "arr[\'$(printf %s "$QZVX")\']" x'),
     ('runtime parser quote context', "printf %s $(( '$(printf %s $(( $'QZVX'+0 )))'+0 ))"),
     ('runtime parser parameter context', 'printf %s "${MISSING:-\'$(printf %s $(( $\'QZVX\'+0 )))\'}"')):

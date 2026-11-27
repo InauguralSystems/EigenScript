@@ -1803,34 +1803,6 @@ def index_effects(word, start, end):
         return [(n, max(0, index.find(n))) for n, _ in reads], sets
     return variable_effects(ShellText(index, False), expanded=True)
 
-def arithmetic_indices(text):
-    """Bare array-reference indices in arithmetic, outside opaque expansions
-    and literal single-quoted arithmetic text. Boundaries use match_subscript.
-    """
-    if '[' not in text:
-        return []
-    found, escaped = expanded_expressions(text)
-    chars = list(text)
-    for a, b in escaped + [(e.start, e.start + len(e)) for e in found]:
-        chars[a:b] = [' '] * (b - a)
-    masked = ''.join(chars)
-    i, result = 0, []
-    while i < len(masked):
-        if masked[i] == "'":
-            i = _Lexer(masked, roles=False).single(i); continue
-        match = _IDENT.match(masked, i)
-        if not match:
-            i += 1; continue
-        end = match.end()
-        while end < len(text) and text[end].isspace():
-            end += 1
-        if text[end:end + 1] == '[':
-            close = _Lexer(text, roles=False).match_subscript(end, [])
-            if close:
-                result.append((match.group(), end + 1, close - 1)); i = close; continue
-        i = match.end()
-    return result
-
 def arithmetic_effects(text):
     """Shell expansion first, then arithmetic identifiers and lvalues.
     Command bodies stay opaque; Token.subst owns their independent reading.
@@ -1840,11 +1812,6 @@ def arithmetic_effects(text):
     text, source_origins = arithmetic_source(text)
     extra_reads, extra_sets = [], set()
     chars = list(text)
-    for name, a, b in arithmetic_indices(text):
-        if name in _ASSOCIATIVES.get():
-            r, st = variable_effects(text[a:b])
-            extra_reads.extend((n, a + pos) for n, pos in r); extra_sets.update(st)
-            chars[a:b] = ['\n' if c == '\n' else ' ' for c in chars[a:b]]
     text = ShellText(''.join(chars), getattr(text, 'quoted_substitution', False))
     found, escaped = expanded_expressions(text)
     chars = list(text)
@@ -2091,10 +2058,8 @@ def _literal_arithmetic_effects(text):
     """After shell quote removal, literal dollars/backquotes do not expand again."""
     chars = list(text)
     found, _ = expanded_expressions(text)
-    indices = arithmetic_indices(text)
     for exp in found:
-        if not any(a <= exp.start < b for _, a, b in indices):
-            chars[exp.start:exp.start + len(exp)] = [' '] * len(exp)
+        chars[exp.start:exp.start + len(exp)] = [' '] * len(exp)
     if ''.join(chars).lstrip().startswith('['):
         return [], set()
     return arithmetic_effects(''.join(chars))

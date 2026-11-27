@@ -20,7 +20,7 @@ import tempfile
 import section_undefined_vars as gate
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = Path(os.environ.get('SECTION_VARS_SCRATCH', '/home/jon/src/wt/briefs/c2544b/out2'))
+OUT = Path(os.environ.get('SECTION_VARS_SCRATCH', tempfile.gettempdir()))
 SEED = 2544
 MARKER = '934567891234567'
 PRELUDE = '''probe() { builtin printf '%s\\n' "$@"; }
@@ -30,8 +30,7 @@ cat() { local line; while IFS= read -r line; do builtin printf '%s\\n' "$line"; 
 
 @contextlib.contextmanager
 def scratch(label):
-    # CI may not have the builder's absolute durable folder.
-    parent = OUT if OUT.is_dir() else ROOT.parent
+    parent = OUT if OUT.is_dir() else Path(tempfile.gettempdir())
     with tempfile.TemporaryDirectory(prefix='scratch-' + label + '-', dir=parent) as name:
         yield Path(name)
 
@@ -160,6 +159,7 @@ SET_SHAPES = [
     ('mapfile -d: QZV <<<1', ''), ('read -a OTHER QZV <<<1', ''),
     ('printf -v QZV -v OTHER x', ''), ('read -t0 QZV <<<1', ''),
     ('printf${MISSING_SUFFIX:-} -v QZV x', ''), ('ex${MISSING_MID:+}port QZV=1', ''),
+    ('sleep 0 & wait -n -p QZV', ''), ('[[ a =~ a ]]; QZV=("${BASH_REMATCH[@]}")', ''),
     ('coproc QZV { :; }; wait', "order: bash unsets a coproc's variables when it exits"), ('coproc QZV_PID { :; }; wait', ''),
     ('exec {QZV}>/dev/null', ''), ('exec 3>/dev/null {QZV}>&3', ''), ('probe x{QZV}>/dev/null', ''),
     ("(( 'QZV=1' ))", ''), ('(( "QZV"=1 ))', ''), ('(( Q"Z"V=1 ))', ''),
@@ -253,7 +253,7 @@ def real_plants(root):
         fragment.write_text(text[:pos] + '$TEST_DIR' + text[pos + len('$TESTS_DIR'):])
         result = run_tool(root)
         line = text[:pos].count('\n') + 1
-        witness = f'{fragment}:{line}: undefined variable TEST_DIR'
+        witness = f'FAIL: {fragment}:{line}: undefined variable TEST_DIR'
         assert result.returncode == 1 and witness in result.stdout, (label, result.stdout, result.stderr)
         print(f'  PASS: plant {label}: precheck tools/section_undefined_vars.py red: {witness}')
         fragment.write_text(original)
@@ -265,7 +265,7 @@ MUTANTS = [
      "arr=(['$QZV']=one)\n", ''),
     ('source', 'for source in sources:', 'for source in ():',
      'source "$TESTS_DIR/defs.sh"\nprobe "$QZV"\n', 'QZV=1\n'),
-    ('builtin setters', 'definitions.update(setter_names(command))', 'definitions.update(())',
+    ('builtin setters', 'named = setter_names(command)', 'named = set()',
      'printf -v QZV x\nprobe "$QZV"\n', ''),
     ('safe operators', "safe = op in (':-', '-', ':=', '=', ':+', '+')", 'safe = False',
      'probe "${QZV:-x}"\n', ''),
@@ -333,8 +333,10 @@ def selftest():
         assert gate.scan(fixture, [fragment]) == []
         fragment = tree(fixture, "declare -a 'arr[$TEST_DIR]=1'\n")
         assert any(n == 'TEST_DIR' for _, _, n in gate.scan(fixture, [fragment]))
-        fragment = tree(fixture, 'probe "$PIPESTATUS $READLINE_LINE $OPTARG $REPLY"\n')
+        fragment = tree(fixture, 'probe "$PIPESTATUS"\n')
         assert gate.scan(fixture, [fragment]) == []
+        fragment = tree(fixture, 'probe "$HOME $TMPDIR $REPLY"\n')
+        assert [n for _, _, n in gate.scan(fixture, [fragment])] == ['HOME', 'REPLY', 'TMPDIR']
         fragment = tree(fixture, 'probe "$(probe $TEST_DIR)\n$(probe $TEST_DIR)"\n')
         assert gate.scan(fixture, [fragment]) == [(str(fragment), 1, 'TEST_DIR'), (str(fragment), 2, 'TEST_DIR')]
         fragment = tree(fixture, 'probe "$(probe $(( $\'\nTEST_DIR\' +0 )))"\n')
