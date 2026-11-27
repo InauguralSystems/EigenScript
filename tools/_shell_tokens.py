@@ -931,11 +931,16 @@ class _Body:
         self.after_time = 0
         if self.after_coproc:
             self.after_coproc = False
-            rest = self.lx.text[self.i:].lstrip(" \t")
-            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")):
-                # `coproc NAME { ...; }` / `coproc NAME ( ... )`: bash takes ANY
-                # word before a lone `{` for the name (parse.y special_case_tokens),
-                # and refuses a name that is not an identifier only when it runs
+            rest = re.sub(r"\\\n", "", self.lx.text[self.i:]).lstrip(" \t")
+            compound = (word not in RESERVED_OPENERS | COMPOUND_CLOSERS
+                        and word not in ("for", "select", "case", "function", "[[")
+                        and re.match(r"(?:while|until|for|select|if|case|\[\[)(?=$|[ \t\n;&|()<>])", rest))
+            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")) \
+                    or compound:
+                # #2586: bash takes ANY word before a compound for its name,
+                # rejecting non-identifiers only at runtime. Reserved words
+                # instead start an unnamed coproc; quotes and keyword suffixes
+                # do not introduce a compound. Backslash-newlines join tokens.
                 self.split_next = True
                 return "name"
         if word in ("for", "select"):

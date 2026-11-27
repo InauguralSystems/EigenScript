@@ -194,6 +194,12 @@ def shape(text, mod=ST, depth=0):
             words, subs = words[1:], subs[1:]
         if words[:2] == ["coproc", "COPROC"]:
             words, subs = words[:1] + words[2:], subs[:1] + subs[2:]   # bash names it
+        if words[:1] == ["coproc"] and len(words) > 1 \
+                and words[1] in ("while", "until", "for", "select", "if", "case", "[["):
+            # #2586: unnamed compounds share a command with `coproc`; bash's
+            # reprint adds COPROC, whose name role splits that command in two.
+            pieces.append((words[:1], subs[:1]))
+            words, subs = words[1:], subs[1:]
         if words and words[0] == "coproc" and len(words) > 3 and words[2] == "{":
             # bash's reprint lays `coproc NAME {` on its own line
             pieces.append((words[:3], subs[:3]))
@@ -748,6 +754,63 @@ INCIDENTS = [
     ("cat <<-X\n\tbody\n  X\n\tX\nreal\n", [["cat"], ["real"]], ["\tbody\n  X\n"]),
     # DevBox on #2559: `coproc NAME { ...; }` -- NAME, then a group.
     ("coproc QP { cat; }\necho x\n", [["coproc", "QP"], ["{"], ["cat"], ["}"], ["echo", "x"]], []),
+    # #2586: while body executes once; the following line starts a command.
+    ("coproc QZV while :; do c1; break; done\nc3\n",
+     [["coproc", "QZV"], ["while", ":"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: until body executes once (false condition).
+    ("coproc QZV until false; do c1; break; done\nc3\n",
+     [["coproc", "QZV"], ["until", "false"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: word-list for body executes.
+    ("coproc QZV for x in a; do c1; done\nc3\n",
+     [["coproc", "QZV"], ["for", "x", "in", "a"], ["do", "c1"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: select receives input so its body is reached, unlike O7's generator.
+    ("coproc QZV select x in a; do c1; break; done <<<1\nc3\n",
+     [["coproc", "QZV"], ["select", "x", "in", "a"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: the if branch executes.
+    ("coproc QZV if :; then c1; fi\nc3\n",
+     [["coproc", "QZV"], ["if", ":"], ["then", "c1"], ["fi"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: the matching case arm executes.
+    ("coproc QZV case a in a) c1;; esac\nc3\n",
+     [["coproc", "QZV"], ["case", "a", "in"], ["c1"], ["esac"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: [[ ]] expands its substitution; && c2 follows the coproc launch.
+    ("coproc QZV [[ -z $(c1) ]] && c2\nc3\n",
+     [["coproc", "QZV"], ["[[", "-z", "$(c1)", "]]"], ["c2"], ["c3"]], [], ["c1"], {"c1", "c2", "c3"}),
+    # #2586: (( )) expands its substitution (the arithmetic token is not a command).
+    ("coproc QZV (( $(c1) + 1 ))\nc3\n",
+     [["coproc", "QZV"], ["c3"]], [], ["c1"], {"c1", "c3"}),
+    # #2586: arithmetic for is a compound too, including without a space before ((.
+    ("coproc QZV for((i=0;i<1;i++)); do c1; done\nc3\n",
+     [["coproc", "QZV"], ["for"], ["do", "c1"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: continuation before a compound is removed before recognition.
+    ("coproc QZV \\\nwhile :; do c1; break; done\nc3\n",
+     [["coproc", "QZV"], ["while", ":"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: multiline [[ ]] permits newlines around a complete test.
+    ("coproc QZV [[\n -z $(c1)\n ]] && c2\nc3\n",
+     [["coproc", "QZV"], ["[[", "-z", "$(c1)", "]]"], ["c2"], ["c3"]], [], ["c1"], {"c1", "c2", "c3"}),
+    # #2586: a nonidentifier name parses, but bash refuses to execute its compound.
+    ("coproc a-b while :; do c1; break; done\nc3\n",
+     [["coproc", "a-b"], ["while", ":"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c3"}),
+    # #2586: a reserved word starts an unnamed coproc, even before another compound.
+    ("coproc while if :; then :; fi; do c1; break; done\nc3\n",
+     [["coproc", "while", "if", ":"], ["then", ":"], ["fi"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: a quoted reserved word can instead be the coprocess name.
+    ("coproc 'while' if :; then c1; fi\nc3\n",
+     [["coproc", "'while'"], ["if", ":"], ["then", "c1"], ["fi"], ["c3"]], [], [], {"c1", "c3"}),
+    # #2586: keyword suffixes are ordinary arguments.
+    ("coproc QZV whilex\nc3\n", [["coproc", "QZV", "whilex"], ["c3"]], [], [], {"QZV", "c3"}),
+    # #2586: assignment-like suffixes are ordinary arguments.
+    ("coproc QZV while=1\nc3\n", [["coproc", "QZV", "while=1"], ["c3"]], [], [], {"QZV", "c3"}),
+    # #2586: single quotes suppress compound recognition.
+    ("coproc QZV 'while'\nc3\n", [["coproc", "QZV", "'while'"], ["c3"]], [], [], {"QZV", "c3"}),
+    # #2586: double quotes suppress compound recognition.
+    ('coproc QZV "if"\nc3\n', [["coproc", "QZV", '"if"'], ["c3"]], [], [], {"QZV", "c3"}),
+    # #2586: a plain argument leaves QZV as the command.
+    ("coproc QZV arg\nc3\n", [["coproc", "QZV", "arg"], ["c3"]], [], [], {"QZV", "c3"}),
+    # #2586: a physical newline ends the unnamed simple coproc.
+    ("coproc QZV\nwhile :; do c1; break; done\nc3\n",
+     [["coproc", "QZV"], ["while", ":"], ["do", "c1"], ["break"], ["done"], ["c3"]], [], [], {"QZV", "c1", "c3"}),
+    # #2586: bash rejects the unmatched fi before it runs either name.
+    ("coproc QZV ifx; fi\nc3\n", [["coproc", "QZV", "ifx"], ["fi"], ["c3"]], [], [], set()),
     # DevBox r3: command position after a compound command, `function NAME`
     # and `for (( ))`, with no separator.
     ("for ((i=0;i<8;i++)) do (( m = m << 1 )); done\neigenscript-full w.eigs\n",
@@ -895,6 +958,31 @@ INCIDENTS = [
 # (text, [(word, role), ...] over its word and pattern tokens).  Each row was
 # put to bash: the 'command' words are the commands bash ran.
 ROLE_INCIDENTS = [
+    # #2586: names, every reserved word and body/next-line commands are pinned.
+    ("coproc QZV while :; do c1; break; done\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
+      ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"), ("c3", "command")]),
+    ("coproc QZV until false; do c1; break; done\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("until", "reserved"), ("false", "command"),
+      ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"), ("c3", "command")]),
+    ("coproc QZV for x in a; do c1; done\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("for", "reserved"), ("x", "name"), ("in", "reserved"),
+      ("a", "list"), ("do", "reserved"), ("c1", "command"), ("done", "reserved"), ("c3", "command")]),
+    ("coproc QZV select x in a; do c1; break; done <<<1\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("select", "reserved"), ("x", "name"), ("in", "reserved"),
+      ("a", "list"), ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"),
+      ("1", "target"), ("c3", "command")]),
+    ("coproc QZV if :; then c1; fi\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("if", "reserved"), (":", "command"),
+      ("then", "reserved"), ("c1", "command"), ("fi", "reserved"), ("c3", "command")]),
+    ("coproc QZV case a in a) c1;; esac\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("case", "reserved"), ("a", "subject"), ("in", "reserved"),
+      ("a", "pattern"), ("c1", "command"), ("esac", "reserved"), ("c3", "command")]),
+    ("coproc QZV [[ -z $(c1) ]] && c2\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("[[", "reserved"), ("-z", "test"),
+      ("$(c1)", "test"), ("]]", "reserved"), ("c2", "command"), ("c3", "command")]),
+    ("coproc QZV (( $(c1) + 1 ))\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("c3", "command")]),
     ("x=1 <f y=2 cmd a\n", [("x=1", "assignment"), ("f", "target"), ("y=2", "assignment"),
                              ("cmd", "command"), ("a", "argument")]),
     ('"A=1" cmd\n', [('"A=1"', "command"), ("cmd", "argument")]),
@@ -1159,8 +1247,11 @@ PLANTS = [
      "            self.redir_only = True\n        self.cmdpos = False\n",
      "            self.redir_only = True\n", {"H"}),
     ("coproc-name-must-be-an-identifier",
-     '            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\\t", "\\n")):',
-     '            if _plain_ident(word) and rest[:1] in ("{", "("):', {"H"}),
+     '            if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\\t", "\\n"))',
+     '            if _plain_ident(word) and rest[:1] in ("{", "(")', {"H"}),
+    # #2586: restore the old brace/paren-only rule; H must see every new compound.
+    ("coproc-compound-name-read-as-command",
+     '                    or compound:', '                    or False:', {"H"}),
     # ---- the rules the mutants bought (tools/_shell_exec.py --mutants)
     ("expansion-only-command-word-never-vanishes",
      "        self.vanishing = self.lx.roles and may_vanish(word)\n"
@@ -1472,6 +1563,28 @@ def robustness(mod=ST):
     return bad
 
 
+def coproc_execution():
+    """#2586: execute the fifth-field H rows, including select with real input.
+
+    Unlike O7's generator these cover each named compound and its near misses.
+    Expected sets were collected from bash before the tokenizer rule changed.
+    """
+    findings, rows, names = [], 0, 0
+    with tempfile.TemporaryDirectory(prefix="shell-coproc-") as work:
+        Path(work, "bin").mkdir()
+        for row in INCIDENTS:
+            if len(row) < 5:
+                continue
+            text, want = row[0], row[4]
+            got = EX.execute(text, work)
+            rows += 1
+            names += len(got or ())
+            if got != want:
+                findings.append(f"O7 coproc {text!r}: bash ran {got!r}, want {want!r}")
+    print(f"coproc execution: rows={rows} names_run={names}")
+    return findings
+
+
 def selftest():
     sys.stdout.reconfigure(line_buffering=True)   # a timed-out run still shows its progress
     if not BASH or not DASH:
@@ -1514,6 +1627,7 @@ def selftest():
     ran = {}
     derived, edges, flags = EX.deriver_reader(), EX.edges_reader(), EX.flags_reader()
     o7, o7_counts = EX.run(O7_SEEDS, O7_N, derived=derived, edges=edges, flags=flags, cache=ran)
+    o7 += coproc_execution()
     print(f"execution: bash={EX.bash_version()} "
           + " ".join(f"{k}={v}" for k, v in sorted(o7_counts.items())))
     if o7:
