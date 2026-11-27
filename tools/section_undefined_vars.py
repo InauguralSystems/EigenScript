@@ -22,7 +22,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 from _shell_tokens import (TokenizerGap, assignment_split, emptied, simple_commands,
-                           tokenize_file, unquote, variable_effects, setter_names,
+                           tokenize_file, unquote, variable_effects, setter_names, redirection_fd_names,
                            implicit_arithmetic_effects, associative_declarations, array_context, assignment_words, builtin_readings)
 
 UPPER = re.compile(r'(?=[A-Z_0-9]*[A-Z])[A-Z_][A-Z_0-9]*\Z')
@@ -252,6 +252,7 @@ class Reader:
                             line = base + body[:body.find(tok.heredoc, tok.end)].count('\n') + 1
                             reads.extend((line + tok.heredoc[:pos].count('\n'), name) for name, pos in refs if UPPER.fullmatch(name))
                     previous = tok
+                definitions.update(redirection_fd_names(body, tokens))
                 for command in simple_commands(tokens):
                     if not any(t.role == 'command' for t in command):
                         definitions.update(pair[0] for t in command if t.role == 'assignment' and (pair := assignment_split(t.text)))

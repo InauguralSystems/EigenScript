@@ -1140,6 +1140,22 @@ def _is_fd_name(word: str) -> bool:
     return len(word) > 2 and word[0] == "{" and word[-1] == "}" and _plain_ident(word[1:-1])
 
 
+def redirection_fd_names(text: str, tokens) -> list[str]:
+    """Names that `{name}>file` binds (bash allocates a descriptor into NAME).
+    The lexer folds a `{name}` IO word into its redirection, so the name is
+    recovered from the span between the previous token and the operator.
+    TOKENS must come from tokenizing TEXT."""
+    out, prev_end = [], 0
+    for tok in tokens:
+        if tok.kind == "redir":
+            span = text[prev_end:tok.start]
+            word = span.lstrip(" \t")
+            if span.endswith(word) and _is_fd_name(word):
+                out.append(word[1:-1])
+        prev_end = tok.end
+    return out
+
+
 def _plain_ident(name: str) -> bool:
     return name.isidentifier() and name.isascii()
 
@@ -1647,6 +1663,11 @@ class Expansion(ShellText):
 _IDENT = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*')
 
 
+_PARAMETER_OPERATORS = (':-', ':=', ':+', ':?', '##', '%%', '//', '^^', ',,',
+                        '-', '=', '+', '?', '#', '%', '/', '^', ',', ':', '@')
+_POSITIONAL_OR_SPECIAL = re.compile(r'[0-9]+|[@*#?$!-]')
+
+
 def parameter_parts(expansion):
     """(name, operator, operand, operand offset, subscript, indirect/length).
     EXPANSION is one ${...} supplied by unquote(), not arbitrary shell text.
@@ -1656,7 +1677,18 @@ def parameter_parts(expansion):
     pos = len(prefix)
     match = _IDENT.match(body, pos)
     if not match:
-        return '', '', '', 2, '', prefix
+        # Positional and special parameters (${1:-$X}, ${@:$N}) carry no
+        # name to check, but their operator operands are still expanded.
+        special = _POSITIONAL_OR_SPECIAL.match(body, pos)
+        if not special and prefix:     # ${#:+x}, ${!:-x}: the prefix is the parameter
+            prefix, pos = '', 0
+            special = _POSITIONAL_OR_SPECIAL.match(body, pos)
+        if not special:
+            return '', '', '', 2, '', prefix
+        pos = special.end()
+        tail = body[pos:]
+        op = next((o for o in _PARAMETER_OPERATORS if tail.startswith(o)), '')
+        return '', op, tail[len(op):], 2 + pos + len(op), '', prefix
     name, pos = match.group(), match.end()
     sub = ''
     if body[pos:pos + 1] == '[':
@@ -1664,9 +1696,7 @@ def parameter_parts(expansion):
         if end:
             sub, pos = body[pos + 1:end - 1], end
     tail = body[pos:]
-    op = next((o for o in (':-', ':=', ':+', ':?', '##', '%%', '//', '^^', ',,',
-                           '-', '=', '+', '?', '#', '%', '/', '^', ',', ':', '@')
-               if tail.startswith(o)), '')
+    op = next((o for o in _PARAMETER_OPERATORS if tail.startswith(o)), '')
     # ${!prefix*} and ${!prefix@} enumerate names, not prefix's value.
     if prefix == '!' and tail in ('*', '@'):
         name = ''
@@ -2014,7 +2044,7 @@ def _setter_operands(words):
                         try:
                             poll_only = float(value) == 0
                         except ValueError:
-                            pass
+                            pass        # a non-numeric -t is bash's usage error, not a poll
                     break
                 if option not in flags:
                     return set()

@@ -1171,6 +1171,11 @@ UNQUOTE_INCIDENTS = [
 # V: each new variable-effects API is judged against bash execution, separately
 # from token shape. The marker exists only in bash's initial environment.
 VARIABLE_EFFECT_INCIDENTS = [
+    ('redirection_fd_names named descriptor sets', 'exec {QZVX}>/dev/null', False, None, False),
+    ('redirection_fd_names after an IO number', 'exec 3>/dev/null {QZVX}>&3', False, None, False),
+    ('redirection_fd_names word suffix is not a descriptor', 'printf x x{QZVX}>/dev/null', False, None, False),
+    ('parameter_parts positional default operand', 'printf "%s\\n" "${1:-$QZVX}"', False, None, True),
+    ('parameter_parts special parameter operand', 'printf "%s\\n" "${#:+$QZVX}"', False, None, True),
     ('ShellText immediate quoted arithmetic', 'printf "%s\\n" "$(printf "%s\\n" $(( $\'QZVX\' +0 )))"', False, None, True),
     ('arithmetic_source ANSI escape decoded', 'printf "%s\\n" "$(printf "%s\\n" $(( $\'QZ\\x56X\' +0 )))"', False, None, True),
     ('ShellText nested unquoted substitution resets context', 'printf "%s\\n" "$(printf "%s\\n" $(printf "%s\\n" $(( $\'QZVX\' +0 ))))"', False, None, True),
@@ -1244,6 +1249,7 @@ def check_variable_effects(mod=ST):
             def walk(body, guards=frozenset()):
                 tokens = mod.tokenize_file(body, '<V>', effects=True)
                 nodes.append((tokens, guards))
+                setters.update(mod.redirection_fd_names(body, tokens))
                 for tok in tokens:
                     for sub in tok.subst:
                         name = getattr(sub, 'array_guard', None)
