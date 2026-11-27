@@ -69,7 +69,7 @@ def read_tables(directory):
                         assert message.startswith(head) and tail.endswith(': ') and ': ' not in tail[:-2] and tail[:-2].strip(), f"{builtin}/{r['id']}/{check}: reason must be our fixed text after the path, ending at the library's separator"
                 if mode == 'prefix':
                     assert isinstance(answer.get('why'), str) and answer['why'].strip(), f"{builtin}/{r['id']}/{check}: prefix requires why"
-                    assert builtin != 'sgd_update' and check in ('open', 'directory', 'decode'), f"{builtin}/{r['id']}/{check}: prefix has no external diagnostic"
+                    assert builtin != 'sgd_update' and check in ('open', 'directory'), f"{builtin}/{r['id']}/{check}: prefix has no external diagnostic (a music decode line uses reason)"
                     for s in range(len(STATES)):
                         message = per_state(answer['message'], s)
                         head = f"{builtin}: '{r['path'].strip(chr(34))}': "
@@ -597,7 +597,7 @@ static void restore_observer_2d(Value *v, double *d, int r, int c) { (void)v; (v
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--binary', type=Path, default=ROOT/'build/release/eigenscript')
+    parser.add_argument('--binary', type=Path)
     parser.add_argument('--table-dir', type=Path, default=TABLES)
     parser.add_argument('--docs-file', type=Path)
     for flag in ('check', 'write', 'selftest', 'c-mutants'):
@@ -605,6 +605,17 @@ def main():
     parser.add_argument('--scratch-root', type=Path)
     args = parser.parse_args()
     try:
+        if args.binary is None and not (args.check or args.write):
+            # ./build.sh (the hosted self-test job's build) makes only src/eigenscript;
+            # the C mutants also reuse build/release's objects. Build them as
+            # tools/ui_surface_check.sh does.
+            args.binary = ROOT/'build/release/eigenscript'
+            if not args.binary.is_file():
+                print('builtin-error-table: build/release absent, running make build', flush=True)
+                subprocess.run(['make', '--no-print-directory', '-C', str(ROOT), 'build'],
+                               check=True, stdout=subprocess.DEVNULL)
+        if args.binary is not None:
+            assert args.binary.is_file(), f'no binary at {args.binary}'
         tables = read_tables(args.table_dir)
         if args.check or args.write:
             docs(tables, args.write, args.docs_file)
@@ -614,7 +625,7 @@ def main():
                 c_mutants(tables, args.binary.resolve(), args.scratch_root)
         else:
             return int(bool(execute(tables, args.binary.resolve())))
-    except (AssertionError, KeyError, ValueError, OSError) as e:
+    except (AssertionError, KeyError, ValueError, OSError, subprocess.SubprocessError) as e:
         print(f'builtin-error-table: refused population: {e}', file=sys.stderr)
         return 2
     return 0

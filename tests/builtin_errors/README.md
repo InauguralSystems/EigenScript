@@ -14,10 +14,10 @@ kind/message/written array is indexed by unset/0/1.
 Messages match by equality after replacing `@FILE@` with the actual fixture
 path. A check may declare `"match": "prefix"` only with a nonempty `why`
 naming externally varying text. Its prefix includes our entire fixed text
-before that text: prefixes are limited to file open/directory and music
-decode diagnostics, and retain the builtin name, complete path and separator
+before that text: prefixes are limited to file open/directory
+diagnostics, and retain the builtin name, complete path and separator
 plus a nonempty part of the external reason. A prefix ending inside or immediately after `@FILE@` is
-refused (exit 2). A music decode check may instead declare `"match": "reason"`
+refused (exit 2). A music decode check must declare `"match": "reason"`
 with a nonempty `why`: its message is our fixed text, the builtin name, path and
 the check's own words (`cannot decode: `), up to and including the separator
 before the library's text; the actual message must start with it and carry a

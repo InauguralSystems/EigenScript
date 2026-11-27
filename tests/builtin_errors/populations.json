@@ -30,6 +30,7 @@
     ["reason with no words of ours", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': : ", "SDL_mixer supplies the reason"], 2],
     ["reason before the separator", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': cannot decode", "SDL_mixer supplies the reason"], 2],
     ["reason at the path separator", "audio_music_play", "decode", ["reason", "audio_music_play: '@FILE@': ", "SDL_mixer supplies the reason"], 2],
-    ["reason on a libc diagnostic", "tensor_load", "missing", ["reason", "tensor_load: '@FILE@': cannot open: ", "libc supplies strerror text"], 2]
+    ["reason on a libc diagnostic", "tensor_load", "missing", ["reason", "tensor_load: '@FILE@': cannot open: ", "libc supplies strerror text"], 2],
+    ["decode by prefix", "audio_music_play", "decode", ["prefix", "audio_music_play: '@FILE@': c", "SDL_mixer supplies the reason"], 2]
   ]
 }
