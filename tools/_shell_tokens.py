@@ -1152,7 +1152,7 @@ def redirection_fd_names(text: str, tokens) -> list[str]:
             word = span.lstrip(" \t")
             target = tokens[i + 1].text if i + 1 < len(tokens) else ""
             # `{name}>&-` closes the descriptor NAME holds: a read, not a binding.
-            closes = tok.text.endswith("&") and target == "-"
+            closes = tok.text.endswith("&") and unquote(target) == "-"
             if span.endswith(word) and _is_fd_name(word) and not closes:
                 out.append(word[1:-1])
         prev_end = tok.end

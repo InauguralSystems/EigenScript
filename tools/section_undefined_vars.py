@@ -27,7 +27,6 @@ from _shell_tokens import (TokenizerGap, assignment_split, emptied, simple_comma
 
 UPPER = re.compile(r'(?=[A-Z_0-9]*[A-Z])[A-Z_][A-Z_0-9]*\Z')
 IDENT = re.compile(r'[a-zA-Z_][a-zA-Z_0-9]*\Z')
-COMPOUND_WORDS = ('while', 'until', 'for', 'select', 'if', 'case', '[[', '{', '(')
 ENV_START = '<!-- suite-environment -->'
 ENV_END = '<!-- /suite-environment -->'
 
@@ -188,12 +187,9 @@ class Reader:
                         definitions.add('BASH_REMATCH')
                     if previous and previous.role == 'reserved' and previous.text == 'coproc':
                         # bash binds NAME and NAME_PID, or COPROC and COPROC_PID unnamed.
-                        # `coproc NAME while ...`: the tokenizer gives NAME the command
-                        # role when a compound other than ( ) or { } follows.
-                        following = next((t for t in tokens if t.start > tok.end), None)
-                        named = tok.role == 'name' or (following is not None and IDENT.fullmatch(tok.text)
-                                                       and (following.text in COMPOUND_WORDS or following.kind == 'arith'))
-                        name = unquote(tok.text) if named else 'COPROC'
+                        # `coproc NAME while ...` is misread by the tokenizer (#2586):
+                        # NAME gets the command role, so that name stays refused.
+                        name = unquote(tok.text) if tok.role == 'name' else 'COPROC'
                         definitions.update((name, name + '_PID'))
                     if tok.kind == 'word' and tok.role != 'delimiter' or tok.kind in ('pattern', 'arith'):
                         expr = str(tok.text[2:-2]) if tok.kind == 'arith' else tok.text

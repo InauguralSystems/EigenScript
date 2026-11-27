@@ -1171,6 +1171,9 @@ UNQUOTE_INCIDENTS = [
 # V: each new variable-effects API is judged against bash execution, separately
 # from token shape. The marker exists only in bash's initial environment.
 VARIABLE_EFFECT_INCIDENTS = [
+    ('redirection_fd_names close is not a binding', 'exec {QZVX}>&-', False, None, False),
+    ('redirection_fd_names name after a line continuation', 'exec \\\n{QZVX}>/dev/null', False, None, False),
+    ('_literal_arithmetic_effects index arithmetic in a let string sets', "let 'a[$((QZVX=1))]=1'", False, None, False),
     ('arithmetic_indices associative single-quoted math key is literal', "declare -A m=([x]=1); printf %s \"$(( m['$QZVX'] ))\"", False, None, True),
     ('arithmetic_indices associative single-quoted key in arithmetic command', "declare -A m=([x]=1); (( m['$QZVX']=1 )); declare -p m", False, None, True),
     ('runtime_substitutions single-quoted lvalue index body runs', "a=(1); a[ '$(printf %s \"$QZVX\")' ]=1", False, None, True),

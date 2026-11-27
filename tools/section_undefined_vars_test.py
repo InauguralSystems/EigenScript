@@ -342,7 +342,9 @@ def selftest():
                 ('getopts a opt -a\nprobe "$OPTARG"\n', []),
                 ('select x in a; do break; done <<<1\nprobe "$REPLY"\n', []),
                 ('coproc cat\nprobe "$COPROC_PID"\n', []),
-                ('coproc QZV while :; do :; done\nprobe "$QZV_PID"\n', []),
+                ('coproc cat\nwhile false; do :; done\nprobe "$COPROC_PID"\n', []),
+                # #2586: the tokenizer misreads NAME before a compound other than ( ) or { }.
+                ('coproc QZV while :; do :; done\nprobe "$QZV_PID"\n', ['QZV_PID']),
                 ('[[ a =~ a ]]\nprobe "$BASH_REMATCH"\n', []),
                 ('[[ a ]]; probe a =~ b\nprobe "$BASH_REMATCH"\n', ['BASH_REMATCH']),
                 ('exec {QZV}>&-\nprobe "$QZV"\n', ['QZV'])):
