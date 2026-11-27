@@ -98,6 +98,16 @@ What is true now:
     `web/build.sh` takes its C sources from the Makefile (`print-EMBED_SOURCES`)
     and links with `-sERROR_ON_UNDEFINED_SYMBOLS=1`; a hand-written list there
     had lost `src/eigs_embed.c`, and the `=0` flag let that link green.
+    After staging the playground, `tools/docs_version.py` stamps every built
+    HTML page with the source commit and latest published release's tagged
+    documentation, then checks every page before the success receipt. It also
+    generates the README's `release-docs.html` destination. Checkout includes
+    tags and history; GitHub's latest-release API supplies `DOCS_RELEASE_TAG`.
+    Successful completion of the `Release` workflow rebuilds `main` so the
+    release link updates without a source edit. This uses `workflow_run` because
+    releases created with `GITHUB_TOKEN` do not trigger a `release` workflow.
+    Standalone `web/build.sh` uses the nearest stable release tag
+    from `git describe` unless `DOCS_RELEASE_TAG` is supplied; fetch tags first.
   - **`playground (real emcc wasm32 build)`** is the aggregator (`if:
     always()`, the shape of ci.yml's aggregators, see **The PR-lane job set,
     and which are aggregators** below). It succeeds only when the worker
