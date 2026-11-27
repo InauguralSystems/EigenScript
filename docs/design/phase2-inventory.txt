@@ -2743,205 +2743,205 @@ vm.c:2615 jit_helper_index_get eigs_number_arg READ b
 vm.c:3178 vm_take_error_value make_int PRODUCE c
 vm.c:3357 slot_type_name slot_is_f64 TEST e
 vm.c:3358 slot_type_name slot_is_smi TEST e
-vm.c:3620 vm_run_ex/CASE(CONST) VAL_FLOAT TEST a
-vm.c:3621 vm_run_ex/CASE(CONST) VAL_F64_RAW RAW b
-vm.c:3621 vm_run_ex/CASE(CONST) slot_from_f64 PRODUCE c
-vm.c:3630 vm_run_ex/CASE(INT_ZERO) slot_from_int PRODUCE c
-vm.c:3634 vm_run_ex/CASE(INT_ONE) slot_from_int PRODUCE c
-vm.c:3640 vm_run_ex/CASE(INT_CONST) VAL_I64_RAW RAW b
-vm.c:3641 vm_run_ex/CASE(INT_CONST) slot_from_int PRODUCE c
-vm.c:3652 vm_run_ex/CASE(NUM_ZERO) slot_from_f64 PRODUCE c
-vm.c:3657 vm_run_ex/CASE(NUM_ONE) slot_from_f64 PRODUCE c
-vm.c:3677 #define NUM_REUSE NUM_REUSE TEST a
-vm.c:3677 #define NUM_REUSE VAL_FLOAT TEST a
-vm.c:3688 #define ARITH_FAST slot_f64_value READ b
-vm.c:3688 #define ARITH_FAST slot_f64_value READ b
-vm.c:3689 #define ARITH_FAST eigs_math_result GUARD c
-vm.c:3694 #define ARITH_FAST NUM_REUSE TEST a
-vm.c:3695 #define ARITH_FAST VAL_F64_RAW WRITE c
-vm.c:3703 #define ARITH_FAST NUM_REUSE TEST a
-vm.c:3704 #define ARITH_FAST VAL_F64_RAW WRITE c
-vm.c:3712 #define ARITH_FAST slot_from_f64 PRODUCE c
-vm.c:3724 #define INT_ARITH slot_int_value READ b
-vm.c:3724 #define INT_ARITH slot_int_value READ b
-vm.c:3738 vm_run_ex/CASE(ADD) VAL_FLOAT TEST a
-vm.c:3738 vm_run_ex/CASE(ADD) VAL_FLOAT TEST a
-vm.c:3739 vm_run_ex/CASE(ADD) VAL_F64_RAW RAW b
-vm.c:3739 vm_run_ex/CASE(ADD) VAL_F64_RAW RAW b
-vm.c:3739 vm_run_ex/CASE(ADD) eigs_math_result GUARD c
-vm.c:3740 vm_run_ex/CASE(ADD) NUM_REUSE TEST a
-vm.c:3740 vm_run_ex/CASE(ADD) VAL_F64_RAW WRITE c
-vm.c:3741 vm_run_ex/CASE(ADD) NUM_REUSE TEST a
-vm.c:3741 vm_run_ex/CASE(ADD) VAL_F64_RAW WRITE c
-vm.c:3742 vm_run_ex/CASE(ADD) make_float PRODUCE c
-vm.c:3743 vm_run_ex/CASE(ADD) val_is_number TEST a
-vm.c:3743 vm_run_ex/CASE(ADD) val_is_number TEST a
-vm.c:3744 vm_run_ex/CASE(ADD) eigs_math_result GUARD c
-vm.c:3744 vm_run_ex/CASE(ADD) make_float PRODUCE c
-vm.c:3744 vm_run_ex/CASE(ADD) vm_number_f64 READ b
-vm.c:3744 vm_run_ex/CASE(ADD) vm_number_f64 READ b
-vm.c:3794 #define NUM_BINOP VAL_FLOAT TEST a
-vm.c:3794 #define NUM_BINOP VAL_FLOAT TEST a
-vm.c:3795 #define NUM_BINOP VAL_F64_RAW RAW b
-vm.c:3795 #define NUM_BINOP VAL_F64_RAW RAW b
-vm.c:3795 #define NUM_BINOP eigs_math_result GUARD c
-vm.c:3796 #define NUM_BINOP VAL_F64_RAW RAW b
-vm.c:3796 #define NUM_BINOP VAL_F64_RAW RAW b
-vm.c:3798 #define NUM_BINOP NUM_REUSE TEST a
-vm.c:3798 #define NUM_BINOP VAL_F64_RAW WRITE c
-vm.c:3799 #define NUM_BINOP NUM_REUSE TEST a
-vm.c:3799 #define NUM_BINOP VAL_F64_RAW WRITE c
-vm.c:3800 #define NUM_BINOP make_float PRODUCE c
-vm.c:3801 #define NUM_BINOP val_is_number TEST a
-vm.c:3801 #define NUM_BINOP val_is_number TEST a
-vm.c:3802 #define NUM_BINOP vm_number_f64 READ b
-vm.c:3802 #define NUM_BINOP vm_number_f64 READ b
-vm.c:3803 #define NUM_BINOP eigs_math_result GUARD c
-vm.c:3806 #define NUM_BINOP make_float PRODUCE c
+vm.c:3624 vm_run_ex/CASE(CONST) VAL_FLOAT TEST a
+vm.c:3625 vm_run_ex/CASE(CONST) VAL_F64_RAW RAW b
+vm.c:3625 vm_run_ex/CASE(CONST) slot_from_f64 PRODUCE c
+vm.c:3634 vm_run_ex/CASE(INT_ZERO) slot_from_int PRODUCE c
+vm.c:3638 vm_run_ex/CASE(INT_ONE) slot_from_int PRODUCE c
+vm.c:3644 vm_run_ex/CASE(INT_CONST) VAL_I64_RAW RAW b
+vm.c:3645 vm_run_ex/CASE(INT_CONST) slot_from_int PRODUCE c
+vm.c:3656 vm_run_ex/CASE(NUM_ZERO) slot_from_f64 PRODUCE c
+vm.c:3661 vm_run_ex/CASE(NUM_ONE) slot_from_f64 PRODUCE c
+vm.c:3681 #define NUM_REUSE NUM_REUSE TEST a
+vm.c:3681 #define NUM_REUSE VAL_FLOAT TEST a
+vm.c:3692 #define ARITH_FAST slot_f64_value READ b
+vm.c:3692 #define ARITH_FAST slot_f64_value READ b
+vm.c:3693 #define ARITH_FAST eigs_math_result GUARD c
+vm.c:3698 #define ARITH_FAST NUM_REUSE TEST a
+vm.c:3699 #define ARITH_FAST VAL_F64_RAW WRITE c
+vm.c:3707 #define ARITH_FAST NUM_REUSE TEST a
+vm.c:3708 #define ARITH_FAST VAL_F64_RAW WRITE c
+vm.c:3716 #define ARITH_FAST slot_from_f64 PRODUCE c
+vm.c:3728 #define INT_ARITH slot_int_value READ b
+vm.c:3728 #define INT_ARITH slot_int_value READ b
+vm.c:3742 vm_run_ex/CASE(ADD) VAL_FLOAT TEST a
+vm.c:3742 vm_run_ex/CASE(ADD) VAL_FLOAT TEST a
+vm.c:3743 vm_run_ex/CASE(ADD) VAL_F64_RAW RAW b
+vm.c:3743 vm_run_ex/CASE(ADD) VAL_F64_RAW RAW b
+vm.c:3743 vm_run_ex/CASE(ADD) eigs_math_result GUARD c
+vm.c:3744 vm_run_ex/CASE(ADD) NUM_REUSE TEST a
+vm.c:3744 vm_run_ex/CASE(ADD) VAL_F64_RAW WRITE c
+vm.c:3745 vm_run_ex/CASE(ADD) NUM_REUSE TEST a
+vm.c:3745 vm_run_ex/CASE(ADD) VAL_F64_RAW WRITE c
+vm.c:3746 vm_run_ex/CASE(ADD) make_float PRODUCE c
+vm.c:3747 vm_run_ex/CASE(ADD) val_is_number TEST a
+vm.c:3747 vm_run_ex/CASE(ADD) val_is_number TEST a
+vm.c:3748 vm_run_ex/CASE(ADD) eigs_math_result GUARD c
+vm.c:3748 vm_run_ex/CASE(ADD) make_float PRODUCE c
+vm.c:3748 vm_run_ex/CASE(ADD) vm_number_f64 READ b
+vm.c:3748 vm_run_ex/CASE(ADD) vm_number_f64 READ b
+vm.c:3798 #define NUM_BINOP VAL_FLOAT TEST a
+vm.c:3798 #define NUM_BINOP VAL_FLOAT TEST a
+vm.c:3799 #define NUM_BINOP VAL_F64_RAW RAW b
+vm.c:3799 #define NUM_BINOP VAL_F64_RAW RAW b
+vm.c:3799 #define NUM_BINOP eigs_math_result GUARD c
+vm.c:3800 #define NUM_BINOP VAL_F64_RAW RAW b
+vm.c:3800 #define NUM_BINOP VAL_F64_RAW RAW b
+vm.c:3802 #define NUM_BINOP NUM_REUSE TEST a
+vm.c:3802 #define NUM_BINOP VAL_F64_RAW WRITE c
+vm.c:3803 #define NUM_BINOP NUM_REUSE TEST a
+vm.c:3803 #define NUM_BINOP VAL_F64_RAW WRITE c
+vm.c:3804 #define NUM_BINOP make_float PRODUCE c
+vm.c:3805 #define NUM_BINOP val_is_number TEST a
+vm.c:3805 #define NUM_BINOP val_is_number TEST a
+vm.c:3806 #define NUM_BINOP vm_number_f64 READ b
+vm.c:3806 #define NUM_BINOP vm_number_f64 READ b
+vm.c:3807 #define NUM_BINOP eigs_math_result GUARD c
 vm.c:3810 #define NUM_BINOP make_float PRODUCE c
-vm.c:3828 vm_run_ex/CASE(DIV) val_is_number TEST a
-vm.c:3828 vm_run_ex/CASE(DIV) val_is_number TEST a
-vm.c:3829 vm_run_ex/CASE(DIV) vm_number_f64 READ b
-vm.c:3829 vm_run_ex/CASE(DIV) vm_number_f64 READ b
-vm.c:3830 vm_run_ex/CASE(DIV) eigs_math_result GUARD c
-vm.c:3835 vm_run_ex/CASE(DIV) NUM_REUSE TEST a
-vm.c:3835 vm_run_ex/CASE(DIV) VAL_F64_RAW WRITE c
-vm.c:3836 vm_run_ex/CASE(DIV) NUM_REUSE TEST a
-vm.c:3836 vm_run_ex/CASE(DIV) VAL_F64_RAW WRITE c
-vm.c:3837 vm_run_ex/CASE(DIV) make_float PRODUCE c
+vm.c:3814 #define NUM_BINOP make_float PRODUCE c
+vm.c:3832 vm_run_ex/CASE(DIV) val_is_number TEST a
+vm.c:3832 vm_run_ex/CASE(DIV) val_is_number TEST a
+vm.c:3833 vm_run_ex/CASE(DIV) vm_number_f64 READ b
+vm.c:3833 vm_run_ex/CASE(DIV) vm_number_f64 READ b
+vm.c:3834 vm_run_ex/CASE(DIV) eigs_math_result GUARD c
+vm.c:3839 vm_run_ex/CASE(DIV) NUM_REUSE TEST a
+vm.c:3839 vm_run_ex/CASE(DIV) VAL_F64_RAW WRITE c
+vm.c:3840 vm_run_ex/CASE(DIV) NUM_REUSE TEST a
+vm.c:3840 vm_run_ex/CASE(DIV) VAL_F64_RAW WRITE c
 vm.c:3841 vm_run_ex/CASE(DIV) make_float PRODUCE c
-vm.c:3849 vm_run_ex/CASE(IDIV) val_is_number TEST a
-vm.c:3849 vm_run_ex/CASE(IDIV) val_is_number TEST a
-vm.c:3850 vm_run_ex/CASE(IDIV) VAL_INT TEST a
-vm.c:3850 vm_run_ex/CASE(IDIV) VAL_INT TEST a
-vm.c:3851 vm_run_ex/CASE(IDIV) VAL_I64_RAW RAW b
-vm.c:3851 vm_run_ex/CASE(IDIV) VAL_I64_RAW RAW b
-vm.c:3854 vm_run_ex/CASE(IDIV) make_int PRODUCE c
-vm.c:3857 vm_run_ex/CASE(IDIV) make_int PRODUCE c
-vm.c:3863 vm_run_ex/CASE(IDIV) make_int PRODUCE c
-vm.c:3866 vm_run_ex/CASE(IDIV) vm_number_f64 READ b
-vm.c:3867 vm_run_ex/CASE(IDIV) vm_number_f64 READ b
-vm.c:3888 vm_run_ex/CASE(IDIV) eigs_math_result GUARD c
-vm.c:3888 vm_run_ex/CASE(IDIV) make_float PRODUCE c
-vm.c:3893 vm_run_ex/CASE(IDIV) make_int PRODUCE c
-vm.c:3903 vm_run_ex/CASE(MOD) val_is_number TEST a
-vm.c:3903 vm_run_ex/CASE(MOD) val_is_number TEST a
-vm.c:3904 vm_run_ex/CASE(MOD) VAL_INT TEST a
-vm.c:3904 vm_run_ex/CASE(MOD) VAL_INT TEST a
-vm.c:3905 vm_run_ex/CASE(MOD) VAL_I64_RAW RAW b
-vm.c:3905 vm_run_ex/CASE(MOD) VAL_I64_RAW RAW b
-vm.c:3908 vm_run_ex/CASE(MOD) make_int PRODUCE c
-vm.c:3914 vm_run_ex/CASE(MOD) make_int PRODUCE c
-vm.c:3917 vm_run_ex/CASE(MOD) vm_number_f64 READ b
-vm.c:3918 vm_run_ex/CASE(MOD) vm_number_f64 READ b
-vm.c:3919 vm_run_ex/CASE(MOD) eigs_math_result GUARD c
-vm.c:3919 vm_run_ex/CASE(MOD) make_float PRODUCE c
-vm.c:3924 vm_run_ex/CASE(MOD) make_float PRODUCE c
-vm.c:3940 #define INT_BINOP_R slot_from_int PRODUCE c
-vm.c:3946 #define INT_BINOP_R slot_f64_value READ b
-vm.c:3966 vm_run_ex/CASE(NEG) slot_f64_value READ b
-vm.c:3967 vm_run_ex/CASE(NEG) eigs_math_result GUARD c
-vm.c:3970 vm_run_ex/CASE(NEG) NUM_REUSE TEST a
-vm.c:3970 vm_run_ex/CASE(NEG) VAL_F64_RAW WRITE c
-vm.c:3973 vm_run_ex/CASE(NEG) slot_from_f64 PRODUCE c
-vm.c:3977 vm_run_ex/CASE(NEG) slot_int_value READ b
-vm.c:3982 vm_run_ex/CASE(NEG) slot_from_int PRODUCE c
-vm.c:3987 vm_run_ex/CASE(NEG) slot_from_f64 PRODUCE c
-vm.c:4004 vm_run_ex/CASE(BNOT) slot_from_int PRODUCE c
-vm.c:4009 vm_run_ex/CASE(BNOT) slot_f64_value READ b
-vm.c:4022 vm_run_ex/CASE(EQ) slot_is_smi TEST f
-vm.c:4022 vm_run_ex/CASE(EQ) slot_is_smi TEST f
-vm.c:4028 vm_run_ex/CASE(EQ) slot_f64_value READ f
-vm.c:4028 vm_run_ex/CASE(EQ) slot_f64_value READ f
-vm.c:4048 vm_run_ex/CASE(NE) slot_is_smi TEST f
-vm.c:4048 vm_run_ex/CASE(NE) slot_is_smi TEST f
-vm.c:4054 vm_run_ex/CASE(NE) slot_f64_value READ f
-vm.c:4054 vm_run_ex/CASE(NE) slot_f64_value READ f
-vm.c:4076 #define NUM_CMP slot_f64_value READ f
-vm.c:4076 #define NUM_CMP slot_f64_value READ f
-vm.c:5028 vm_run_ex/CASE(INDEX_GET) slot_is_f64 TEST a
-vm.c:5030 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
-vm.c:5037 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
-vm.c:5038 vm_run_ex/CASE(INDEX_GET) eigs_slot_number READ b
-vm.c:5047 vm_run_ex/CASE(INDEX_GET) buffer_read_f64 READ b
-vm.c:5049 vm_run_ex/CASE(INDEX_GET) slot_from_f64 PRODUCE c
-vm.c:5051 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
-vm.c:5052 vm_run_ex/CASE(INDEX_GET) eigs_slot_number READ b
-vm.c:5073 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
-vm.c:5075 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
-vm.c:5076 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
-vm.c:5078 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
-vm.c:5080 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
-vm.c:5081 vm_run_ex/CASE(INDEX_SET) eigs_slot_number READ b
-vm.c:5090 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
-vm.c:5092 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
-vm.c:5092 vm_run_ex/CASE(INDEX_SET) list_set_f64 PRODUCE c
-vm.c:5094 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
-vm.c:5095 vm_run_ex/CASE(INDEX_SET) eigs_slot_number READ b
-vm.c:5106 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
-vm.c:5109 vm_run_ex/CASE(INDEX_SET) eigs_float_arg READ b
-vm.c:5114 vm_run_ex/CASE(INDEX_SET) eigs_number_arg READ b
-vm.c:5117 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
-vm.c:5120 vm_run_ex/CASE(INDEX_SET) eigs_float_arg READ b
-vm.c:5122 vm_run_ex/CASE(INDEX_SET) eigs_number_arg READ b
-vm.c:5124 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
-vm.c:5182 vm_run_ex/CASE(DOT_SET) slot_is_f64 TEST a
-vm.c:5185 vm_run_ex/CASE(DOT_SET) SLOT_F64_RAW RAW b
-vm.c:5246 vm_run_ex/CASE(LOCAL_DOT_SET) slot_is_f64 TEST a
-vm.c:5247 vm_run_ex/CASE(LOCAL_DOT_SET) SLOT_F64_RAW RAW b
-vm.c:5273 vm_run_ex/CASE(LOCAL_IDX_GET) buffer_read_f64 READ b
-vm.c:5273 vm_run_ex/CASE(LOCAL_IDX_GET) slot_from_f64 PRODUCE c
-vm.c:5379 vm_run_ex/CASE(LOCAL_IDX_DOT_SET) slot_is_f64 TEST a
-vm.c:5380 vm_run_ex/CASE(LOCAL_IDX_DOT_SET) SLOT_F64_RAW RAW b
-vm.c:5452 vm_run_ex/CASE(ITER_NEXT) slot_is_smi TEST a
-vm.c:5455 vm_run_ex/CASE(ITER_NEXT) list_set_int PRODUCE c
-vm.c:5459 vm_run_ex/CASE(ITER_NEXT) buffer_read_f64 READ b
-vm.c:5459 vm_run_ex/CASE(ITER_NEXT) slot_from_f64 PRODUCE c
-vm.c:5902 vm_run_ex/CASE(INTERROGATE) VAL_INT TEST i
-vm.c:5903 vm_run_ex/CASE(INTERROGATE) VAL_F64_RAW RAW i
-vm.c:5903 vm_run_ex/CASE(INTERROGATE) VAL_FLOAT TEST i
-vm.c:5903 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
-vm.c:5907 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
-vm.c:5908 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
-vm.c:5909 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
-vm.c:5910 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
-vm.c:5914 vm_run_ex/CASE(INTERROGATE) val_is_number TEST i
-vm.c:5928 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
-vm.c:5929 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
-vm.c:5930 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
-vm.c:5931 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
-vm.c:5951 vm_run_ex/CASE(INTERROGATE_NAMED) make_int PRODUCE i
-vm.c:5974 vm_run_ex/CASE(INTERROGATE_NAMED) make_float PRODUCE i
-vm.c:5990 vm_run_ex/CASE(INTERROGATE_NAMED_AT) val_is_number TEST i
-vm.c:5998 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_INT TEST i
-vm.c:6001 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_I64_RAW RAW i
-vm.c:6011 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_F64_RAW RAW i
-vm.c:6013 vm_run_ex/CASE(INTERROGATE_NAMED_AT) num_to_i64_exact READ i
-vm.c:6048 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) val_is_number TEST i
-vm.c:6049 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_INT TEST i
-vm.c:6050 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_I64_RAW RAW i
-vm.c:6051 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_F64_RAW RAW i
-vm.c:6066 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) num_to_i64_exact READ i
-vm.c:6184 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT CASE a
-vm.c:6184 vm_run_ex/CASE(SLICE_GET) VAL_INT CASE a
-vm.c:6201 #define READ_SLICE_BOUND slot_is_f64 TEST a
-vm.c:6202 #define READ_SLICE_BOUND SLOT_F64_RAW RAW b
-vm.c:6204 #define READ_SLICE_BOUND SLOT_F64_RAW RAW b
-vm.c:6211 #define READ_SLICE_BOUND VAL_INT TEST a
-vm.c:6215 #define READ_SLICE_BOUND VAL_I64_RAW RAW b
-vm.c:6218 #define READ_SLICE_BOUND VAL_FLOAT TEST a
-vm.c:6219 #define READ_SLICE_BOUND VAL_F64_RAW RAW b
-vm.c:6222 #define READ_SLICE_BOUND VAL_F64_RAW RAW b
-vm.c:6233 #define READ_SLICE_BOUND slot_is_smi TEST a
-vm.c:6236 #define READ_SLICE_BOUND slot_smi_val RAW b
-vm.c:6269 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT TEST a
-vm.c:6269 vm_run_ex/CASE(SLICE_GET) VAL_INT TEST a
-vm.c:6269 vm_run_ex/CASE(SLICE_GET) eigs_slot_number READ b
-vm.c:6270 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT TEST a
-vm.c:6270 vm_run_ex/CASE(SLICE_GET) VAL_INT TEST a
-vm.c:6270 vm_run_ex/CASE(SLICE_GET) eigs_slot_number READ b
-vm.c:6940 vm_run_ex/CASE(DISPATCH) VAL_FLOAT TEST a
-vm.c:6940 vm_run_ex/CASE(DISPATCH) VAL_INT TEST a
-vm.c:6946 vm_run_ex/CASE(DISPATCH) eigs_slot_number READ b
-vm.c:6951 vm_run_ex/CASE(DISPATCH) num_to_i64_exact READ b
+vm.c:3845 vm_run_ex/CASE(DIV) make_float PRODUCE c
+vm.c:3853 vm_run_ex/CASE(IDIV) val_is_number TEST a
+vm.c:3853 vm_run_ex/CASE(IDIV) val_is_number TEST a
+vm.c:3854 vm_run_ex/CASE(IDIV) VAL_INT TEST a
+vm.c:3854 vm_run_ex/CASE(IDIV) VAL_INT TEST a
+vm.c:3855 vm_run_ex/CASE(IDIV) VAL_I64_RAW RAW b
+vm.c:3855 vm_run_ex/CASE(IDIV) VAL_I64_RAW RAW b
+vm.c:3858 vm_run_ex/CASE(IDIV) make_int PRODUCE c
+vm.c:3861 vm_run_ex/CASE(IDIV) make_int PRODUCE c
+vm.c:3867 vm_run_ex/CASE(IDIV) make_int PRODUCE c
+vm.c:3870 vm_run_ex/CASE(IDIV) vm_number_f64 READ b
+vm.c:3871 vm_run_ex/CASE(IDIV) vm_number_f64 READ b
+vm.c:3892 vm_run_ex/CASE(IDIV) eigs_math_result GUARD c
+vm.c:3892 vm_run_ex/CASE(IDIV) make_float PRODUCE c
+vm.c:3897 vm_run_ex/CASE(IDIV) make_int PRODUCE c
+vm.c:3907 vm_run_ex/CASE(MOD) val_is_number TEST a
+vm.c:3907 vm_run_ex/CASE(MOD) val_is_number TEST a
+vm.c:3908 vm_run_ex/CASE(MOD) VAL_INT TEST a
+vm.c:3908 vm_run_ex/CASE(MOD) VAL_INT TEST a
+vm.c:3909 vm_run_ex/CASE(MOD) VAL_I64_RAW RAW b
+vm.c:3909 vm_run_ex/CASE(MOD) VAL_I64_RAW RAW b
+vm.c:3912 vm_run_ex/CASE(MOD) make_int PRODUCE c
+vm.c:3918 vm_run_ex/CASE(MOD) make_int PRODUCE c
+vm.c:3921 vm_run_ex/CASE(MOD) vm_number_f64 READ b
+vm.c:3922 vm_run_ex/CASE(MOD) vm_number_f64 READ b
+vm.c:3923 vm_run_ex/CASE(MOD) eigs_math_result GUARD c
+vm.c:3923 vm_run_ex/CASE(MOD) make_float PRODUCE c
+vm.c:3928 vm_run_ex/CASE(MOD) make_float PRODUCE c
+vm.c:3944 #define INT_BINOP_R slot_from_int PRODUCE c
+vm.c:3950 #define INT_BINOP_R slot_f64_value READ b
+vm.c:3970 vm_run_ex/CASE(NEG) slot_f64_value READ b
+vm.c:3971 vm_run_ex/CASE(NEG) eigs_math_result GUARD c
+vm.c:3974 vm_run_ex/CASE(NEG) NUM_REUSE TEST a
+vm.c:3974 vm_run_ex/CASE(NEG) VAL_F64_RAW WRITE c
+vm.c:3977 vm_run_ex/CASE(NEG) slot_from_f64 PRODUCE c
+vm.c:3981 vm_run_ex/CASE(NEG) slot_int_value READ b
+vm.c:3986 vm_run_ex/CASE(NEG) slot_from_int PRODUCE c
+vm.c:3991 vm_run_ex/CASE(NEG) slot_from_f64 PRODUCE c
+vm.c:4008 vm_run_ex/CASE(BNOT) slot_from_int PRODUCE c
+vm.c:4013 vm_run_ex/CASE(BNOT) slot_f64_value READ b
+vm.c:4026 vm_run_ex/CASE(EQ) slot_is_smi TEST f
+vm.c:4026 vm_run_ex/CASE(EQ) slot_is_smi TEST f
+vm.c:4032 vm_run_ex/CASE(EQ) slot_f64_value READ f
+vm.c:4032 vm_run_ex/CASE(EQ) slot_f64_value READ f
+vm.c:4052 vm_run_ex/CASE(NE) slot_is_smi TEST f
+vm.c:4052 vm_run_ex/CASE(NE) slot_is_smi TEST f
+vm.c:4058 vm_run_ex/CASE(NE) slot_f64_value READ f
+vm.c:4058 vm_run_ex/CASE(NE) slot_f64_value READ f
+vm.c:4080 #define NUM_CMP slot_f64_value READ f
+vm.c:4080 #define NUM_CMP slot_f64_value READ f
+vm.c:5032 vm_run_ex/CASE(INDEX_GET) slot_is_f64 TEST a
+vm.c:5034 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
+vm.c:5041 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
+vm.c:5042 vm_run_ex/CASE(INDEX_GET) eigs_slot_number READ b
+vm.c:5051 vm_run_ex/CASE(INDEX_GET) buffer_read_f64 READ b
+vm.c:5053 vm_run_ex/CASE(INDEX_GET) slot_from_f64 PRODUCE c
+vm.c:5055 vm_run_ex/CASE(INDEX_GET) SLOT_F64_RAW RAW b
+vm.c:5056 vm_run_ex/CASE(INDEX_GET) eigs_slot_number READ b
+vm.c:5077 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
+vm.c:5079 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
+vm.c:5080 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
+vm.c:5082 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
+vm.c:5084 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
+vm.c:5085 vm_run_ex/CASE(INDEX_SET) eigs_slot_number READ b
+vm.c:5094 vm_run_ex/CASE(INDEX_SET) slot_is_f64 TEST a
+vm.c:5096 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
+vm.c:5096 vm_run_ex/CASE(INDEX_SET) list_set_f64 PRODUCE c
+vm.c:5098 vm_run_ex/CASE(INDEX_SET) SLOT_F64_RAW RAW b
+vm.c:5099 vm_run_ex/CASE(INDEX_SET) eigs_slot_number READ b
+vm.c:5110 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
+vm.c:5113 vm_run_ex/CASE(INDEX_SET) eigs_float_arg READ b
+vm.c:5118 vm_run_ex/CASE(INDEX_SET) eigs_number_arg READ b
+vm.c:5121 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
+vm.c:5124 vm_run_ex/CASE(INDEX_SET) eigs_float_arg READ b
+vm.c:5126 vm_run_ex/CASE(INDEX_SET) eigs_number_arg READ b
+vm.c:5128 vm_run_ex/CASE(INDEX_SET) val_is_number TEST a
+vm.c:5186 vm_run_ex/CASE(DOT_SET) slot_is_f64 TEST a
+vm.c:5189 vm_run_ex/CASE(DOT_SET) SLOT_F64_RAW RAW b
+vm.c:5250 vm_run_ex/CASE(LOCAL_DOT_SET) slot_is_f64 TEST a
+vm.c:5251 vm_run_ex/CASE(LOCAL_DOT_SET) SLOT_F64_RAW RAW b
+vm.c:5277 vm_run_ex/CASE(LOCAL_IDX_GET) buffer_read_f64 READ b
+vm.c:5277 vm_run_ex/CASE(LOCAL_IDX_GET) slot_from_f64 PRODUCE c
+vm.c:5383 vm_run_ex/CASE(LOCAL_IDX_DOT_SET) slot_is_f64 TEST a
+vm.c:5384 vm_run_ex/CASE(LOCAL_IDX_DOT_SET) SLOT_F64_RAW RAW b
+vm.c:5456 vm_run_ex/CASE(ITER_NEXT) slot_is_smi TEST a
+vm.c:5459 vm_run_ex/CASE(ITER_NEXT) list_set_int PRODUCE c
+vm.c:5463 vm_run_ex/CASE(ITER_NEXT) buffer_read_f64 READ b
+vm.c:5463 vm_run_ex/CASE(ITER_NEXT) slot_from_f64 PRODUCE c
+vm.c:5906 vm_run_ex/CASE(INTERROGATE) VAL_INT TEST i
+vm.c:5907 vm_run_ex/CASE(INTERROGATE) VAL_F64_RAW RAW i
+vm.c:5907 vm_run_ex/CASE(INTERROGATE) VAL_FLOAT TEST i
+vm.c:5907 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
+vm.c:5911 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
+vm.c:5912 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
+vm.c:5913 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
+vm.c:5914 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
+vm.c:5918 vm_run_ex/CASE(INTERROGATE) val_is_number TEST i
+vm.c:5932 vm_run_ex/CASE(INTERROGATE) make_int PRODUCE i
+vm.c:5933 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
+vm.c:5934 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
+vm.c:5935 vm_run_ex/CASE(INTERROGATE) make_float PRODUCE i
+vm.c:5955 vm_run_ex/CASE(INTERROGATE_NAMED) make_int PRODUCE i
+vm.c:5978 vm_run_ex/CASE(INTERROGATE_NAMED) make_float PRODUCE i
+vm.c:5994 vm_run_ex/CASE(INTERROGATE_NAMED_AT) val_is_number TEST i
+vm.c:6002 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_INT TEST i
+vm.c:6005 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_I64_RAW RAW i
+vm.c:6015 vm_run_ex/CASE(INTERROGATE_NAMED_AT) VAL_F64_RAW RAW i
+vm.c:6017 vm_run_ex/CASE(INTERROGATE_NAMED_AT) num_to_i64_exact READ i
+vm.c:6052 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) val_is_number TEST i
+vm.c:6053 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_INT TEST i
+vm.c:6054 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_I64_RAW RAW i
+vm.c:6055 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) VAL_F64_RAW RAW i
+vm.c:6070 vm_run_ex/CASE(INTERROGATE_NAMED_WHEN) num_to_i64_exact READ i
+vm.c:6188 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT CASE a
+vm.c:6188 vm_run_ex/CASE(SLICE_GET) VAL_INT CASE a
+vm.c:6205 #define READ_SLICE_BOUND slot_is_f64 TEST a
+vm.c:6206 #define READ_SLICE_BOUND SLOT_F64_RAW RAW b
+vm.c:6208 #define READ_SLICE_BOUND SLOT_F64_RAW RAW b
+vm.c:6215 #define READ_SLICE_BOUND VAL_INT TEST a
+vm.c:6219 #define READ_SLICE_BOUND VAL_I64_RAW RAW b
+vm.c:6222 #define READ_SLICE_BOUND VAL_FLOAT TEST a
+vm.c:6223 #define READ_SLICE_BOUND VAL_F64_RAW RAW b
+vm.c:6226 #define READ_SLICE_BOUND VAL_F64_RAW RAW b
+vm.c:6237 #define READ_SLICE_BOUND slot_is_smi TEST a
+vm.c:6240 #define READ_SLICE_BOUND slot_smi_val RAW b
+vm.c:6273 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT TEST a
+vm.c:6273 vm_run_ex/CASE(SLICE_GET) VAL_INT TEST a
+vm.c:6273 vm_run_ex/CASE(SLICE_GET) eigs_slot_number READ b
+vm.c:6274 vm_run_ex/CASE(SLICE_GET) VAL_FLOAT TEST a
+vm.c:6274 vm_run_ex/CASE(SLICE_GET) VAL_INT TEST a
+vm.c:6274 vm_run_ex/CASE(SLICE_GET) eigs_slot_number READ b
+vm.c:6944 vm_run_ex/CASE(DISPATCH) VAL_FLOAT TEST a
+vm.c:6944 vm_run_ex/CASE(DISPATCH) VAL_INT TEST a
+vm.c:6950 vm_run_ex/CASE(DISPATCH) eigs_slot_number READ b
+vm.c:6955 vm_run_ex/CASE(DISPATCH) num_to_i64_exact READ b
 vm.h:841 vm_index_is_int num_to_i64_exact READ b
