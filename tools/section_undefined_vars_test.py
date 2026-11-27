@@ -335,6 +335,20 @@ def selftest():
         assert any(n == 'TEST_DIR' for _, _, n in gate.scan(fixture, [fragment]))
         fragment = tree(fixture, 'probe "$PIPESTATUS"\n')
         assert gate.scan(fixture, [fragment]) == []
+        # Each implicit setter derivation has a case that goes red without it.
+        for program, want in (
+                ('read <<<1\nprobe "$REPLY"\n', []),
+                ('mapfile <<<1\nprobe "$MAPFILE"\n', []),
+                ('getopts a opt -a\nprobe "$OPTARG"\n', []),
+                ('select x in a; do break; done <<<1\nprobe "$REPLY"\n', []),
+                ('coproc cat\nprobe "$COPROC_PID"\n', []),
+                ('coproc QZV while :; do :; done\nprobe "$QZV_PID"\n', []),
+                ('[[ a =~ a ]]\nprobe "$BASH_REMATCH"\n', []),
+                ('[[ a ]]; probe a =~ b\nprobe "$BASH_REMATCH"\n', ['BASH_REMATCH']),
+                ('exec {QZV}>&-\nprobe "$QZV"\n', ['QZV'])):
+            fragment = tree(fixture, program)
+            got = [n for _, _, n in gate.scan(fixture, [fragment])]
+            assert got == want, (program, got, want)
         fragment = tree(fixture, 'probe "$HOME $TMPDIR $REPLY"\n')
         assert [n for _, _, n in gate.scan(fixture, [fragment])] == ['HOME', 'REPLY', 'TMPDIR']
         fragment = tree(fixture, 'probe "$(probe $TEST_DIR)\n$(probe $TEST_DIR)"\n')
