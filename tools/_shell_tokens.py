@@ -923,6 +923,7 @@ class _Body:
             return self.word_role(word)
         # ---- a reserved word may start here
         if word == "{":
+            self.after_coproc = False         # #2586: `coproc { WORD while` names nothing
             self.split_next = True
             return "reserved"                 # a group or function body opens
         if self.after_time and (word == "--" or (word == "-p" and self.after_time == 1)):
@@ -934,6 +935,7 @@ class _Body:
             rest = re.sub(r"\\\n", "", self.lx.text[self.i:]).lstrip(" \t")
             compound = (word not in RESERVED_OPENERS | COMPOUND_CLOSERS
                         and word not in ("for", "select", "case", "function", "[[")
+                        and assignment_split(word) is None
                         and re.match(r"(?:while|until|for|select|if|case|\[\[)(?=$|[ \t\n;&|()<>])", rest))
             if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")) \
                     or compound:

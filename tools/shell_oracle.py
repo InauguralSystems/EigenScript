@@ -958,6 +958,35 @@ INCIDENTS = [
 # (text, [(word, role), ...] over its word and pattern tokens).  Each row was
 # put to bash: the 'command' words are the commands bash ran.
 ROLE_INCIDENTS = [
+    # #2586 critic: a word inside `coproc { ... }` is a command, never the
+    # coprocess name, even before a keyword (bash ran echo/X, c3).
+    ("coproc { echo case; }\nc3\n",
+     [("coproc", "reserved"), ("{", "reserved"), ("echo", "command"), ("case", "argument"),
+      ("}", "reserved"), ("c3", "command")]),
+    ("coproc { echo [[ x; }\nc3\n",
+     [("coproc", "reserved"), ("{", "reserved"), ("echo", "command"), ("[[", "argument"),
+      ("x", "argument"), ("}", "reserved"), ("c3", "command")]),
+    # #2586 critic: an assignment is not a name; bash runs `while` as a command.
+    ("coproc x=1 while\nc3\n",
+     [("coproc", "reserved"), ("x=1", "assignment"), ("while", "command"), ("c3", "command")]),
+    # #2586 critic: tabs around the keyword (bash ran c1, c3).
+    ("coproc QZV\twhile\t:; do c1; break; done\nc3\n",
+     [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
+      ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"), ("c3", "command")]),
+    # #2586 critic: after an unnamed for/select/case/[[ a keyword is their
+    # operand, not a compound (bash ran c1, c3 / c2).
+    ("coproc for if in a; do c1; done\nc3\n",
+     [("coproc", "reserved"), ("for", "reserved"), ("if", "name"), ("in", "reserved"), ("a", "list"),
+      ("do", "reserved"), ("c1", "command"), ("done", "reserved"), ("c3", "command")]),
+    ("coproc select if in a; do c1; break; done <<<1\nc3\n",
+     [("coproc", "reserved"), ("select", "reserved"), ("if", "name"), ("in", "reserved"), ("a", "list"),
+      ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"),
+      ("1", "target"), ("c3", "command")]),
+    ("coproc case if in if) c1;; esac\nc3\n",
+     [("coproc", "reserved"), ("case", "reserved"), ("if", "subject"), ("in", "reserved"),
+      ("if", "pattern"), ("c1", "command"), ("esac", "reserved"), ("c3", "command")]),
+    ("coproc [[ if ]] && c2\n",
+     [("coproc", "reserved"), ("[[", "reserved"), ("if", "test"), ("]]", "reserved"), ("c2", "command")]),
     # #2586: names, every reserved word and body/next-line commands are pinned.
     ("coproc QZV while :; do c1; break; done\nc3\n",
      [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
@@ -1252,6 +1281,11 @@ PLANTS = [
     # #2586: restore the old brace/paren-only rule; H must see every new compound.
     ("coproc-compound-name-read-as-command",
      '                    or compound:', '                    or False:', {"H"}),
+    ("coproc-group-word-read-as-name",
+     '            self.after_coproc = False         # #2586: `coproc { WORD while` names nothing\n',
+     '', {"H"}),
+    ("coproc-assignment-read-as-name",
+     '                        and assignment_split(word) is None\n', '', {"H"}),
     # ---- the rules the mutants bought (tools/_shell_exec.py --mutants)
     ("expansion-only-command-word-never-vanishes",
      "        self.vanishing = self.lx.roles and may_vanish(word)\n"
