@@ -343,11 +343,11 @@ def selftest():
                 ('select x in a; do break; done <<<1\nprobe "$REPLY"\n', []),
                 ('coproc cat\nprobe "$COPROC_PID"\n', []),
                 ('coproc cat\nwhile false; do :; done\nprobe "$COPROC_PID"\n', []),
-                # #2586: the tokenizer misreads NAME before a compound other than ( ) or { }.
-                ('coproc QZV while :; do :; done\nprobe "$QZV_PID"\n', ['QZV_PID']),
+                ('coproc QZV while :; do :; done\nprobe "$QZV_PID"\n', []),
                 ('[[ a =~ a ]]\nprobe "$BASH_REMATCH"\n', []),
                 ('[[ a ]]; probe a =~ b\nprobe "$BASH_REMATCH"\n', ['BASH_REMATCH']),
-                ('exec {QZV}>&-\nprobe "$QZV"\n', ['QZV'])):
+                ('exec {QZV}>&-\nprobe "$QZV"\n', ['QZV']),
+                ('exec {QZV}>&"-"\nprobe "$QZV"\n', ['QZV'])):
             fragment = tree(fixture, program)
             got = [n for _, _, n in gate.scan(fixture, [fragment])]
             assert got == want, (program, got, want)

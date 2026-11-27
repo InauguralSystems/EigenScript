@@ -10,7 +10,7 @@ runner, its sourced helpers, or the section itself.
 The table below documents external inputs to the suite. The static section
 variable check reads only this marked table, not uppercase words in prose.
 Optional inputs should normally use `${NAME:-default}` at their point of use.
-Bash's own variables are derived by the check: from a clean shell (`compgen -v` after one command), and from the constructs that set a name implicitly (`read` and `select` set `REPLY`, `mapfile` sets `MAPFILE`, `getopts` sets `OPTARG`, `[[ =~ ]]` sets `BASH_REMATCH`, `coproc` sets `COPROC` and `COPROC_PID`, or `NAME` and `NAME_PID` before `( )` or `{ }` (before another compound the name is still refused, #2586), `wait -p` and `{name}>` set their name). Any other input, such as `HOME` or `TMPDIR`, is read only if it is in the table below.
+Bash's own variables are derived by the check: from a clean shell (`compgen -v` after one command), and from the constructs that set a name implicitly (`read` and `select` set `REPLY`, `mapfile` sets `MAPFILE`, `getopts` sets `OPTARG`, `[[ =~ ]]` sets `BASH_REMATCH`, `coproc` sets `COPROC` and `COPROC_PID`, or `NAME` and `NAME_PID` before a compound command, `wait -p` and `{name}>` set their name). Any other input, such as `HOME` or `TMPDIR`, is read only if it is in the table below.
 
 <!-- suite-environment -->
 | Variable | Purpose |

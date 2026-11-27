@@ -187,8 +187,6 @@ class Reader:
                         definitions.add('BASH_REMATCH')
                     if previous and previous.role == 'reserved' and previous.text == 'coproc':
                         # bash binds NAME and NAME_PID, or COPROC and COPROC_PID unnamed.
-                        # `coproc NAME while ...` is misread by the tokenizer (#2586):
-                        # NAME gets the command role, so that name stays refused.
                         name = unquote(tok.text) if tok.role == 'name' else 'COPROC'
                         definitions.update((name, name + '_PID'))
                     if tok.kind == 'word' and tok.role != 'delimiter' or tok.kind in ('pattern', 'arith'):
