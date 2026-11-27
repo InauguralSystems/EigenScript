@@ -2315,7 +2315,11 @@ Value* builtin_sgd_update(Value *arg) {
                     return make_null();
                 }
         }
-    } else if (param->data.buffer.count != grad->data.buffer.count) {
+    } else if ((param->data.buffer.rows > 0) != (grad->data.buffer.rows > 0) ||
+               (param->data.buffer.rows > 0
+                ? (param->data.buffer.rows != grad->data.buffer.rows ||
+                   param->data.buffer.cols != grad->data.buffer.cols)
+                : param->data.buffer.count != grad->data.buffer.count)) {
         char ps[64], gs[64];
         if (param->data.buffer.rows > 0)
             snprintf(ps, sizeof ps, "%d x %d", param->data.buffer.rows, param->data.buffer.cols);
@@ -2932,16 +2936,6 @@ Value* builtin_tensor_save(Value *arg) {
 }
 #endif /* !EIGENSCRIPT_FREESTANDING */
 
-/* #262 Step E: the on-disk observer block is read past (format compatibility)
- * but no longer applied — Values carry no observer state under the slot model. */
-static void restore_observer_1d(Value *list, double *obs_data, int count) {
-    (void)list; (void)obs_data; (void)count;
-}
-
-static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int cols) {
-    (void)tensor; (void)obs_data; (void)rows; (void)cols;
-}
-
 /* ==== BUILTIN: tensor_load ==== */
 /* tensor_load of path — load 1D or 2D tensor from binary file.
  * Reads legacy observer blocks without restoring observation history. */
@@ -3026,22 +3020,13 @@ Value* builtin_tensor_load(Value *arg) {
     uint32_t cols_raw = header[2];
     uint32_t flags = header[3];
 
-    /* Detect old format: flags would be a huge number if it's actually data */
-    int has_observer = 0;
-    if (flags <= 1) {
-        has_observer = (flags & 1);
-    } else {
-        /* Old 3-word header — rewind and re-read */
-        fseek(f, 0, SEEK_SET);
-        uint32_t old_header[3];
-        if (fread(old_header, sizeof(uint32_t), 3, f) != 3) {
-            fclose(f); return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short legacy three-word header");
-        }
-        ndim_raw = old_header[0];
-        rows_raw = old_header[1];
-        cols_raw = old_header[2];
-        has_observer = 0;
+    /* R1 (#2533): flags are a header word, never payload detection. */
+    if (flags > 1) {
+        fclose(f);
+        return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str,
+                                   "flags word is not 0 or 1; the three-word format is not read");
     }
+    int has_observer = (flags & 1);
 
     if (ndim_raw != 1 && ndim_raw != 2) {
         fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str, "ndim is not 1 or 2");
@@ -3049,6 +3034,14 @@ Value* builtin_tensor_load(Value *arg) {
     if (rows_raw == 0 || cols_raw == 0) {
         fclose(f); return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str,
                                                rows_raw == 0 ? "zero rows" : "zero columns");
+    }
+
+    /* R2 (#2534): both writers encode a 1-D tensor with rows=1. */
+    if (ndim_raw == 1 && rows_raw != 1) {
+        char detail[96];
+        snprintf(detail, sizeof detail, "1-D rows=%u, expected 1", rows_raw);
+        fclose(f);
+        return file_recorded_error(EK_VALUE, "tensor_load", arg->data.str, detail);
     }
 
     uint64_t total64 = (uint64_t)rows_raw * (uint64_t)cols_raw;
@@ -3088,16 +3081,14 @@ Value* builtin_tensor_load(Value *arg) {
         }
     }
 
-    /* Read observer state if present */
-    double *obs_data = NULL;
+    /* R3 (#2529): read and validate the block; seeking past EOF is not a read. */
     if (has_observer) {
-        obs_data = xmalloc_array(safe_size_mul((size_t)total, 5), sizeof(double));
-        if (obs_data) {
-            if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
-                free(obs_data);
-                obs_data = NULL;
-            }
+        double *obs_data = xmalloc_array(safe_size_mul((size_t)total, 5), sizeof(double));
+        if ((int)fread(obs_data, sizeof(double), total * 5, f) != total * 5) {
+            free(obs_data); free(data); fclose(f);
+            return file_recorded_error(EK_IO, "tensor_load", arg->data.str, "short observer block");
         }
+        free(obs_data);
     }
 
     fclose(f);
@@ -3111,17 +3102,8 @@ Value* builtin_tensor_load(Value *arg) {
     free(data);
 
     if (g_has_error) {
-        free(obs_data); val_decref(result); tensor_load_record_verdict(0, 0);
+        val_decref(result); tensor_load_record_verdict(0, 0);
         return make_null();
-    }
-
-    /* Consume legacy observer metadata; the restore hooks are compatibility no-ops. */
-    if (obs_data && result) {
-        if (ndim == 1)
-            restore_observer_1d(result, obs_data, total);
-        else
-            restore_observer_2d(result, obs_data, rows, cols);
-        free(obs_data);
     }
 
     tensor_load_record_verdict(0, 0);

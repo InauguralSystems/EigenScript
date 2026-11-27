@@ -2349,17 +2349,17 @@
     "category": "output_only",
     "minimum": null,
     "maximum": null,
-    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. #2514 reviewed repin: a failed fopen now raises io through file_io_error; argument validation and shape are unchanged.",
+    "reason": "Input is scalar string; list operations concern output or replay result, not input tuple. #2550 R1-R3 reviewed repin: header and observer validation changed; the scalar path argument shape is unchanged.",
     "public_names": [
       "tensor_load"
     ],
     "disposition": "exempt",
     "body_sha256": [
-      "a18bb5b6976d64b5446b6452a43b886c4ed2b52c0e4e108df8077a2e09c556b1"
+      "9f8c9b7fca9cd67cfdb05424f3fc780ef7b01c763ad8b300b5e09f2523da605f"
     ],
     "source_sha256": {
       "builtin_tensor_load": [
-        "a18bb5b6976d64b5446b6452a43b886c4ed2b52c0e4e108df8077a2e09c556b1"
+        "9f8c9b7fca9cd67cfdb05424f3fc780ef7b01c763ad8b300b5e09f2523da605f"
       ]
     }
   },

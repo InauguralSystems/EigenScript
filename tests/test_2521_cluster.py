@@ -46,9 +46,8 @@ with tempfile.TemporaryDirectory() as tmp:
    recorded.returncode==replayed.returncode==0 and recorded.stdout==replayed.stdout and recorded.stderr==replayed.stderr and
    f'["{kind}"' in recorded.stdout.decode(errors="replace") and tape_text.count("tensor_load=")==1,
    f"record={recorded.returncode,recorded.stdout,recorded.stderr} replay={replayed.returncode,replayed.stdout,replayed.stderr} tape={tape_text!r}")
- # A fourth header word above 1 selects the legacy three-word format, which re-reads
- # from the start; only a stream that cannot seek can then come up short.
- strict_error("tensor_load legacy short header through a pipe",'tensor_load of "/dev/stdin"',"io","'/dev/stdin': short legacy three-word header",stdin_bytes=struct.pack("IIII",2,1,1,7))
+ # R1: a fourth word above 1 is refused before any legacy rewind.
+ strict_error("tensor_load flags through a pipe",'tensor_load of "/dev/stdin"',"value","'/dev/stdin': flags word is not 0 or 1; the three-word format is not read",stdin_bytes=struct.pack("IIII",2,1,1,7))
  strict_error("tensor_load directory",f'tensor_load of "{root}"',"io",f"{root}': Is a directory")
  alloc=root/"allocation.tensor"; alloc.write_bytes(struct.pack("IIII",2,1,10000000,0))
  def memory_cap(): resource.setrlimit(resource.RLIMIT_AS,(70000000,70000000))
@@ -89,7 +88,7 @@ with tempfile.TemporaryDirectory() as tmp:
  if alloc_kwargs is not None:
   traced("allocation",caught(f'tensor_load of "{alloc}"'),"limit",alloc_kwargs,{})
  traced("directory",caught(f'tensor_load of "{root}"'),"io",{},{})
- traced("legacy_pipe",caught('tensor_load of "/dev/stdin"'),"io",{"input":struct.pack("IIII",2,1,1,7)},{"input":b""})
+ traced("flags_pipe",caught('tensor_load of "/dev/stdin"'),"value",{"input":struct.pack("IIII",2,1,1,7)},{"input":b""})
  listing=root/"two-entry-directory"; listing.mkdir(); (listing/"a").write_text(""); (listing/"b").write_text("")
  ls_source=f'print of ls of "{listing}"\n'; ls_tape=root/"ls.tape"
  ls_record=execute("ls-two-trace",ls_source,{"EIGS_TRACE":str(ls_tape)})

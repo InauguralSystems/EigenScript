@@ -661,7 +661,7 @@ A bool is not a number. Type guards raise in every `EIGS_STRICT` state:
   between a bool and a number.
 - A builtin raises when it is given a bool anywhere it does not take one: as
   its argument, at a position of its argument list, or as an element of a
-  list it reads as numbers (`sum of [1, true]`, `sgd_update`'s gradient). The
+  list it reads as numbers (`sum of [1, true]`). The
   positions that DO take a bool are few and reviewed: printing and
   conversion (`print`, `write`, `str`, `type of`, `json_encode`), the
   observer, `assert`'s condition, `write_bytes`'s append flag, and the
@@ -2914,10 +2914,7 @@ element `i`, a number. The reductions
 reads as a 1-D tensor and a shaped buffer as its `rows x cols` 2-D tensor, so
 the numbers agree element for element with the equivalent list.
 `tensor_save` answers `true` once the file is written; a path it cannot open, a write that comes back short, or a close that fails raises a catchable `io` error naming the path and the system's reason, and the partial file is left where the write stopped, as `write_text` leaves it.
-`tensor_load` raises the same kind of named `io` error when its path cannot be
-opened. The `sgd_update` family does not mix representations: its parameter
-and gradient tensors must both be lists or both be buffers; a mismatch raises
-`type_mismatch` before any update.
+For error behaviour, see [`tensor_load`](BUILTINS.md#errors-tensor_load), [`sgd_update`](BUILTINS.md#errors-sgd_update), [`audio_music_play`](BUILTINS.md#errors-audio_music_play).
 
 `read_text`, `read_bytes`, and `read_bytes_buf` follow Python's exception
 model: a missing or unreadable path, or a directory in place of a file, raises
