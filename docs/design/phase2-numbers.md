@@ -1443,18 +1443,20 @@ Two consequences of the definition, made explicit in design round 2:
 parameter a builtin converts: an ordered subset of `geometry`, `bounded`,
 `magnitude`, or `-`. The inventory refuses any other token, and checks the
 column against the note both ways: a row's note says "continuous" exactly
-when its `q7` column is not `-`. Counts: geometry 9, bounded 13, magnitude 13.
+when its `q7` column is not `-`.
 
-**Counts** (from the table below, checked by `tools/phase2_inventory.py`,
-which prints them): 307 numeric builtins (including N9, R1.6g; S10-D2 and
-sync11 explicitly retire the obsolete process/model/corpus rows, and R2.4
-adds the four N12 representation builtins). By class:
-38 int-preserving, 57 float-producing, 161 int-requiring, 51 other. The decided Q1 moved 16 rows
-from other to int-requiring (counts, byte values, handles, flags and
-selectors); `ppu_render_frame` is a new int-requiring row; design round 3
+**Counts.** See the `## Builtins` header in the generated
+[phase2-inventory.txt](phase2-inventory.txt) for the numeric builtin total,
+class totals, historical LOSS names and total, and Q7 totals.
+`tools/phase2_inventory.py --check` checks that file against the source and
+the table below; this prose does not duplicate its figures.
+
+The decided Q1 moved count, byte-value, handle, flag and selector rows
+from other to int-requiring; `ppu_render_frame` is an int-requiring row;
+design round 3
 moved `buf_from_pcm16le` from float-producing to int-requiring (its inputs are
 byte values, #1758 comment 6174964306) and corrected `gather` (its indices
-truncate today). The current table has 37 LOSS rows:
+truncate today). The historical LOSS families are:
 - arithmetic: `abs`, `add`, `subtract`, `multiply`, `negative`, `sum`,
   `num_copy`;
 - min/max and rounding: `min`, `max`, `floor`, `ceil`, `round`;
