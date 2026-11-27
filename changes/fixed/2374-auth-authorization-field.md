@@ -1,0 +1,1 @@
+- `lib/auth`'s `auth_check` and `require_auth` read the bearer token from the request's one `Authorization` field with `http_request_header`, not from a scan of the request's text. `Authorization:Bearer t` and a value after spaces or a tab are now accepted; two `Authorization` fields or another scheme are refused as a missing token (#2374).

@@ -268,12 +268,18 @@ iteration.
 | Function | Signature | Description |
 |----------|-----------|-------------|
 | `auth_login` | `auth_login of password` | Verify password, set session token |
-| `auth_check` | `auth_check of null` | Read the bearer token from the request headers; return JSON with `status: "ok"`, or `status: "error"` and an error message |
+| `auth_check` | `auth_check of null` | Read the bearer token from the request's one `Authorization` field; return JSON with `status: "ok"`, or `status: "error"` and an error message |
 | `auth_logout` | `auth_logout of null` | Clear session |
 | `auth_get_token` | `auth_get_token of null` | Return current token |
-| `require_auth` | `require_auth of null` | Check auth from HTTP headers |
+| `require_auth` | `require_auth of null` | Check the bearer token from the request's one `Authorization` field |
 
-Requires: `env_get`, `random_hex`, `http_request_headers` builtins.
+The token is read from the request's one `Authorization` field with
+`http_request_header of "authorization"`, never from the request's text. The
+field's value must be `Bearer` in any case, one or more spaces, then the token.
+No `Authorization` field, two of them, or another scheme is refused with the
+same answer as a missing token (#2374).
+
+Requires: `env_get`, `random_hex`, `http_request_header` builtins.
 
 ### lib/observer.eigs — Observer Utilities
 
