@@ -347,7 +347,17 @@ def selftest():
                 ('[[ a =~ a ]]\nprobe "$BASH_REMATCH"\n', []),
                 ('[[ a ]]; probe a =~ b\nprobe "$BASH_REMATCH"\n', ['BASH_REMATCH']),
                 ('exec {QZV}>&-\nprobe "$QZV"\n', ['QZV']),
-                ('exec {QZV}>&"-"\nprobe "$QZV"\n', ['QZV'])):
+                ('exec {QZV}>&"-"\nprobe "$QZV"\n', ['QZV']),
+                # One row per derivation path, each red when its path is removed
+                # (pass-5 review plants); bash 5.2 gives each answer.
+                ('sleep 0 & wait -np QZV\nprobe "$QZV"\n', []),
+                ('readarray <<<1\nprobe "$MAPFILE"\n', []),
+                ('coproc "QZV" { :; }\nprobe "$QZV_PID"\n', []),
+                ('read QZV <<<1\nprobe "$REPLY"\n', ['REPLY']),
+                ('mapfile QZV <<<1\nprobe "$MAPFILE"\n', ['MAPFILE']),
+                ('exec \\\n{QZV}>/dev/null\nprobe "$QZV"\n', []),
+                ('exec {QZV}<&-\nprobe "$QZV"\n', ['QZV']),
+                ('exec\t{QZV}>/dev/null\nprobe "$QZV"\n', [])):
             fragment = tree(fixture, program)
             got = [n for _, _, n in gate.scan(fixture, [fragment])]
             assert got == want, (program, got, want)
