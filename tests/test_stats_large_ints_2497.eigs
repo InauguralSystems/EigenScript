@@ -51,11 +51,12 @@ catch e:
 assert_true of [sum_raised, "stats_sum still raises on int overflow"]
 
 # lib/lab.eigs: status, summary and compare go through the same statistics.
-exp is new_experiment of "test_stats_large_ints_2497"
-record of [exp, "a", 5000000000000000000]
-record of [exp, "a", 5000000000000000000]
-record of [exp, "b", 5000000000000000000]
-record of [exp, "b", 5000000000000000000]
+# They read the experiment's in-memory values first, so the rows fill that
+# cache directly and never open the shared data/experiments.db store (which
+# tests/test_lab.eigs deletes when it starts).
+exp is {"id": "stats_large_ints_2497", "variables": ["a", "b"]}
+dict_set of [_variable_data, _tracker_key of [exp, "a"], [5000000000000000000, 5000000000000000000]]
+dict_set of [_variable_data, _tracker_key of [exp, "b"], [5000000000000000000, 5000000000000000000]]
 st is answers of ["lab.status", (u) => status of [exp, "a"]]
 if st != null:
     assert_eq of [st.mean, 5e18, "lab status mean is 5e+18"]
@@ -67,7 +68,5 @@ cmp is answers of ["lab.compare", (u) => compare of [exp, "a", "b"]]
 if cmp != null:
     assert_eq of [cmp.var1_mean, 5e18, "lab compare var1_mean is 5e+18"]
     assert_eq of [cmp.var2_mean, 5e18, "lab compare var2_mean is 5e+18"]
-close_experiment of exp
-delete_experiment of "test_stats_large_ints_2497"
 
 test_summary of null
