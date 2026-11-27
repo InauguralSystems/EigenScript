@@ -8,9 +8,20 @@ the arguments are evaluated. Header words are in native fixed-width order;
 `payload_bytes` and `observer_bytes` describe the exact fixture bytes.
 
 `order` lists checks; `errors` maps each applicable failing check to its `kind`
-and diagnostic `message` fragment. The first applicable check determines both
+and complete diagnostic `message`. The first applicable check determines both
 the expected kind and message. `ok` means no error. A three-element
 kind/message/written array is indexed by unset/0/1.
+Messages match by equality after replacing `@FILE@` with the actual fixture
+path. A check may declare `"match": "prefix"` only with a nonempty `why`
+naming externally varying text. Its prefix includes our entire fixed text
+before that text: prefixes are limited to file open/directory and music
+decode diagnostics, and retain the builtin name, complete path and separator
+plus a nonempty part of the external reason. A prefix ending inside or immediately after `@FILE@` is
+refused (exit 2). The runner prints exact/prefix check counts per builtin,
+counting each declared check once, including checks shadowed by earlier ones.
+Every backend answer arm is validated before selection; it may override only
+expected kind, writes, result and errors. Self-test plant data also lives in
+`populations.json`.
 The explicit `expected_kind` must agree with that first check and the run.
 `written` compares final parameter cell bits and numeric kinds, and the
 fixture filesystem, before and after the call. `result` pins a success value.
@@ -21,7 +32,10 @@ Every `tensor_load` row requires a boolean `tape`: true exactly when all three
 states select a file-error check. Cap and nonfinite verdicts replay at the
 file-read boundary instead, so their rows declare false, as do successful calls
 and invalid path arguments. True rows require one record and byte-identical
-replay after removing the input. The runner prints completed `tape pairs`.
+replay. Existing regular files and directories are removed before replay;
+completed `tape pairs` count these removal proofs. Missing paths are absent
+at record time too, so their byte-identical replay cannot prove tape use.
+The separate `tape replays` count includes all completed replay comparisons.
 
 Only the exact tested cases are documented. Generated blocks identify them;
 they make no statement about inputs outside these finite populations.

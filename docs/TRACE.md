@@ -384,7 +384,11 @@ Notes on the families:
   ```
   The error cases are [generated from the executed table](builtin-errors.md#tensor_load)
   and are **not restated here**. Its `tape: true` lines check byte-identical
-  error replay after input removal; see [the table format](../tests/builtin_errors/README.md).
+  error replay. The runner removes existing regular-file or directory inputs
+  before replay; `tape pairs` counts only those runs. Missing-path inputs are
+  absent during recording too: their replays contribute to `tape replays`,
+  but cannot prove that the error came from the tape.
+  See [the table format](../tests/builtin_errors/README.md).
   Tensor payloads are untaped and are never read live during replay. Other
   structurally valid verdicts raise the generic `io` file-read-boundary error
   before filesystem access.
