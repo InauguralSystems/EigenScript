@@ -30,9 +30,9 @@ emitter has since grown. What changed relative to the text below:
 - **Dict cache**: 2-way set-associative since Stage 5h (64 sets × 2
   ways); the inline probe checks both ways. `EigsJitLayout` gained the
   dict-cache fields plus `dcache_mask` (a SET mask) and `dcache_ways`.
-- **Operand loaders**: arith/compare templates accept heap/tracked
-  VAL_NUM operands with `refcount >= 2` (rc==1 bails so the
-  interpreter's NUM_REUSE branch keeps value-identity semantics);
+- **Operand loaders (Stage 5e history)**: arith/compare templates accepted
+  the then-current boxed-number operands with `refcount >= 2` (rc==1 bailed
+  so the interpreter's NUM_REUSE branch kept value-identity semantics);
   multi-guard ops route all guard failures through one per-op bail
   trampoline so the 256-slot patch budget scales.
 - **Line-number references** in the spec body have drifted; use grep

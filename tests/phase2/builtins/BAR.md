@@ -311,8 +311,8 @@ agreed).
   `N5.range-fraction-raises`), `[1.0, 3.0]` converts, and the elements are ints.
 - `channel`, `spawn`, `task_spawn`, `task_self`: handle dicts with int id/gen
   fields, and int task ids (main is 0). Only the kinds print; the ids are
-  allocation order. A spawn handle's `done` is numeric (`make_num(0)`,
-  builtins.c:4546), so it is an int (C1).
+  allocation order. A spawn handle's `done` was constructed as a number
+  (the pre-migration builtins.c:4546), so the branch makes it an int (C1).
 - `monotonic_ns` (B2): the `clock` hook makes CLOCK_MONOTONIC read 2^53+1 ns,
   so the result is the exact int 9007199254740993 and equals that literal.
   `pre` answers 9007199254740992, a float, unequal: a double cannot hold
@@ -486,9 +486,9 @@ agreed).
   the stored value converts (Q2).
 - `buf_len`, `shape`: counts and dimensions are ints (int-preserving).
 - Byte readers (`str_from_bytes f64_from_bytes buf_from_pcm16le inflate`): Q1's
-  byte reader, so a fraction or a byte outside 0..255 raises `value`. Today
-  `finite_num_to_byte` wraps modulo 256 (328 is 'H', 319 is 63), or the byte is
-  read as a double (pcm16: MAP `N5.pcm16-byte-raises`, whose tag values I
+  byte reader, so a fraction or a byte outside 0..255 raises `value`. Before
+  the migration, the byte conversion wrapped modulo 256 (328 is 'H', 319 is
+  63), or the byte was read as a double (pcm16: MAP `N5.pcm16-byte-raises`, whose tag values I
   recomputed from the C arithmetic). `f64_to_bytes` returns "8 byte ints"
   (§6), so its kind changes from float to int. An int argument converts to
   the nearest double first (C9, Q2): `2^53+1` gives the bits of
@@ -501,8 +501,8 @@ agreed).
   (Q-PCM16OUT).
 - `gather`: each index follows N5, from a buffer (MAP
   `N5.gather-index-fraction-raises`) or from a list. "Returns elements
-  unchanged", so the list path keeps an int element an int (today
-  `make_num(cell)` makes it a float). The buffer path returns a float buffer.
+  unchanged", so the list path keeps an int element an int (the pre-migration
+  numeric constructor made it a float). The buffer path returns a float buffer.
 - `scatter_add`: indices go through the N5 index reader, so `value` replaces
   today's `index_range` for 1.5 (§6 note). The accumulation is float.
 - `numerical_grad_rows/_cols`, `sgd_update_rows/_cols`: row and column indices

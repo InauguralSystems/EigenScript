@@ -168,6 +168,6 @@ iteration, or a collector that quietly stops working).
     returned owned. `get_at` returned a grandchild string and use-after-freed
     it (B3).
   - Zero bits are the number 0.0, not a vacant slot. Every double→slot store
-    goes through `num_guard`, because the x86 default NaN equals
-    `SLOT_NULL_BITS`. Raw `*_values_storage` access is allowed only on bulk
+    goes through `slot_from_f64` to canonicalize NaNs, because the x86 default
+    NaN equals `SLOT_NULL_BITS`. Raw `*_values_storage` access is allowed only on bulk
     alloc/grow/free lines (`tools/container_access_check.sh` enforces this).

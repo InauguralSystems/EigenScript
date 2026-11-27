@@ -82,9 +82,10 @@ milestone when an issue is filed against them.
 
 - **Decided (#1417): normalize non-finite buffer elements on scalar reads.**
   Kernels and persistence may retain raw IEEE infinity or NaN in the unboxed
-  work area. The VM/runtime and native JIT implementation makes each scalar read cross
-  `buffer_read_num`: infinity saturates at ±`1e308`; NaN raises in strict mode
-  or collapses to `0` and sets `math_flags.invalid` under `EIGS_STRICT=0`.
+  work area. At the time of #1417, the scalar read boundary saturated infinity at
+  ±`1e308`; NaN raised in strict mode or collapsed to `0` and set
+  `math_flags.invalid` under `EIGS_STRICT=0`. Phase 2 superseded those
+  answers: the current `buffer_read_f64` boundary rejects non-finite values.
   The [owner decision](https://github.com/InauguralSystems/EigenScript/issues/1417#issuecomment-5955582205)
   includes structural equality and scalar reductions. Direct indexed-operator
   parity with ouroboros AOT remains unresolved and requires its own mirror,
@@ -117,7 +118,7 @@ milestone when an issue is filed against them.
   re-deciding which stand-ins survive as documented answers (the pins in
   `tools/strict_differential.sh` are the executed record of that
   decision). Two things must land first: the AOT mirror (ouroboros
-  `aot_rt.h` carries its own inlined `num_guard`, `op_div`-shaped
+  `aot_rt.h` carries its own inlined number guard, `op_div`-shaped
   `aot_ddiv` and a raw-`inf` matmul read pinned by its round-187
   fixture — a default flip without the mirror flipping recreates the
   #975 div0 fossil), and the buffer read-boundary decision now recorded in #1417. The differential
@@ -192,7 +193,7 @@ milestone when an issue is filed against them.
 
 - **NaN-boxing for container storage** — stack and env slots are
   already EigsSlot/NaN-boxed; list items and dict values are still
-  `Value**`. Post-5h, the DMG-shaped `make_num` churn is gone
+  `Value**`. Post-5h, the DMG-shaped boxed-number allocation churn is gone
   (writes mutate in place); this now mainly buys allocation-free
   list/dict construction and reads for non-num or shared values.
   Big surface (every `data.list.items` / `data.dict.vals` touch
@@ -415,8 +416,8 @@ report the past as roadmap items "done".
   dict cache. Isolated dict-RMW loop −31% (65→45 ms).
 - **JIT Stage 5e — tracked-num operands in arith/compare
   templates.** ADD/SUB/MUL/DIV/MOD and all six comparisons accept
-  heap/tracked VAL_NUM operands (refcount ≥ 2; rc==1 routes to
-  interpreter so NUM_REUSE keeps in-place semantics). JIT
+  the then-current heap/tracked boxed-number operands (refcount ≥ 2;
+  rc==1 routes to interpreter so NUM_REUSE keeps in-place semantics). JIT
   SET_LOCAL template gained the interpreter's exact in-place
   branch (the swap path would free a Value `g_last_observer` can
   still point at). Poisoned-counter loop −26% (141→105 ms);

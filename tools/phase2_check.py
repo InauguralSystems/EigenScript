@@ -37,7 +37,8 @@ A -stop whose op is the chunk's compile stop must also be named by
 EIGS_JIT_STOPS.
 
 EVERY MODE runs two gates: the token gate (every token a landed round
-deleted is absent from code) and the inventory's own verdict
+deleted is absent from code and non-historical Markdown) and the inventory's
+own verdict
 (tools/phase2_inventory.py --check: every slot classifier has a reviewed
 disposition, and the committed docs/design/phase2-inventory.txt is exactly
 the generated one, #1804).
@@ -671,19 +672,83 @@ def c_files(root, dirs=('src',), recurse_tests=True):
     return out
 
 
+# Historical descriptions intentionally retain the vocabulary of their time.
+# Match repository-relative paths, not basenames or a broad "design" prefix.
+TOKEN_HISTORY_FILES = {'CHANGELOG.md'}
+TOKEN_HISTORY_DIRS = ('docs/design/', 'changes/')
+
+
 def token_gate(root, through, out):
     toks = [t for r, ts in DELETED_TOKENS.items() if rindex(r) <= rindex(through) for t in ts]
     files = c_files(root)
-    hits = []
-    for p in files:
-        text = code_text(p)
+    # Source docs only, including hidden .claude files; generated build trees
+    # and dependency manuals must not change the population after a build.
+    tracked = subprocess.run(['git', '-C', root, 'ls-files', '-z', '--', '*.md'],
+                             capture_output=True, text=True)
+    if tracked.returncode:
+        out('tokens: FAIL: git ls-files exited %d: %s' %
+            (tracked.returncode, tracked.stderr.strip()))
+        return False
+    docs = [os.path.join(root, name) for name in tracked.stdout.split('\0') if name]
+    hits, history_hits = [], 0
+    for p in files + docs:
+        rel = os.path.relpath(p, root).replace(os.sep, '/')
+        is_doc = p.endswith('.md')
+        historical = is_doc and (rel in TOKEN_HISTORY_FILES or rel.startswith(TOKEN_HISTORY_DIRS))
+        text = read_text(p, errors='replace') if is_doc else code_text(p)
         for t in toks:
             for m in re.finditer(r'\b%s\b' % re.escape(t), text):
-                hits.append('%s:%d %s' % (os.path.relpath(p, root), text.count('\n', 0, m.start()) + 1, t))
+                if historical:
+                    history_hits += 1
+                else:
+                    hits.append('%s:%d %s' % (rel, text.count('\n', 0, m.start()) + 1, t))
     for h in hits:
-        out('  TOKEN %s (deleted by a landed round, still in code)' % h)
-    out('tokens: rounds<=%s tokens=%d files=%d hits=%d' % (through, len(toks), len(files), len(hits)))
+        out('  TOKEN %s (deleted by a landed round, still in code or docs)' % h)
+    out('tokens: rounds<=%s tokens=%d files=%d docs=%d history_hits=%d hits=%d' % (
+        through, len(toks), len(files) + len(docs), len(docs), history_hits, len(hits)))
     return bool(files) and bool(toks) and not hits
+
+
+def token_doc_calibration(case):
+    """Doc plants used by --selftest; callable alone without building runtimes."""
+    with tempfile.TemporaryDirectory(prefix='eigs-p2-doc-tokens-') as root:
+        subprocess.run(['git', '-C', root, 'init', '-q'], check=True)
+        fixtures = {
+            'src/control.c': 'int control;\n',
+            'tests/control.md': 'VAL_NUMBER is not a retired token.\n',
+            'CHANGELOG.md': 'VAL_NUM VAL_NUM\n',
+            'docs/design/history.md': 'VAL_NUM\n',
+            'changes/internal/history.md': 'VAL_NUM\n',
+        }
+        for name, text in fixtures.items():
+            path = os.path.join(root, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            write_text(path, text)
+        subprocess.run(['git', '-C', root, 'add', '.'], check=True)
+        # A generated manual is outside the source population, even with a hit.
+        os.mkdir(os.path.join(root, 'build'))
+        write_text(os.path.join(root, 'build', 'manual.md'), 'VAL_NUM\n')
+        write_text(os.path.join(root, '.gitignore'), '/build/\n')
+        lines = []
+        case('doc history allowlist is counted; token boundaries hold',
+             (token_gate(root, 'R1.2', lines.append), lines),
+             (True, ['tokens: rounds<=R1.2 tokens=9 files=5 docs=4 history_hits=4 hits=0']),
+             detail=lines)
+        for name in ('docs/guide.md', '.claude/rules/runtime.md',
+                     'docs/design-adjacent.md', 'docs/CHANGELOG.md'):
+            path = os.path.join(root, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            write_text(path, '# Current instructions\nUse VAL_NUM.\n')
+            subprocess.run(['git', '-C', root, 'add', '-A'], check=True)
+            lines = []
+            case('retired doc token plant: ' + name,
+                 (token_gate(root, 'R1.2', lines.append),
+                  any('TOKEN %s:2 VAL_NUM ' % name in line for line in lines),
+                  lines[-1]),
+                 (False, True,
+                  'tokens: rounds<=R1.2 tokens=9 files=6 docs=5 history_hits=4 hits=1'),
+                 detail=lines)
+            os.unlink(path)
 
 
 def int_source(src, out, through='R1.1'):
@@ -1234,6 +1299,7 @@ def calibrate(args, out):
          int_source(historical_src, lines.append, 'R1.2'), True, detail=lines)
     # the token gate against a reintroduced deleted token
     with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
+        subprocess.run(['git', '-C', d, 'init', '-q'], check=True)
         os.mkdir(os.path.join(d, 'src'))
         os.mkdir(os.path.join(d, 'tests'))
         for f in os.listdir(os.path.join(ROOT, 'src')):
@@ -1244,6 +1310,7 @@ def calibrate(args, out):
         lines = []
         case('token plant (slot_is_num reintroduced): the gate fails',
              (token_gate(d, 'R1.1', lines.append), any('slot_is_num' in l for l in lines)), (False, True), detail=lines)
+    token_doc_calibration(case)
     # the int-source plants of the R1.1 critic, static half on the historical source
     for name, edits in INTSRC_PLANTS:
         with tempfile.TemporaryDirectory(prefix='eigs-p2cal-') as d:
