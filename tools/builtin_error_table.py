@@ -15,7 +15,6 @@ import subprocess
 import sys
 import tempfile
 import wave
-
 ROOT = Path(__file__).resolve().parents[1]
 TABLES = ROOT / 'tests/builtin_errors'
 SLOTS = {'tensor_load': ('path',), 'sgd_update': ('params', 'grad', 'lr'),
@@ -23,10 +22,8 @@ SLOTS = {'tensor_load': ('path',), 'sgd_update': ('params', 'grad', 'lr'),
 KINDS = {'bool', 'string', 'null', 'list', 'dict', 'buffer', 'number'}
 STATES = (None, '0', '1')
 
-
 class Unrun(Exception):
     pass
-
 def read_tables(directory):
     tables = {b: [json.loads(x) for x in (directory / (b + '.jsonl')).read_text().splitlines()]
               for b in SLOTS}
@@ -49,13 +46,24 @@ def read_tables(directory):
             assert r['order'] and all(isinstance(x, str) for x in r['order']), r['id']
             assert isinstance(r['written'], (bool, list)), r['id']
             assert isinstance(r['expected_kind'], (str, list)), r['id']
-            for col in ('written', 'expected_kind', 'message'):
-                if isinstance(r.get(col), list):
-                    assert len(r[col]) == len(STATES), f"{r['id']}: incomplete states in {col}"
+            assert set(r['errors']) <= set(r['order']), r['id']
+            for answer in (r, *r['errors'].values()):
+                for col in ('written', 'expected_kind', 'kind', 'message'):
+                    if isinstance(answer.get(col), list):
+                        assert len(answer[col]) == len(STATES), f"{r['id']}: incomplete states in {col}"
+            assert all(c['kind'] and c['message'] for c in r['errors'].values()), r['id']
+            if builtin == 'tensor_load':
+                # File-error checks replay exactly; cap/nonfinite verdicts hit the replay boundary.
+                must_tape = r['path_kind'] == 'string' and all(
+                    first_check(r, s) not in (None, 'cap', 'nonfinite') for s in range(len(STATES)))
+                assert type(r.get('tape')) is bool and r['tape'] == must_tape, f"{builtin}/{r['id']}: tape must be {must_tape}"
     return tables
 
 def per_state(value, index):
     return value[index] if isinstance(value, list) else value
+def first_check(row, index):
+    return next((c for c in row['order'] if c in row['errors']
+                 and per_state(row['errors'][c]['kind'], index) != 'ok'), None)
 
 def fixture(row, work):
     path = work / 'input.tensor'
@@ -237,17 +245,14 @@ def check_row(binary, builtin, row, state_index, work):
     answers = [json.loads(x) for x in q.stdout.splitlines() if x.startswith('["ANSWER",')]
     assert len(answers) == 1, q.stdout
     _, kind, detail = answers[0]
-    expected = next((per_state(row['errors'][c], state_index) for c in row['order']
-                     if c in row['errors'] and per_state(row['errors'][c], state_index) != 'ok'), 'ok')
+    answer = row['errors'].get(first_check(row, state_index), {'kind': 'ok', 'message': ''})
+    expected, message = (per_state(answer[c], state_index) for c in ('kind', 'message'))
     assert kind == expected, f'kind {kind}, want {expected}; {detail}'
     assert expected == per_state(row['expected_kind'], state_index), 'order and expected_kind disagree'
-    message = per_state(row.get('message', ''), state_index).replace('@FILE@', path)
-    assert message in str(detail), (message, detail)
+    message = message.replace('@FILE@', path)
+    assert message in str(detail), f'message {message!r} absent from {detail!r}'
     if 'result' in row:
         assert detail == row['result'], (detail, row['result'])
-    if builtin == 'tensor_load' and kind != 'ok' and row['path_kind'] == 'string':
-        if row.get('tape'):
-            assert path in detail, detail
     written = filesystem(work) != before_files
     if builtin == 'sgd_update':
         lines = q.stdout.splitlines()
@@ -266,9 +271,11 @@ def check_row(binary, builtin, row, state_index, work):
             p.unlink()
         rep = run(binary, source, work, STATES[state_index], tape='EIGS_REPLAY')
         assert (q.stdout, q.stderr) == (rep.stdout, rep.stderr), (q.stdout, rep.stdout, q.stderr, rep.stderr)
+    return int(bool(row.get('tape')))
 
 def execute(tables, binary, quiet=False):
     failures = []
+    tape_pairs = 0
     with tempfile.TemporaryDirectory(prefix='builtin-error-table-') as scratch:
         root = Path(scratch)
         for builtin, rows in tables.items():
@@ -281,7 +288,7 @@ def execute(tables, binary, quiet=False):
                     work = root / f'{builtin}-{i}-{s}'
                     work.mkdir()
                     try:
-                        check_row(binary, builtin, row, s, work)
+                        tape_pairs += check_row(binary, builtin, row, s, work)
                     except (Unrun, subprocess.SubprocessError, OSError) as e:
                         line_ran = False
                         failures.append((builtin, row['id'], state, str(e)))
@@ -297,6 +304,8 @@ def execute(tables, binary, quiet=False):
             assert ran == len(rows) > 0, f'{builtin}: did not run population'
             if not quiet:
                 print(f'builtin-error-table: {builtin} {ran} lines x 3 states, {len(failures)-start} failed')
+    if not quiet:
+        print(f'tape pairs: {tape_pairs}')
     return failures
 
 def describe(builtin, row):
@@ -398,30 +407,29 @@ def selftest(tables, binary):
     assert not audio_backend('not-an-sdl-driver')
     assert not execute({'audio_music_play': unavailable}, binary, quiet=True), 'unavailable expectations failed'
     print('PASS: table selftest unavailable device expectations green: decode/valid, 6 state runs')
-    variants = []
-    wrong = copy.deepcopy(tables)
-    wrong['tensor_load'][0]['expected_kind'] = 'io'
-    variants.append(('kind changed', wrong, 'path-bool', 1))
-    wrong = copy.deepcopy(tables)
-    victim = next(r for r in wrong['audio_music_play'] if r['id'] == 'loops-null')
-    wrong['audio_music_play'].remove(victim)
-    variants.append(('argument-kind population dropped', wrong, 'loops-null', 2))
-    wrong = copy.deepcopy(tables)
-    victim = next(r for r in wrong['tensor_load'] if r['id'] == 'ndim-before-cap')
-    a,b = victim['order'].index('ndim'), victim['order'].index('cap')
-    victim['order'][a], victim['order'][b] = victim['order'][b], victim['order'][a]
-    variants.append(('checks order swapped', wrong, victim['id'], 1))
-    wrong = copy.deepcopy(tables)
-    wrong['tensor_load'][0]['setup'] = 'return null'
-    variants.append(('program did not run', wrong, 'path-bool', 2))
-    wrong = copy.deepcopy(tables)
-    next(r for r in wrong['tensor_load'] if r['id']=='path-list')['path_shape'] = '-'
-    variants.append(('argument shape omitted', wrong, 'path-list', 2))
-    wrong = copy.deepcopy(tables)
-    next(r for r in wrong['sgd_update'] if r['id']=='empty-empty-lr-number')['params_shape'] = 'rows:0x1'
-    variants.append(('flat list mislabeled rows', wrong, 'empty-empty-lr-number', 1))
-    examined = 0
-    for name, variant, line, expected_rc in variants:
+    variants = [
+        ('kind changed', 'tensor_load', 'path-bool', ('expected_kind', 'io'), 1),
+        ('argument-kind population dropped', 'audio_music_play', 'loops-null', (), 2),
+        ('checks order swapped', 'tensor_load', 'ndim-before-cap', ('order', 'ndim', 'cap'), 2),
+        ('same-kind order swapped', 'tensor_load', 'flags-before-ndim', ('order', 'flags', 'ndim'), 1),
+        ('same-kind order swapped', 'sgd_update', 'rows22-flat2-lr-string', ('order', 'shape', 'lr'), 1),
+        ('same-kind order swapped', 'sgd_update', 'flat2-flat3-lr-bool', ('order', 'bool call gate', 'lr'), 1),
+        ('tape omitted', 'tensor_load', 'flags-seven', ('tape',), 2),
+        ('program did not run', 'tensor_load', 'path-bool', ('setup', 'return null'), 2),
+        ('argument shape omitted', 'tensor_load', 'path-list', ('path_shape', '-'), 2),
+        ('flat list mislabeled rows', 'sgd_update', 'empty-empty-lr-number', ('params_shape', 'rows:0x1'), 1)]
+    for examined, (name, builtin, line, edit, expected_rc) in enumerate(variants, 1):
+        variant = copy.deepcopy(tables)
+        victim = next(r for r in variant[builtin] if r['id'] == line)
+        if not edit:
+            variant[builtin].remove(victim)
+        elif edit[0] == 'order':
+            a,b = (victim['order'].index(c) for c in edit[1:])
+            victim['order'][a], victim['order'][b] = victim['order'][b], victim['order'][a]
+        elif len(edit) == 1:
+            del victim[edit[0]]
+        else:
+            victim[edit[0]] = edit[1]
         with tempfile.TemporaryDirectory(prefix='builtin-error-variant-') as tmp:
             p = Path(tmp)
             for builtin, rows in variant.items():
@@ -434,9 +442,10 @@ def selftest(tables, binary):
                 assert ('audio_music_play' if line == 'loops-null' else 'tensor_load') in output, output
             else:
                 assert line in output, output
+            if name == 'same-kind order swapped':
+                assert 'message ' in output and ' absent from ' in output, output
             assert rc == expected_rc, (name, rc)
         print(f'PASS: table selftest {name}: red rc={rc}, line={line}')
-        examined += 1
     assert examined == len(variants) > 0
     with tempfile.TemporaryDirectory(prefix='builtin-error-docs-') as tmp:
         doc = Path(tmp)/'BUILTINS.md'
@@ -512,13 +521,9 @@ def c_mutants(tables, binary, scratch_root):
         free(obs_data);
     }
 '''
-    noop = '''static void restore_observer_1d(Value *list, double *obs_data, int count) {
-    (void)list; (void)obs_data; (void)count;
-}
-static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int cols) {
-    (void)tensor; (void)obs_data; (void)rows; (void)cols;
-}
-'''
+    noop = """static void restore_observer_1d(Value *v, double *d, int n) { (void)v; (void)d; (void)n; }
+static void restore_observer_2d(Value *v, double *d, int r, int c) { (void)v; (void)d; (void)r; (void)c; }
+"""
     reverted = current[:a]+old_reader+current[b:]
     reverted = reverted.replace('        val_decref(result); tensor_load_record_verdict(0, 0);',
                                 '        free(obs_data); val_decref(result); tensor_load_record_verdict(0, 0);')
@@ -535,8 +540,7 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
     extra = [str(p.relative_to(ROOT)) for p in TABLES.glob('*')]
     extra += ['tools/builtin_error_table.py']
     files = sorted(set(f for f in tracked+extra if f and f not in ('src/eigenscript','src/eigenlsp','src/eigsdap') and (ROOT/f).is_file()))
-    examined = 0
-    for ruling, text, line in changes:
+    for examined, (ruling, text, line) in enumerate(changes, 1):
         with tempfile.TemporaryDirectory(prefix='scratch-'+ruling+'-', dir=scratch_root) as tmp:
             tree = Path(tmp)
             copied = 0
@@ -562,7 +566,6 @@ static void restore_observer_2d(Value *tensor, double *obs_data, int rows, int c
             assert any(f[1] == line for f in failures), (ruling, line, failures)
             reason = next(f[3] for f in failures if f[1] == line)
             print(f'PASS: C mutant {ruling}: red, line={line}, failed states={len(failures)}; {reason}', flush=True)
-            examined += 1
     assert examined == len(changes) > 0
     print(f'builtin-error-table mutants: {examined} rulings red')
 
@@ -591,7 +594,6 @@ def main():
         print(f'builtin-error-table: refused population: {e}', file=sys.stderr)
         return 2
     return 0
-
 
 if __name__ == '__main__':
     sys.exit(main())

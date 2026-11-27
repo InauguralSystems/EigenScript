@@ -377,19 +377,17 @@ Notes on the families:
   taped `io` message **before** making any live filesystem call. Mutations whose
   payload is not represented on the tape (including `tensor_save`) are refused
   loudly under replay, also before opening their path.
-- **Tensor-file cap decision (#1393):** each valid `tensor_load` path call
-  records one compact observation: the standard one-string file-I/O error
-  record when the path cannot be opened or is a directory, a two-string
-  `[kind, message]` for a short header, ndim other than 1 or 2, zero extent, short numeric payload or refused
-  payload allocation, `[rows, cols]` for an over-cap header,
-  otherwise `null`. Replay re-raises a recorded open or file error
-  byte-for-byte.
-  For every other structurally valid verdict, replay raises the
-  same generic `io` file-read-boundary error before filesystem access; an
-  over-cap verdict does not reconstruct its recorded `limit` error. Tensor
-  payloads are untaped and are never read live during replay. Invalid path
-  argument types consume no observation. The following nondeterministic call
-  retains its own record.
+- **Tensor files:** the executed table's `short-header` case records a
+  two-string `[kind, message]`, for example with the path `input.tensor`:
+  ```text
+  N 0 tensor_load=["io", "tensor_load: 'input.tensor': short four-word header"]
+  ```
+  The error cases are [generated from the executed table](builtin-errors.md#tensor_load)
+  and are **not restated here**. Its `tape: true` lines check byte-identical
+  error replay after input removal; see [the table format](../tests/builtin_errors/README.md).
+  Tensor payloads are untaped and are never read live during replay. Other
+  structurally valid verdicts raise the generic `io` file-read-boundary error
+  before filesystem access.
 - **Process:** `args` (command-line arguments — differ across
   invocations, so the recorded list is served on replay regardless of
   the live argv; #471)

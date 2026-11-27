@@ -7,14 +7,21 @@ labels. `@FILE@` is the runner's isolated fixture path. `setup` runs before
 the arguments are evaluated. Header words are in native fixed-width order;
 `payload_bytes` and `observer_bytes` describe the exact fixture bytes.
 
-`order` lists checks; `errors` maps the applicable failing checks to kinds.
-The first applicable check determines the expected answer. `ok` means no
-error. A three-element kind/message/written array is indexed by unset/0/1.
+`order` lists checks; `errors` maps each applicable failing check to its `kind`
+and diagnostic `message` fragment. The first applicable check determines both
+the expected kind and message. `ok` means no error. A three-element
+kind/message/written array is indexed by unset/0/1.
 The explicit `expected_kind` must agree with that first check and the run.
 `written` compares final parameter cell bits and numeric kinds, and the
 fixture filesystem, before and after the call. `result` pins a success value.
 `populations.json` pins the declared line counts; every slot must cover all
 seven kinds. Changing a population requires reviewing that declaration too.
+
+Every `tensor_load` row requires a boolean `tape`: true exactly when all three
+states select a file-error check. Cap and nonfinite verdicts replay at the
+file-read boundary instead, so their rows declare false, as do successful calls
+and invalid path arguments. True rows require one record and byte-identical
+replay after removing the input. The runner prints completed `tape pairs`.
 
 Only the exact tested cases are documented. Generated blocks identify them;
 they make no statement about inputs outside these finite populations.
