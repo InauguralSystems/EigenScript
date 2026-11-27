@@ -933,14 +933,14 @@ class _Body:
         if self.after_coproc:
             self.after_coproc = False
             rest = re.sub(r"\\\n", "", self.lx.text[self.i:]).lstrip(" \t")
-            compound = (word not in RESERVED_OPENERS | COMPOUND_CLOSERS
+            compound = (word not in (RESERVED_OPENERS - {"time"}) | COMPOUND_CLOSERS
                         and word not in ("for", "select", "case", "function", "[[")
                         and assignment_split(word) is None
                         and re.match(r"(?:while|until|for|select|if|case|\[\[)(?=$|[ \t\n;&|()<>])", rest))
             if rest[:1] == "(" or (rest[:1] == "{" and rest[1:2] in ("", " ", "\t", "\n")) \
                     or compound:
                 # #2586: bash takes ANY word before a compound for its name,
-                # rejecting non-identifiers only at runtime. Reserved words
+                # rejecting non-identifiers only at runtime. Reserved words but `time`
                 # instead start an unnamed coproc; quotes and keyword suffixes
                 # do not introduce a compound. Backslash-newlines join tokens.
                 self.split_next = True

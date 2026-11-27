@@ -997,6 +997,19 @@ ROLE_INCIDENTS = [
     ("coproc QZV \\\n{ c1; }\nc3\n",
      [("coproc", "reserved"), ("QZV", "name"), ("{", "reserved"), ("c1", "command"),
       ("}", "reserved"), ("c3", "command")]),
+    # #2586 critic r3: `time` is no reserved word after `coproc`; bash makes
+    # the array `time` and reprints `coproc time while` (bash ran c1, c3 / c2, c3).
+    ("coproc time while :; do c1; break; done\nc3\n",
+     [("coproc", "reserved"), ("time", "name"), ("while", "reserved"), (":", "command"),
+      ("do", "reserved"), ("c1", "command"), ("break", "command"), ("done", "reserved"), ("c3", "command")]),
+    ("coproc time [[ -n x ]] && c2\nc3\n",
+     [("coproc", "reserved"), ("time", "name"), ("[[", "reserved"), ("-n", "test"), ("x", "test"),
+      ("]]", "reserved"), ("c2", "command"), ("c3", "command")]),
+    # #2586 critic r3: a double quote or a backslash does not end a keyword (bash ran QZV, c3).
+    ('coproc QZV if"x"\nc3\n',
+     [("coproc", "reserved"), ("QZV", "command"), ('if"x"', "argument"), ("c3", "command")]),
+    ("coproc QZV while\\x\nc3\n",
+     [("coproc", "reserved"), ("QZV", "command"), ("while\\x", "argument"), ("c3", "command")]),
     # #2586: names, every reserved word and body/next-line commands are pinned.
     ("coproc QZV while :; do c1; break; done\nc3\n",
      [("coproc", "reserved"), ("QZV", "name"), ("while", "reserved"), (":", "command"),
@@ -1296,6 +1309,8 @@ PLANTS = [
      '', {"H"}),
     ("coproc-assignment-read-as-name",
      '                        and assignment_split(word) is None\n', '', {"H"}),
+    ("coproc-time-read-as-reserved",
+     '(RESERVED_OPENERS - {"time"}) | COMPOUND_CLOSERS', 'RESERVED_OPENERS | COMPOUND_CLOSERS', {"H"}),
     # ---- the rules the mutants bought (tools/_shell_exec.py --mutants)
     ("expansion-only-command-word-never-vanishes",
      "        self.vanishing = self.lx.roles and may_vanish(word)\n"
