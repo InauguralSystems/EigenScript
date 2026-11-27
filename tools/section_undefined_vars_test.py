@@ -160,6 +160,7 @@ SET_SHAPES = [
     ('mapfile -d: QZV <<<1', ''), ('read -a OTHER QZV <<<1', ''),
     ('printf -v QZV -v OTHER x', ''), ('read -t0 QZV <<<1', ''),
     ('printf${MISSING_SUFFIX:-} -v QZV x', ''), ('ex${MISSING_MID:+}port QZV=1', ''),
+    ('coproc QZV { :; }; wait', "order: bash unsets a coproc's variables when it exits"), ('coproc QZV_PID { :; }; wait', ''),
     ('exec {QZV}>/dev/null', ''), ('exec 3>/dev/null {QZV}>&3', ''), ('probe x{QZV}>/dev/null', ''),
     ("(( 'QZV=1' ))", ''), ('(( "QZV"=1 ))', ''), ('(( Q"Z"V=1 ))', ''),
 ]

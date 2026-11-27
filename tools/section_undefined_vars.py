@@ -238,6 +238,10 @@ class Reader:
                 for tok in tokens:
                     if tok.role == 'name' and previous and previous.role == 'reserved' and previous.text in ('for', 'select'):
                         definitions.add(unquote(tok.text))
+                    if previous and previous.role == 'reserved' and previous.text == 'coproc':
+                        # bash binds NAME and NAME_PID, or COPROC and COPROC_PID unnamed.
+                        name = unquote(tok.text) if tok.role == 'name' else 'COPROC'
+                        definitions.update((name, name + '_PID'))
                     if tok.kind == 'word' and tok.role != 'delimiter' or tok.kind in ('pattern', 'arith'):
                         expr = str(tok.text[2:-2]) if tok.kind == 'arith' else tok.text
                         refs, sets = variable_effects(expr, arithmetic=tok.kind == 'arith', assignment=tok.start in assignments)
