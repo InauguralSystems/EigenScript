@@ -2,6 +2,13 @@
   <img src="logo.png" alt="EigenScript" width="300">
 </p>
 
+These examples describe the development version on `main`, which can be newer
+than the version installed from the latest release. The
+[built docs and playground](https://inauguralsystems.github.io/EigenScript/#eigenscript-build-version)
+identify their exact source commit. For an installed release, use the
+[latest release's documentation](https://inauguralsystems.github.io/EigenScript/release-docs.html);
+that link's destination is generated at build time from the release tag.
+
 
 Width arithmetic uses explicit wrapping, checked and saturating builtins.
 N5 converts integral floats, then checks the named type range without masking.

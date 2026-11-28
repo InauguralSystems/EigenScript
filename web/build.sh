@@ -85,5 +85,9 @@ cp web/index.html web/dist/index.html
 cp web/app.js web/dist/app.js
 cp web/style.css web/dist/style.css
 
+# Build-time provenance also accompanies a standalone playground build.
+python3 tools/docs_version.py stamp web/dist
+python3 tools/docs_version.py check web/dist
+
 echo "Built web/dist/ — serve with: python3 -m http.server -d web/dist"
 ls -lh web/dist/
