@@ -40,4 +40,18 @@ assert_eq of [reused, 513, "reused slot has generation two"]
 assert_eq of [task_join of reused, reused, "reused task_self matches spawn"]
 assert_eq of [num_type of reused, "int", "public task ids are ints"]
 assert_eq of [task_join of (reused * 1.0), reused, "integral float handle remains accepted"]
+# A handle past 2^32 that shares a live task's slot is stale, never that task:
+# the builtin seam must hand the whole int64 to the unpack (#2598 review).
+target is task_spawn of worker
+try:
+    task_join of (4294967296 + target)
+    assert_true of [false, "an aliased handle must not join the live task"]
+catch e:
+    assert_eq of [e.kind, "value", "aliased handle is stale for task_join"]
+try:
+    task_alive of (4294967296 + target)
+    assert_true of [false, "an aliased handle must not answer for the live task"]
+catch e:
+    assert_eq of [e.kind, "value", "aliased handle is stale for task_alive"]
+assert_eq of [task_join of target, target, "the live task still joins by its own id"]
 test_summary of null
