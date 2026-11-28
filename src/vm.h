@@ -691,9 +691,9 @@ int   task_do_detach(int tid);       /* #530: mark fire-and-forget (reap at fini
 /* Inc 3 virtual time (builtins.c task_sleep/task_now). */
 void   task_request_sleep(double ticks); /* current task sleeps until virtual now + ticks */
 double task_virtual_now(void);           /* current virtual-clock value (0 with no scheduler) */
-double task_current_id(void);            /* public running task id; 0 = main — task_self (#526) */
-double task_handle_pack(int id, uint32_t gen); /* exact numeric public id */
-int    task_handle_unpack(double packed, int *id, uint32_t *gen);
+int64_t task_current_id(void);            /* public running task id; 0 = main — task_self (#526) */
+int64_t task_handle_pack(int id, uint32_t gen); /* exact numeric public id */
+int    task_handle_unpack(int64_t packed, int *id, uint32_t *gen);
 /* #846 scheduler trace (builtins.c task_sched_trace). The trace is a PURE
  * READER of the schedule: recording never touches the ready queue, the
  * seeded PRNG, or the clock, and its entries are derived from the
