@@ -1,0 +1,1 @@
+- Fixed the non-finite census to measure buffer cells touched by calls, preserve matrix shapes, and report skipped API cases (#2508).
